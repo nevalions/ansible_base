@@ -19,7 +19,7 @@ common_packages:
   - npm
   - wget
   - wireguard
-  - iptables-persistent
+  # - iptables-persistent
 arch_packages:
   - alacritty
   - atuin
