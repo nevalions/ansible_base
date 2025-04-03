@@ -1,0 +1,13 @@
+---
+- name: Install Workstation
+  hosts: all
+  become: yes
+  vars_files:
+    - vars/packages.yaml
+  vars:
+    common: true
+    zsh: true
+    dotfiles: true
+    docker: true
+  roles:
+    - setup

@@ -1,0 +1,37 @@
+---
+- name: Get user home directory
+  command: getent passwd "{{ ansible_user }}"
+  register: user_info
+  changed_when: false
+
+- name: Extract home directory
+  set_fact:
+    user_home: "{{ user_info.stdout.split(':')[5] }}"
+
+- name: Install Oh My Zsh
+  git:
+    repo: "https://github.com/ohmyzsh/ohmyzsh.git"
+    dest: "{{ user_home }}/.oh-my-zsh"
+
+- name: Install Powerlevel10k theme
+  git:
+    repo: "https://github.com/romkatv/powerlevel10k.git"
+    dest: "{{ user_home }}/.oh-my-zsh/custom/themes/powerlevel10k"
+
+- name: Install Zsh plugins
+  git:
+    repo: "{{ item.repo }}"
+    dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/{{ item.name }}"
+  loop:
+    - {
+        name: "zsh-autosuggestions",
+        repo: "https://github.com/zsh-users/zsh-autosuggestions.git",
+      }
+    - {
+        name: "zsh-syntax-highlighting",
+        repo: "https://github.com/zsh-users/zsh-syntax-highlighting.git",
+      }
+    - {
+        name: "fast-syntax-highlighting",
+        repo: "https://github.com/zdharma-continuum/fast-syntax-highlighting.git",
+      }

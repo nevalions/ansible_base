@@ -1,0 +1,29 @@
+---
+- name: Run Common Setup Tasks
+  ansible.builtin.include_role:
+    name: common
+
+- name: Install ZSH
+  ansible.builtin.include_role:
+    name: zsh
+  when: zsh | default(false)
+
+- name: Clone Dotfiles
+  ansible.builtin.include_role:
+    name: dotfiles
+  when: dotfiles | default(false)
+
+- name: Run Docker Setup (if enabled)
+  ansible.builtin.include_role:
+    name: docker
+  when: install_docker | default(false)
+
+- name: Run Kubernetes Setup (if enabled)
+  ansible.builtin.include_role:
+    name: kubernetes
+  when: install_kubernetes | default(false)
+
+- name: Run HAProxy Setup (if enabled)
+  ansible.builtin.include_role:
+    name: haproxy
+  when: install_haproxy | default(false)

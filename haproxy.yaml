@@ -1,0 +1,12 @@
+---
+- name: Install HAProxy
+  hosts: all
+  become: yes
+  vars_files:
+    - vars/packages.yaml
+  vars:
+    common: true
+    zsh: true
+    dotfiles: true
+  roles:
+    - setup

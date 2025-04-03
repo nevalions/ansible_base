@@ -1,0 +1,33 @@
+---
+- name: Get user home directory
+  command: getent passwd "{{ ansible_user }}"
+  register: user_info
+  changed_when: false
+
+- name: Extract home directory
+  set_fact:
+    user_home: "{{ user_info.stdout.split(':')[5] }}"
+
+- name: Clone dotfiles repository
+  git:
+    repo: "https://github.com/nevalions/dotfiles.git"
+    dest: "{{ user_home }}/dotfiles"
+  become: yes
+  become_user: "{{ ansible_user }}"
+
+- name: Ensure correct ownership of dotfiles
+  file:
+    path: "{{ user_home }}/dotfiles"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    recurse: yes
+  become: yes
+
+- name: Set default shell to Zsh
+  user:
+    name: "{{ ansible_user }}"
+    shell: /bin/zsh
+  become: yes
+
+- name: Apply dotfiles using stow
+  shell: "cd {{ user_home }}/dotfiles && stow */"

@@ -1,0 +1,34 @@
+common_packages:
+  - neovim
+  - tmux
+  - zsh
+  - fzf
+  - tree
+  - eza
+  - zoxide
+  - git
+  - curl
+  - net-tools
+  - zip
+  - unzip
+  - ca-certificates
+  - gnupg
+  - stow
+  - python3
+  - nodejs
+  - npm
+  - wget
+  - wireguard
+arch_packages:
+  - alacritty
+  - atuin
+  - fd
+  - lazygit
+  - docker
+  - docker-compose
+  - bat
+  - ttf-jetbrains-mono-nerd
+debian_packages:
+  - fd-find
+  - fonts-jetbrains-mono
+  - build-essential
