@@ -5,4 +5,4 @@
   vars:
     upgrade_deb: true
   roles:
-    - setup
+    - upgrade

@@ -1,0 +1,4 @@
+- name: Debian Upgrade Tasks
+  ansible.builtin.include_role:
+    name: upgrade_deb
+  when: upgrade_deb | default(false)
