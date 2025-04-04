@@ -1,7 +1,13 @@
 ---
+- name: Debian Upgrade Tasks
+  ansible.builtin.include_role:
+    name: upgrade_deb
+  when: upgrade_deb | default(false)
+
 - name: Run Common Setup Tasks
   ansible.builtin.include_role:
     name: common
+  when: zsh | default(false)
 
 - name: Install ZSH
   ansible.builtin.include_role:
