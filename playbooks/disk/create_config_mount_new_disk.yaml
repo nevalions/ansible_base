@@ -17,6 +17,24 @@
         path: "/dev/{{ disk }}{{ disk_num }}"
       register: partition_exists
 
+    - name: Check if partition is already mounted
+      shell: findmnt -n -o SOURCE "/dev/{{ disk }}{{ disk_num }}" || findmnt -n -o SOURCE "{{ mount_point }}"
+      register: mount_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check where partition is mounted (if anywhere)
+      shell: findmnt -n -o TARGET "/dev/{{ disk }}{{ disk_num }}"
+      register: mount_location
+      changed_when: false
+      failed_when: false
+      when: mount_check.rc == 0
+
+    - name: Display mount information if already mounted
+      debug:
+        msg: "Partition /dev/{{ disk }}{{ disk_num }} is already mounted at {{ mount_location.stdout }}"
+      when: mount_check.rc == 0
+
     - name: Create partition if not already partitioned
       community.general.parted:
         device: "/dev/{{ disk }}"
@@ -24,7 +42,7 @@
         state: present
         fs_type: ext4
         part_end: "100%"
-      when: not partition_exists.stat.exists
+      when: not partition_exists.stat.exists and mount_check.rc != 0
 
     - name: Get filesystem information
       shell: blkid -s TYPE -o value /dev/{{ disk }}{{ disk_num }}
@@ -38,13 +56,13 @@
         msg: "Detected filesystem: {{ fs_type.stdout }}"
       when: partition_exists.stat.exists and fs_type.stdout is defined and fs_type.stdout != ''
 
-    - name: Format the partition ONLY if no filesystem exists
+    - name: Format the partition ONLY if no filesystem exists and not mounted
       filesystem:
         fstype: ext4
         dev: "/dev/{{ disk }}{{ disk_num }}"
-      when: partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == '')
+      when: partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == '') and mount_check.rc != 0
 
-    - name: Mount specified partition if it has ext4 filesystem
+    - name: Mount specified partition if it has ext4 filesystem and not already mounted
       mount:
         path: "{{ mount_point }}"
         src: "/dev/{{ disk }}{{ disk_num }}"
@@ -52,7 +70,8 @@
         opts: defaults
         state: mounted
       when: (fs_type.stdout is defined and fs_type.stdout == 'ext4') or
-        (partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == ''))
+        (partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == '')) and
+        mount_check.rc != 0
 
     - name: Add partition to fstab if it has ext4 filesystem
       mount:
@@ -70,3 +89,8 @@
           "WARNING: Existing {{ fs_type.stdout }} filesystem detected on /dev/{{ disk }}{{ disk_num }}.
           Not formatting or mounting as it's not ext4."
       when: fs_type.stdout is defined and fs_type.stdout != '' and fs_type.stdout != 'ext4'
+
+    - name: Warning if already mounted at different location
+      debug:
+        msg: "WARNING: /dev/{{ disk }}{{ disk_num }} is already mounted at {{ mount_location.stdout }} which differs from requested {{ mount_point }}. No changes were made."
+      when: mount_check.rc == 0 and mount_location.stdout != mount_point and mount_location.stdout != ''
