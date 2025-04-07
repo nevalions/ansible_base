@@ -1,0 +1,72 @@
+- name: Configure Disk and Mount Point (With Partitioning)
+  hosts: nfs_server
+  become: true
+  vars:
+    disk: sda
+    disk_num: 1
+    mount_point: /mnt/data
+  tasks:
+    - name: Create mount point for the disk
+      file:
+        path: "{{ mount_point }}"
+        state: directory
+        mode: "0755"
+
+    - name: Check if partition exists
+      stat:
+        path: "/dev/{{ disk }}{{ disk_num }}"
+      register: partition_exists
+
+    - name: Create partition if not already partitioned
+      community.general.parted:
+        device: "/dev/{{ disk }}"
+        number: "{{ disk_num }}"
+        state: present
+        fs_type: ext4
+        part_end: "100%"
+      when: not partition_exists.stat.exists
+
+    - name: Get filesystem information
+      shell: blkid -s TYPE -o value /dev/{{ disk }}{{ disk_num }}
+      register: fs_type
+      failed_when: false
+      changed_when: false
+      when: partition_exists.stat.exists
+
+    - name: Display detected filesystem (if any)
+      debug:
+        msg: "Detected filesystem: {{ fs_type.stdout }}"
+      when: partition_exists.stat.exists and fs_type.stdout is defined and fs_type.stdout != ''
+
+    - name: Format the partition ONLY if no filesystem exists
+      filesystem:
+        fstype: ext4
+        dev: "/dev/{{ disk }}{{ disk_num }}"
+      when: partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == '')
+
+    - name: Mount specified partition if it has ext4 filesystem
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/{{ disk }}{{ disk_num }}"
+        fstype: ext4
+        opts: defaults
+        state: mounted
+      when: (fs_type.stdout is defined and fs_type.stdout == 'ext4') or
+        (partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == ''))
+
+    - name: Add partition to fstab if it has ext4 filesystem
+      mount:
+        path: "{{ mount_point }}"
+        src: "/dev/{{ disk }}{{ disk_num }}"
+        fstype: ext4
+        opts: defaults
+        state: present
+      when: (fs_type.stdout is defined and fs_type.stdout == 'ext4') or
+        (partition_exists.stat.exists and (fs_type.stdout is not defined or fs_type.stdout == ''))
+
+    - name: Warning if existing non-ext4 filesystem detected
+      debug:
+        msg:
+          "WARNING: Existing {{ fs_type.stdout }} filesystem detected on /dev/{{ disk }}{{ disk_num }}.
+          Not formatting or mounting as it's not ext4."
+      when: fs_type.stdout is defined and fs_type.stdout != '' and fs_type.stdout != 'ext4'
