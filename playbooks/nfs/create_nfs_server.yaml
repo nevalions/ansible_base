@@ -1,0 +1,53 @@
+---
+- name: Configure NFS Server
+  hosts: nfs_server
+  become: true
+  vars:
+    nfs_exports:
+      - path: /srv/nfs/share
+        clients: "[internal-ip]/24"
+        options: "rw,sync,no_subtree_check"
+  tasks:
+    - name: Install NFS server packages
+      apt:
+        name: nfs-kernel-server
+        state: present
+
+    - name: Create NFS export directories
+      file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "0777"
+        owner: nobody
+        group: nogroup
+      loop: "{{ nfs_exports }}"
+
+    - name: Configure NFS exports
+      lineinfile:
+        path: /etc/exports
+        line: "{{ item.path }} {{ item.clients }}({{ item.options }})"
+        state: present
+        create: true
+      loop: "{{ nfs_exports }}"
+      notify: restart nfs
+
+    - name: Ensure ufw is installed
+      apt:
+        name: ufw
+        state: present
+      when: ansible_os_family == 'Debian'
+
+    - name: Allow NFS through firewall
+      ufw:
+        rule: allow
+        proto: tcp
+        port: "2049"
+        src: "{{ item.clients }}"
+      loop: "{{ nfs_exports }}"
+      when: ansible_os_family == 'Debian'
+
+  handlers:
+    - name: restart nfs
+      service:
+        name: nfs-kernel-server
+        state: restarted
