@@ -1,0 +1,30 @@
+---
+- name: Manage NFS Exports on server
+  hosts: nfs_server
+  become: true
+  vars:
+    action: "" # Set this to "unmount" to trigger the removal playbook or "create" to trigger create_nfs_server
+    nfs_exports:
+      - path: /srv/nfs/share/office
+        clients: "[internal-ip]/24"
+        options: "rw,sync,no_subtree_check"
+    nfs_exports_to_remove:
+      - path: /srv/nfs/share/office
+        clients: "[internal-ip]/24"
+        options: "rw,sync,no_subtree_check"
+
+  tasks:
+    - name: Include create NFS server tasks
+      include_tasks: create_nfs_server.yaml
+      when: action == "create"
+
+    - name: Include remove NFS server tasks
+      include_tasks: unmount_from_server.yaml
+      when: action == "unmount"
+  handlers:
+    - name: restart nfs
+      service:
+        name: "{{ nfs_service_name }}"
+        state: restarted
+      vars:
+        nfs_service_name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
