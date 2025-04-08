@@ -1,6 +1,5 @@
 ---
 # Main tasks file for nfs_server role
-
 - name: Install NFS server packages
   apt:
     name: nfs-kernel-server
