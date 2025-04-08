@@ -1,0 +1,15 @@
+# This file is managed by Ansible. Manual changes outside the custom section will be overwritten.
+#
+# BEGIN ANSIBLE MANAGED EXPORTS
+{% for export in nfs_exports %}
+{% for client in export.clients %}
+{{ export.path }} {{ client }}({{ export.options }})
+{% endfor %}
+{% endfor %}
+# END ANSIBLE MANAGED EXPORTS
+{% if custom_exports | length > 0 %}
+# Custom/pre-existing exports
+{% for line in custom_exports %}
+{{ line }}
+{% endfor %}
+{% endif %}

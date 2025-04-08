@@ -1,0 +1,47 @@
+---
+# Main tasks file for nfs_server role
+
+- name: Install NFS server packages
+  apt:
+    name: nfs-kernel-server
+    state: present
+
+- name: Import folder creation tasks
+  import_tasks: folders.yaml
+
+- name: Import exports configuration tasks
+  import_tasks: exports.yaml
+
+- name: Ensure ufw is installed
+  apt:
+    name: ufw
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Allow NFS through firewall for each client
+  ufw:
+    rule: allow
+    proto: tcp
+    port: "2049"
+    src: "{{ client }}"
+  loop: "{{ nfs_exports | subelements('clients') }}"
+  when: ansible_os_family == 'Debian'
+  vars:
+    client: "{{ item.1 }}"
+
+- name: Check if NFS rule is present for client
+  command: ufw status
+  register: ufw_status
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure NFS rule is present for client
+  assert:
+    that:
+      - "(client + ' ' in ufw_status.stdout and '2049' in ufw_status.stdout) or
+        ('2049/tcp' in ufw_status.stdout and client in ufw_status.stdout)"
+    fail_msg: "NFS firewall rule not found for client {{ client }}"
+    success_msg: "NFS firewall rule found for client {{ client }}"
+  loop: "{{ nfs_exports | subelements('clients') }}"
+  when: ansible_os_family == 'Debian'
+  vars:
+    client: "{{ item.1 }}"

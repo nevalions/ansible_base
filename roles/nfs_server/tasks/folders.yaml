@@ -1,0 +1,51 @@
+---
+# Folder creation tasks for nfs_server role
+
+- name: Check if folders exist
+  stat:
+    path: "{{ item.path }}"
+  loop: "{{ nfs_exports }}"
+  register: folder_check
+  ignore_errors: yes
+
+- name: Skip folder creation if skip_folder_check is true
+  debug:
+    msg: "Skipping folder check for {{ item.item.path }}"
+  when:
+    - item.stat.exists
+    - skip_folder_check | default(false)
+  loop: "{{ folder_check.results }}"
+
+- name: Fail if folders exist and not skipping checks
+  fail:
+    msg: "ERROR: The folder '{{ item.item.path }}' already exists. Please remove it or choose a different path."
+  when:
+    - item.stat.exists
+    - not skip_folder_check | default(false)
+  loop: "{{ folder_check.results }}"
+  run_once: true
+
+- name: Create NFS export directories
+  file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode | default('0777') }}"
+    owner: "{{ item.owner | default('nobody') }}"
+    group: "{{ item.group | default('nogroup') }}"
+    recurse: yes
+  loop: "{{ nfs_exports }}"
+  when: not item.skip_create | default(false)
+
+- name: Check if folders created
+  stat:
+    path: "{{ item.path }}"
+  loop: "{{ nfs_exports }}"
+  register: folder_created
+  ignore_errors: yes
+
+- name: Fail if folder not created
+  fail:
+    msg: "Folder '{{ item.path }}' not created - stopping execution"
+  when: not item.stat.exists
+  loop: "{{ folder_created.results }}"
+  ignore_errors: no
