@@ -1,0 +1,101 @@
+---
+# Tasks to remove NFS exports
+
+- name: Check if exports file exists
+  stat:
+    path: /etc/exports
+  register: exports_file
+
+- name: Read exports file
+  slurp:
+    src: /etc/exports
+  register: exports_content
+  when: exports_file.stat.exists
+
+- name: Remove NFS exports
+  lineinfile:
+    path: /etc/exports
+    regexp: "^{{ item.0.path }}\\s+{{ item.1 }}\\(.*\\)\\s*$"
+    state: absent
+  loop: "{{ nfs_exports_to_remove | subelements('clients') }}"
+  when: exports_file.stat.exists
+  register: exports_changed
+
+- name: Ensure NFS exports are removed
+  command: grep -q "{{ item.0.path }} {{ item.1 }}" /etc/exports
+  loop: "{{ nfs_exports_to_remove | subelements('clients') }}"
+  register: check_exports_final
+  changed_when: false
+  ignore_errors: true
+
+- name: Fail if export still exists
+  fail:
+    msg: "Export {{ item.item.0.path }} {{ item.item.1 }} still exists in /etc/exports!"
+  loop: "{{ check_exports_final.results }}"
+  when: item.rc == 0
+
+- name: restart nfs
+  service:
+    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
+    state: restarted
+
+- name: Reload exports after removal
+  command: exportfs -ra
+  become: true
+  # notify: restart nfs
+  when: exports_changed.changed
+
+- name: Remove export directories
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ nfs_exports_to_remove }}"
+  when: item.remove_dir | default(false) | bool
+  register: removed_folders
+
+- name: Show removal results
+  debug:
+    msg: "Removed folder {{ item.path }}"
+  loop: "{{ removed_folders.results }}"
+  when: item.changed
+
+- name: Remove NFS rule from firewall for each client
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "2049"
+    src: "{{ client }}"
+    delete: yes
+  loop: "{{ nfs_exports | subelements('clients') }}"
+  when: ansible_os_family == 'Debian'
+  vars:
+    client: "{{ item.1 }}"
+
+- name: Check if NFS rule is removed for client
+  command: ufw status
+  register: ufw_status
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure NFS rule is removed for client
+  assert:
+    that:
+      - "not ufw_status.stdout is regex('^2049/tcp\\\\s+ALLOW\\\\s+' ~ client ~ '\\\\s*$', multiline=True)"
+    fail_msg: "NFS firewall rule found for client {{ client }}"
+    success_msg: "NFS firewall rule not found for client {{ client }}"
+  loop: "{{ nfs_exports_to_remove | subelements('clients', skip_missing=True) }}"
+  loop_control:
+    loop_var: client_item
+  when: ansible_os_family == 'Debian'
+  vars:
+    client: "{{ client_item.1 }}"
+# - name: Ensure NFS rule is removed for client
+#   assert:
+#     that:
+#       - "(client + ' ' not in ufw_status.stdout and '2049' not in ufw_status.stdout) or
+#         ('2049/tcp' not in ufw_status.stdout and client not in ufw_status.stdout)"
+#     fail_msg: "NFS firewall rule found for client {{ client }}"
+#     success_msg: "NFS firewall rule no found for client {{ client }}"
+#   loop: "{{ nfs_exports_to_remove | subelements('clients') }}"
+#   when: ansible_os_family == 'Debian'
+#   vars:
+#     client: "{{ item.1 }}"

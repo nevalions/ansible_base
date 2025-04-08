@@ -1,0 +1,35 @@
+---
+# Comprehensive NFS management playbook
+- name: Manage NFS exports
+  hosts: nfs_servers
+  become: true
+  vars:
+    # Operation mode: 'install' or 'remove'
+    nfs_operation: "install"
+
+    # Define your exports
+    nfs_exports:
+      - path: /srv/nfs/share/office
+        clients:
+          - [internal-ip]/24
+          - 37.252.20.185
+          - 194.39.101.204
+        options: "rw,sync,no_subtree_check"
+
+    nfs_exports_to_remove:
+      - path: /srv/nfs/share/office
+        clients:
+          # - [internal-ip]/24
+          # - 37.252.20.185
+        options: "rw,sync,no_subtree_check"
+        remove_dir: false # Only used in removal
+
+  tasks:
+    - name: Apply NFS server role
+      include_role:
+        name: nfs_server
+      when: nfs_operation == "install"
+
+    - name: Run NFS removal tasks
+      include_tasks: roles/nfs_server/tasks/remove.yaml
+      when: nfs_operation == "remove"
