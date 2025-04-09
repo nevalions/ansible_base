@@ -1,6 +1,4 @@
 ---
-# Tasks to remove NFS exports
-
 - name: Check if exports file exists
   stat:
     path: /etc/exports
