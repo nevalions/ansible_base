@@ -1,0 +1,23 @@
+- name: Check if folders mount exist
+  stat:
+    path: "{{ item.mount_point }}"
+  loop: "{{ folders_list }}"
+  register: folder_check
+  ignore_errors: yes
+
+- name: Skip folder creation if skip_folder_check is true
+  debug:
+    msg: "Skipping folder check for {{ item.item.path }}"
+  when:
+    - item.stat.exists
+    - skip_folder_check | default(false)
+  loop: "{{ folder_check.results }}"
+
+- name: Fail if folders exist and not skipping checks
+  fail:
+    msg: "ERROR: The folder '{{ item.item.path }}' already exists. Please remove it or choose a different path."
+  when:
+    - item.stat.exists
+    - not skip_folder_check | default(false)
+  loop: "{{ folder_check.results }}"
+  run_once: true
