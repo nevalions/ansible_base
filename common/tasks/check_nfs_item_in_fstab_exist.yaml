@@ -1,0 +1,13 @@
+---
+- name: Check if NFS in /etc/fstab
+  shell: "grep -w '{{ item.server }}:{{ item.path }}' /etc/fstab || true"
+  register: fstab_check
+  loop: "{{ folders_list }}"
+  changed_when: false
+
+- name: Fail if NFS entry not in fstab
+  fail:
+    msg: "ERROR: The NFS mount '{{ item.item.server }}:{{ item.item.path }}' not in /etc/fstab."
+  when: item.stdout == ''
+  loop: "{{ fstab_check.results }}"
+  run_once: true

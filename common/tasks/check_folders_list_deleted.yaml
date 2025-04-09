@@ -1,0 +1,13 @@
+- name: Check if folders delete
+  stat:
+    path: "{{ item.mount_point }}"
+  loop: "{{ folders_list }}"
+  register: folder_delete
+  ignore_errors: yes
+
+- name: Fail if folder not delete
+  fail:
+    msg: "Folder '{{ item.path }}' not deleted - stopping execution"
+  when: item.stat.exists
+  loop: "{{ folder_delete.results }}"
+  ignore_errors: no
