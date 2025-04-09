@@ -7,15 +7,15 @@
     nfs_operation: "install"
 
     nfs_mounts:
-      - server: "[internal-ip]" # Replace with your NFS server hostname/IP
-        path: "/srv/nfs/share/office" # Updated path
-        mount_point: "/mnt/nfs/share/office" # Updated mount point
+      - server: "{{ADD_NFS_SERVER}}" # Replace with your NFS server hostname/IP
+        path: "{{ADD_NFS_CLIENTS_PATH}}" # Updated path
+        mount_point: "{{ADD_NFS_CLIENTS_MOUNT_POINT}}" # Updated mount point
         options: "defaults"
         fstab: true
     nfs_unmounts:
-      - server: "[internal-ip]" # Replace with your NFS server hostname/IP
-        path: "/srv/nfs/share/office" # Updated path
-        mount_point: "/mnt/nfs/share/office" # Updated mount point
+      - server: "{{REMOVE_NFS_SERVER}}" # Replace with your NFS server hostname/IP
+        path: "{{REMOVE_NFS_CLIENTS_PATH}}" # Updated path
+        mount_point: "{{REMOVE_NFS_CLIENTS_MOUNT_POINT}}" # Updated mount point
         options: "defaults"
         fstab: true
 

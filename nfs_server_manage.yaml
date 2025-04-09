@@ -9,18 +9,13 @@
 
     # Define your exports
     nfs_exports:
-      - path: /srv/nfs/share/office
-        clients:
-          - [internal-ip]/24
-          - 37.252.20.185
-          - 194.39.101.204
+      - path: "{{ ADD_NFS_SERVER_EXPORTS_PATH }}"
+        clients: "{{ ADD_NFS_SERVER_EXPORTS }}"
         options: "rw,sync,no_subtree_check"
 
     nfs_exports_to_remove:
-      - path: /srv/nfs/share/office
-        clients:
-          # - [internal-ip]/24
-          # - 37.252.20.185
+      - path: "{{ REMOVE_NFS_SERVER_EXPORTS_PATH }}"
+        clients: "{{ REMOVE_NFS_SERVER_EXPORTS }}"
         options: "rw,sync,no_subtree_check"
         remove_dir: false # Only used in removal
 
