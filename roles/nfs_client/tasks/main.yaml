@@ -1,0 +1,10 @@
+- name: Install NFS client packages
+  apt:
+    name: nfs-common
+    state: present
+
+- name: Import folder creation tasks
+  import_tasks: folders.yaml
+
+- name: Import mounts configuration tasks
+  import_tasks: mounts.yaml
