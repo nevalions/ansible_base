@@ -1,6 +1,6 @@
 ---
 - name: Install Docker on target servers
-  hosts: all
+  hosts: control
   become: yes
   vars:
     upgrade_deb: true
