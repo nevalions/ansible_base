@@ -28,6 +28,9 @@
     name: "{{ ansible_user }}"
     shell: /bin/zsh
   become: yes
+  become_user: "{{ ansible_user }}"
 
 - name: Apply dotfiles using stow
   shell: "cd {{ user_home }}/dotfiles && stow */"
+  become: yes
+  become_user: "{{ ansible_user }}"
