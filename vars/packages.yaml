@@ -32,3 +32,4 @@ debian_packages:
   - fd-find
   - fonts-jetbrains-mono
   - build-essential
+  - python3.12-venv
