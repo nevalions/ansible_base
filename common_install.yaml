@@ -1,6 +1,6 @@
 ---
 - name: Install HAProxy
-  hosts: control
+  hosts: bgp
   become: yes
   vars_files:
     - vars/packages.yaml
