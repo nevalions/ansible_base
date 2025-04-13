@@ -1,6 +1,6 @@
 ---
 - name: Install HAProxy
-  hosts: bgp
+  hosts: longhorn_all
   become: yes
   vars_files:
     - vars/packages.yaml
