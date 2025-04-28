@@ -1,6 +1,6 @@
 ---
 - name: Install Docker on target servers
-  hosts: longhorn_all
+  hosts: bay_cluster_all
   become: yes
   vars:
     upgrade_deb: true

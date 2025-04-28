@@ -1,6 +1,6 @@
 ---
 - name: Install HAProxy
-  hosts: longhorn_all
+  hosts: workers_office
   become: yes
   vars_files:
     - vars/packages.yaml
