@@ -1,177 +1,60 @@
 ---
 - name: Setup Kubernetes Cluster
-  hosts: kube
+  hosts: workers_longhorn
   become: yes
-  tasks:
-    - name: Clone Kubernetes configuration repository
-      git:
-        repo: "git@github.com:nevalions/kube.git"
-        dest: /kube
-        clone: yes
-        update: no
-      when: "inventory_hostname in groups['plane', 'worker']"
-      register: repo_cloned
-
-    # - name: Ensure SSH key is configured for GitHub (if using SSH)
-    #   copy:
-    #     src: "~/.ssh/id_rsa"
-    #     dest: "/home/{{ ansible_user }}/.ssh/id_rsa"
+  vars_files:
+    - vars/packages.yaml
+  vars:
+    common: false
+    zsh: false
+    dotfiles: false
+    kuber: true
+  roles:
+    - setup
+    # - name: Initialize Kubernetes master node (only on control plane)
+    #   command: kubeadm init --config=kubeadm-config.yaml
+    #
+    # - name: Setup kubeconfig for root user
+    #   command: "cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"
+    #
+    # - name: Change kubeconfig ownership
+    #   file:
+    #     path: "$HOME/.kube/config"
+    #     owner: "{{ ansible_user }}"
+    #     group: "{{ ansible_user }}"
     #     mode: "0600"
-    #   when:
-    #     - "inventory_hostname in groups['plane']"
-    #     - "'git@github.com' in git@github.com:nevalions/kube.git"
-
-    - name: Install git if not present
-      apt:
-        name: git
-        state: present
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Update system packages
-      apt:
-        update_cache: yes
-        upgrade: yes
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Install required packages
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-        state: present
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Add Kubernetes GPG key
-      shell: |
-        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      args:
-        creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Add Kubernetes repository
-      shell: |
-        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
-      args:
-        creates: /etc/apt/sources.list.d/kubernetes.list
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Install Kubernetes components
-      apt:
-        name:
-          - kubelet
-          - kubeadm
-          - kubectl
-          - containerd
-        state: present
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Hold Kubernetes packages
-      dpkg_selections:
-        name: "{{ item }}"
-        selection: hold
-      loop:
-        - kubelet
-        - kubeadm
-        - kubectl
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Disable swap
-      command: swapoff -a
-      ignore_errors: yes
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Comment out swap entry in /etc/fstab
-      replace:
-        path: /etc/fstab
-        regexp: '^([^#].*\sswap\s.*)$'
-        replace: '# \1'
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Load required kernel modules
-      modprobe:
-        name: "{{ item }}"
-        state: present
-      loop:
-        - overlay
-        - br_netfilter
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Enable IP forwarding and bridge networking
-      sysctl:
-        name: "{{ item.name }}"
-        value: "{{ item.value }}"
-        sysctl_set: yes
-        state: present
-        reload: yes
-      loop:
-        - { name: "net.ipv4.ip_forward", value: "1" }
-        - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Configure containerd cgroup driver
-      shell: |
-        mkdir -p /etc/containerd
-        containerd config default | sed -e 's#SystemdCgroup = false#SystemdCgroup = true#g' > /etc/containerd/config.toml
-      args:
-        creates: /etc/containerd/config.toml
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Restart containerd
-      systemd:
-        name: containerd
-        state: restarted
-        enabled: yes
-      when: "inventory_hostname in groups['plane', 'worker']"
-
-    - name: Initialize Kubernetes master node (only on control plane)
-      command: kubeadm init --config=kubeadm-config.yaml
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Setup kubeconfig for root user
-      command: "cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Change kubeconfig ownership
-      file:
-        path: "$HOME/.kube/config"
-        owner: "{{ ansible_user }}"
-        group: "{{ ansible_user }}"
-        mode: "0600"
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Wait for cluster to be ready
-      shell: kubectl get nodes
-      register: kubectl_get_nodes
-      until: kubectl_get_nodes.stdout.find('Ready') != -1
-      retries: 10
-      delay: 30
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Install Helm
-      shell: |
-        curl -LO https://get.helm.sh/helm-v3.17.0-linux-amd64.tar.gz && \
-        tar -zxvf helm-v3.17.0-linux-amd64.tar.gz && \
-        mv linux-amd64/helm /usr/local/bin/helm
-      args:
-        creates: /usr/local/bin/helm
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Install Ingress Nginx using Helm
-      command: helm install ingress-nginx ingress-nginx/ingress-nginx
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Install MetalLB for external IPs
-      shell: |
-        kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Install Cert-Manager
-      shell: |
-        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
-      when: "inventory_hostname in groups['plane']"
-
-    - name: Install Calico
-      shell: |
-        kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
-      when: "inventory_hostname in groups['plane']"
+    #
+    # - name: Wait for cluster to be ready
+    #   shell: kubectl get nodes
+    #   register: kubectl_get_nodes
+    #   until: kubectl_get_nodes.stdout.find('Ready') != -1
+    #   retries: 10
+    #   delay: 30
+    #
+    # - name: Install Helm
+    #   shell: |
+    #     curl -LO https://get.helm.sh/helm-v3.17.0-linux-amd64.tar.gz && \
+    #     tar -zxvf helm-v3.17.0-linux-amd64.tar.gz && \
+    #     mv linux-amd64/helm /usr/local/bin/helm
+    #   args:
+    #     creates: /usr/local/bin/helm
+    #   when: "inventory_hostname in groups['plane']"
+    #
+    # - name: Install Ingress Nginx using Helm
+    #   command: helm install ingress-nginx ingress-nginx/ingress-nginx
+    #   when: "inventory_hostname in groups['plane']"
+    #
+    # - name: Install MetalLB for external IPs
+    #   shell: |
+    #     kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
+    #   when: "inventory_hostname in groups['plane']"
+    #
+    # - name: Install Cert-Manager
+    #   shell: |
+    #     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+    #   when: "inventory_hostname in groups['plane']"
+    #
+    # - name: Install Calico
+    #   shell: |
+    #     kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
+    #   when: "inventory_hostname in groups['plane']"
