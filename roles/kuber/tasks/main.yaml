@@ -1,0 +1,130 @@
+- name: Update package lists (Ubuntu/Debian)
+  apt:
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+
+# - name: Install common packages
+#   package:
+#     name: "{{ common_packages }}"
+#     state: present
+#   when: "inventory_hostname in groups['planes', 'workers_all']"
+#
+- name: Install required packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+    state: present
+
+- name: Add Kubernetes GPG key
+  shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add Kubernetes repository
+  shell: |
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+  args:
+    creates: /etc/apt/sources.list.d/kubernetes.list
+
+- name: Update package lists (Ubuntu/Debian)
+  apt:
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Kubernetes components
+  apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+      - containerd
+    state: present
+
+- name: Hold Kubernetes packages
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Disable swap
+  command: swapoff -a
+  ignore_errors: yes
+
+- name: Comment out swap entry in /etc/fstab
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '# \1'
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Enable IP forwarding and bridge networking
+  sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: yes
+    state: present
+    reload: yes
+  loop:
+    - { name: "net.ipv4.ip_forward", value: "1" }
+    - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+
+- name: Configure containerd cgroup driver
+  shell: |
+    mkdir -p /etc/containerd
+    containerd config default | sed -e 's#SystemdCgroup = false#SystemdCgroup = true#g' > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+
+- name: Restart containerd
+  systemd:
+    name: containerd
+    state: restarted
+    enabled: yes
+
+- name: Ensure UFW is installed
+  apt:
+    name: ufw
+    state: present
+    update_cache: yes
+
+- name: Allow necessary ports and ranges
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto | default('tcp') }}"
+  loop:
+    - { port: "[custom-ssh-port]" }
+    - { port: "6443" }
+    - { port: "80" }
+    - { port: "443" }
+    - { port: "8443" }
+    - { port: "32338" }
+    - { port: "31575" }
+    - { port: "30000:32767" }
+    - { port: "7946" }
+    - { port: "2379:2380" }
+    - { port: "10250:10255" }
+    - { port: "10260" }
+    - { port: "64512" }
+    - { port: "179" }
+    - { port: "5473" }
+    - { port: "9443" }
+    - { port: "3000,3100,9080,9090,9093,9095" }
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: deny

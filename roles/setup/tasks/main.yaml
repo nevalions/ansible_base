@@ -21,8 +21,8 @@
 
 - name: Run Kubernetes Setup (if enabled)
   ansible.builtin.include_role:
-    name: kubernetes
-  when: install_kubernetes | default(false)
+    name: kuber
+  when: kuber | default(false)
 
 - name: Run HAProxy Setup (if enabled)
   ansible.builtin.include_role:
