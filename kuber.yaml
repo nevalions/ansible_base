@@ -1,6 +1,6 @@
 ---
 - name: Setup Kubernetes Cluster
-  hosts: workers_longhorn
+  hosts: workers_super
   become: yes
   vars_files:
     - vars/packages.yaml

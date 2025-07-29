@@ -1,6 +1,6 @@
 ---
 - name: Install HAProxy
-  hosts: workers_office
+  hosts: workers_super
   become: yes
   vars_files:
     - vars/packages.yaml
