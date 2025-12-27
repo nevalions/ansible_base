@@ -19,6 +19,7 @@ common_packages:
   - npm
   - wget
   - wireguard
+  - ripgrep
 arch_packages:
   - alacritty
   - atuin
