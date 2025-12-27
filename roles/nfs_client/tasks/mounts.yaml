@@ -1,11 +1,11 @@
 ---
 - name: Include items in fstab error
-  include_tasks: common/tasks/check_nfs_item_in_fstab_deleted.yaml
+  ansible.builtin.include_tasks: common/tasks/check_nfs_item_in_fstab_deleted.yaml
   vars:
     folders_list: "{{ nfs_mounts }}"
 
 - name: Mount NFS shares temporarily
-  mount:
+  ansible.posix.mount:
     path: "{{ item.mount_point }}"
     src: "{{ item.server }}:{{ item.path }}"
     fstype: nfs
@@ -15,7 +15,7 @@
   when: not item.fstab | default(false)
 
 - name: Add NFS shares to fstab
-  mount:
+  ansible.posix.mount:
     path: "{{ item.mount_point }}"
     src: "{{ item.server }}:{{ item.path }}"
     fstype: nfs
@@ -25,24 +25,26 @@
   when: item.fstab | default(false)
 
 - name: Include items in fstab
-  include_tasks: common/tasks/check_nfs_item_in_fstab_exist.yaml
+  ansible.builtin.include_tasks: common/tasks/check_nfs_item_in_fstab_exist.yaml
   vars:
     folders_list: "{{ nfs_mounts }}"
 
 - name: Mount all filesystems (for fstab entries)
-  command: mount -a
-  when: nfs_mounts | selectattr('fstab', 'defined') | selectattr('fstab') | list | count > 0
+  ansible.builtin.command: mount -a
+  when: nfs_mounts | selectattr('fstab', 'defined') | selectattr('fstab') | list | length > 0
 
 - name: Verify NFS mounts are active
-  command: findmnt -n -o SOURCE,TARGET "{{ item.mount_point }}"
+  ansible.builtin.command: findmnt -n -o SOURCE,TARGET "{{ item.mount_point }}"
   register: mount_verify
   loop: "{{ nfs_mounts }}"
   changed_when: false
-  ignore_errors: yes
+  ignore_errors: true
 
 - name: Fail if any mount failed
-  fail:
+  ansible.builtin.fail:
     msg: "ERROR: NFS mount failed for {{ item.item.server }}:{{ item.item.path }} at {{ item.item.mount_point }}"
-  when: item.rc != 0 or item.stdout == ''
+  when:
+    - item.rc != 0
+    - item.stdout == ''
   loop: "{{ mount_verify.results }}"
   run_once: true

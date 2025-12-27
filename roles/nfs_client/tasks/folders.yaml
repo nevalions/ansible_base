@@ -1,18 +1,19 @@
+---
 - name: Include folders list mount check
-  include_tasks: common/tasks/check_folders_mount_list.yaml
+  ansible.builtin.include_tasks: common/tasks/check_folders_mount_list.yaml
   vars:
     folders_list: "{{ nfs_mounts }}"
     skip_folder_check: false
 
 - name: Create mount points (including parent directories)
-  file:
+  ansible.builtin.file:
     path: "{{ item.mount_point }}"
     state: directory
     mode: "0755"
-    recurse: yes
+    recurse: true
   loop: "{{ nfs_mounts }}"
 
 - name: Include folders mount list check after creation
-  include_tasks: common/tasks/check_folders_mount_list_exist.yaml
+  ansible.builtin.include_tasks: common/tasks/check_folders_mount_list_exist.yaml
   vars:
     folders_list: "{{ nfs_mounts }}"

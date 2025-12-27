@@ -1,28 +1,28 @@
 ---
 - name: Update package lists (Ubuntu/Debian)
-  apt:
+  ansible.builtin.apt:
     update_cache: yes
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Update system packages (Arch/Manjaro)
-  pacman:
+  community.general.pacman:
     update_cache: yes
     upgrade: yes
   when: ansible_facts['os_family'] == "Archlinux"
 
 - name: Install common packages
-  package:
+  ansible.builtin.package:
     name: "{{ common_packages }}"
     state: present
 
 - name: Install additional Arch packages
-  pacman:
+  community.general.pacman:
     name: "{{ arch_packages }}"
     state: present
   when: ansible_facts['os_family'] == "Archlinux"
 
 - name: Install additional Debian packages
-  apt:
+  ansible.builtin.apt:
     name: "{{ debian_packages }}"
     state: present
   when: ansible_facts['os_family'] == "Debian"

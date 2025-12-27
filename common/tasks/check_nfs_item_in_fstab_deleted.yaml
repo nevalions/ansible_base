@@ -1,12 +1,12 @@
 ---
 - name: Check if NFS mount already exists in /etc/fstab
-  shell: "grep -w '{{ item.server }}:{{ item.path }}' /etc/fstab || true"
+  ansible.builtin.shell: "grep -w '{{ item.server }}:{{ item.path }}' /etc/fstab || true"
   register: fstab_check
   loop: "{{ folders_list }}"
   changed_when: false
 
 - name: Fail if NFS entry already exists in fstab
-  fail:
+  ansible.builtin.fail:
     msg: "ERROR: The NFS mount '{{ item.item.server }}:{{ item.item.path }}' is already present in /etc/fstab."
   when: item.stdout != ''
   loop: "{{ fstab_check.results }}"

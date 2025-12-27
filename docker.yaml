@@ -1,6 +1,6 @@
 ---
 - name: Install Docker on target servers
   hosts: all
-  become: yes
+  become: true
   roles:
     - docker

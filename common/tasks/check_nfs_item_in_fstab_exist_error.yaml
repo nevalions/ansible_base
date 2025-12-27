@@ -1,12 +1,12 @@
 ---
 - name: Check if NFS mount in /etc/fstab
-  shell: "grep -w '{{ item.server }}:{{ item.path }}' /etc/fstab || true"
+  ansible.builtin.shell: "grep -w '{{ item.server }}:{{ item.path }}' /etc/fstab || true"
   register: fstab_check
   loop: "{{ folders_list }}"
   changed_when: false
 
 - name: Fail if NFS entry exists in fstab
-  fail:
+  ansible.builtin.fail:
     msg: "ERROR: The NFS mount '{{ item.item.server }}:{{ item.item.path }}' present in /etc/fstab."
   when: item.stdout != ''
   loop: "{{ fstab_check.results }}"

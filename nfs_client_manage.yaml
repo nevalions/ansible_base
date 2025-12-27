@@ -3,28 +3,27 @@
   hosts: nfs_clients
   become: true
   vars:
-    # Operation mode: 'install' or 'remove'
     nfs_operation: "install"
 
     nfs_mounts:
-      - server: "{{ADD_NFS_SERVER}}" # Replace with your NFS server hostname/IP
-        path: "{{ADD_NFS_CLIENTS_PATH}}" # Updated path
-        mount_point: "{{ADD_NFS_CLIENTS_MOUNT_POINT}}" # Updated mount point
+      - server: "{{ADD_NFS_SERVER}}"
+        path: "{{ADD_NFS_CLIENTS_PATH}}"
+        mount_point: "{{ADD_NFS_CLIENTS_MOUNT_POINT}}"
         options: "defaults"
         fstab: true
     nfs_unmounts:
-      - server: "{{REMOVE_NFS_SERVER}}" # Replace with your NFS server hostname/IP
-        path: "{{REMOVE_NFS_CLIENTS_PATH}}" # Updated path
-        mount_point: "{{REMOVE_NFS_CLIENTS_MOUNT_POINT}}" # Updated mount point
+      - server: "{{REMOVE_NFS_SERVER}}"
+        path: "{{REMOVE_NFS_CLIENTS_PATH}}"
+        mount_point: "{{REMOVE_NFS_CLIENTS_MOUNT_POINT}}"
         options: "defaults"
         fstab: true
 
   tasks:
     - name: Apply NFS client role
-      include_role:
+      ansible.builtin.include_role:
         name: nfs_client
       when: nfs_operation == "install"
 
     - name: Run NFS removal tasks
-      include_tasks: roles/nfs_client/tasks/remove.yaml
+      ansible.builtin.include_tasks: roles/nfs_client/tasks/remove.yaml
       when: nfs_operation == "remove"

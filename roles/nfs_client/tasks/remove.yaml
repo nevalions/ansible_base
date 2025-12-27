@@ -1,30 +1,30 @@
 ---
 - name: Include folders mount list exist
-  include_tasks: common/tasks/check_folders_mount_list_exist.yaml
+  ansible.builtin.include_tasks: common/tasks/check_folders_mount_list_exist.yaml
   vars:
     folders_list: "{{ nfs_unmounts }}"
 
 - name: Unmount NFS shares
-  mount:
+  ansible.posix.mount:
     path: "{{ item.mount_point }}"
     src: "{{ item.server }}:{{ item.path }}"
     fstype: nfs
     state: unmounted
   loop: "{{ nfs_unmounts }}"
-  ignore_errors: yes
+  ignore_errors: true
 
 - name: Include folders mount list unmounted
-  include_tasks: common/tasks/check_folders_mount_list_unmounted.yaml
+  ansible.builtin.include_tasks: common/tasks/check_folders_mount_list_unmounted.yaml
   vars:
     folders_list: "{{ nfs_unmounts }}"
 
 - name: Include items in fstab
-  include_tasks: common/tasks/check_nfs_item_in_fstab_exist.yaml
+  ansible.builtin.include_tasks: common/tasks/check_nfs_item_in_fstab_exist.yaml
   vars:
     folders_list: "{{ nfs_unmounts }}"
 
 - name: Remove NFS shares from fstab
-  mount:
+  ansible.posix.mount:
     path: "{{ item.mount_point }}"
     src: "{{ item.server }}:{{ item.path }}"
     fstype: nfs
@@ -32,11 +32,11 @@
   loop: "{{ nfs_unmounts }}"
 
 - name: Include items removed from fstab
-  include_tasks: common/tasks/check_nfs_item_in_fstab_deleted.yaml
+  ansible.builtin.include_tasks: common/tasks/check_nfs_item_in_fstab_deleted.yaml
   vars:
     folders_list: "{{ nfs_unmounts }}"
 
 - name: Include folders list deleted
-  include_tasks: common/tasks/check_folders_list_deleted.yaml
+  ansible.builtin.include_tasks: common/tasks/check_folders_list_deleted.yaml
   vars:
     folders_list: "{{ nfs_unmounts }}"

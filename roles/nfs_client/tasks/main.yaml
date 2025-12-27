@@ -1,10 +1,11 @@
+---
 - name: Install NFS client packages
-  apt:
+  ansible.builtin.apt:
     name: nfs-common
     state: present
 
 - name: Import folder creation tasks
-  import_tasks: folders.yaml
+  ansible.builtin.import_tasks: folders.yaml
 
 - name: Import mounts configuration tasks
-  import_tasks: mounts.yaml
+  ansible.builtin.import_tasks: mounts.yaml

@@ -1,7 +1,7 @@
 ---
 - name: Setup Kubernetes Cluster
   hosts: workers_super
-  become: yes
+  become: true
   vars_files:
     - vars/packages.yaml
   vars:
@@ -11,50 +11,3 @@
     kuber: true
   roles:
     - setup
-    # - name: Initialize Kubernetes master node (only on control plane)
-    #   command: kubeadm init --config=kubeadm-config.yaml
-    #
-    # - name: Setup kubeconfig for root user
-    #   command: "cp -i /etc/kubernetes/admin.conf $HOME/.kube/config"
-    #
-    # - name: Change kubeconfig ownership
-    #   file:
-    #     path: "$HOME/.kube/config"
-    #     owner: "{{ ansible_user }}"
-    #     group: "{{ ansible_user }}"
-    #     mode: "0600"
-    #
-    # - name: Wait for cluster to be ready
-    #   shell: kubectl get nodes
-    #   register: kubectl_get_nodes
-    #   until: kubectl_get_nodes.stdout.find('Ready') != -1
-    #   retries: 10
-    #   delay: 30
-    #
-    # - name: Install Helm
-    #   shell: |
-    #     curl -LO https://get.helm.sh/helm-v3.17.0-linux-amd64.tar.gz && \
-    #     tar -zxvf helm-v3.17.0-linux-amd64.tar.gz && \
-    #     mv linux-amd64/helm /usr/local/bin/helm
-    #   args:
-    #     creates: /usr/local/bin/helm
-    #   when: "inventory_hostname in groups['plane']"
-    #
-    # - name: Install Ingress Nginx using Helm
-    #   command: helm install ingress-nginx ingress-nginx/ingress-nginx
-    #   when: "inventory_hostname in groups['plane']"
-    #
-    # - name: Install MetalLB for external IPs
-    #   shell: |
-    #     kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/main/config/manifests/metallb-native.yaml
-    #   when: "inventory_hostname in groups['plane']"
-    #
-    # - name: Install Cert-Manager
-    #   shell: |
-    #     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
-    #   when: "inventory_hostname in groups['plane']"
-    #
-    # - name: Install Calico
-    #   shell: |
-    #     kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
-    #   when: "inventory_hostname in groups['plane']"

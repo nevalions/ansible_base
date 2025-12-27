@@ -1,16 +1,11 @@
+---
 - name: Update package lists (Ubuntu/Debian)
-  apt:
+  ansible.builtin.apt:
     update_cache: yes
   when: ansible_facts['os_family'] == "Debian"
 
-# - name: Install common packages
-#   package:
-#     name: "{{ common_packages }}"
-#     state: present
-#   when: "inventory_hostname in groups['planes', 'workers_all']"
-#
 - name: Install required packages
-  apt:
+  ansible.builtin.apt:
     name:
       - apt-transport-https
       - ca-certificates
@@ -18,24 +13,24 @@
     state: present
 
 - name: Add Kubernetes GPG key
-  shell: |
+  ansible.builtin.shell: |
     curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
   args:
     creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
 - name: Add Kubernetes repository
-  shell: |
+  ansible.builtin.shell: |
     echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
   args:
     creates: /etc/apt/sources.list.d/kubernetes.list
 
 - name: Update package lists (Ubuntu/Debian)
-  apt:
+  ansible.builtin.apt:
     update_cache: yes
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Install Kubernetes components
-  apt:
+  ansible.builtin.apt:
     name:
       - kubelet
       - kubeadm
@@ -44,7 +39,7 @@
     state: present
 
 - name: Hold Kubernetes packages
-  dpkg_selections:
+  ansible.builtin.dpkg_selections:
     name: "{{ item }}"
     selection: hold
   loop:
@@ -53,17 +48,17 @@
     - kubectl
 
 - name: Disable swap
-  command: swapoff -a
-  ignore_errors: yes
+  ansible.builtin.command: swapoff -a
+  ignore_errors: true
 
 - name: Comment out swap entry in /etc/fstab
-  replace:
+  ansible.builtin.replace:
     path: /etc/fstab
     regexp: '^([^#].*\sswap\s.*)$'
     replace: '# \1'
 
 - name: Load required kernel modules
-  modprobe:
+  community.general.modprobe:
     name: "{{ item }}"
     state: present
   loop:
@@ -71,7 +66,7 @@
     - br_netfilter
 
 - name: Enable IP forwarding and bridge networking
-  sysctl:
+  ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     sysctl_set: yes
@@ -82,26 +77,26 @@
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
 
 - name: Configure containerd cgroup driver
-  shell: |
+  ansible.builtin.shell: |
     mkdir -p /etc/containerd
     containerd config default | sed -e 's#SystemdCgroup = false#SystemdCgroup = true#g' > /etc/containerd/config.toml
   args:
     creates: /etc/containerd/config.toml
 
 - name: Restart containerd
-  systemd:
+  ansible.builtin.systemd:
     name: containerd
     state: restarted
-    enabled: yes
+    enabled: true
 
 - name: Ensure UFW is installed
-  apt:
+  ansible.builtin.apt:
     name: ufw
     state: present
     update_cache: yes
 
 - name: Allow necessary ports and ranges
-  ufw:
+  community.general.ufw:
     rule: allow
     port: "{{ item.port }}"
     proto: "{{ item.proto | default('tcp') }}"
@@ -126,6 +121,6 @@
     - { port: "5432,4789,9099,51840,8472,6081,9101,8100,51840,4789,9101,9100" }
 
 - name: Enable UFW
-  ufw:
+  community.general.ufw:
     state: enabled
     policy: deny
