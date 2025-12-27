@@ -1,13 +1,13 @@
-- name: Check if folders delete
-  stat:
+---
+- name: Check if folders deleted
+  ansible.builtin.stat:
     path: "{{ item.mount_point }}"
   loop: "{{ folders_list }}"
   register: folder_delete
-  ignore_errors: yes
+  ignore_errors: true
 
-- name: Fail if folder not delete
-  fail:
+- name: Fail if folder not deleted
+  ansible.builtin.fail:
     msg: "Folder '{{ item.path }}' not deleted - stopping execution"
   when: item.stat.exists
   loop: "{{ folder_delete.results }}"
-  ignore_errors: no

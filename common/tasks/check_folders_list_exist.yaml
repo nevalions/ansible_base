@@ -1,13 +1,13 @@
+---
 - name: Check if folders created
-  stat:
+  ansible.builtin.stat:
     path: "{{ item.path }}"
   loop: "{{ folders_list }}"
   register: folder_created
-  ignore_errors: yes
+  ignore_errors: true
 
 - name: Fail if folder not created
-  fail:
+  ansible.builtin.fail:
     msg: "Folder '{{ item.path }}' not created - stopping execution"
   when: not item.stat.exists
   loop: "{{ folder_created.results }}"
-  ignore_errors: no

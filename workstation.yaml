@@ -1,7 +1,7 @@
 ---
 - name: Install Workstation
   hosts: all
-  become: yes
+  become: true
   vars_files:
     - vars/packages.yaml
   vars:

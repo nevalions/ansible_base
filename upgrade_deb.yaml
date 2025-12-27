@@ -1,7 +1,7 @@
 ---
 - name: Install Docker on target servers
   hosts: bay_cluster_all
-  become: yes
+  become: true
   vars:
     upgrade_deb: true
   roles:

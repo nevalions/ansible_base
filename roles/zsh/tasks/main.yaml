@@ -1,32 +1,32 @@
 ---
 - name: Get user home directory
-  command: getent passwd "{{ ansible_user }}"
+  ansible.builtin.command: getent passwd "{{ ansible_user }}"
   register: user_info
   changed_when: false
 
 - name: Extract home directory
-  set_fact:
+  ansible.builtin.set_fact:
     user_home: "{{ user_info.stdout.split(':')[5] }}"
 
 - name: Install Oh My Zsh
-  git:
+  ansible.builtin.git:
     repo: "https://github.com/ohmyzsh/ohmyzsh.git"
     dest: "{{ user_home }}/.oh-my-zsh"
-  become: yes
+  become: true
   become_user: "{{ ansible_user }}"
 
 - name: Install Powerlevel10k theme
-  git:
+  ansible.builtin.git:
     repo: "https://github.com/romkatv/powerlevel10k.git"
     dest: "{{ user_home }}/.oh-my-zsh/custom/themes/powerlevel10k"
-  become: yes
+  become: true
   become_user: "{{ ansible_user }}"
 
 - name: Install Zsh plugins
-  git:
+  ansible.builtin.git:
     repo: "{{ item.repo }}"
     dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/{{ item.name }}"
-  become: yes
+  become: true
   become_user: "{{ ansible_user }}"
   loop:
     - {

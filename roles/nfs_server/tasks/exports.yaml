@@ -1,73 +1,73 @@
+---
 - name: Get current exports file content
-  slurp:
+  ansible.builtin.slurp:
     src: /etc/exports
   register: exports_content
-  ignore_errors: yes
+  ignore_errors: true
 
-  # Parse the existing exports file
-- name: Parse existing exports
-  set_fact:
+- name: Parse the existing exports file
+  ansible.builtin.set_fact:
     existing_exports: []
-  when: exports_content is undefined or exports_content.content is undefined or exports_content.failed
+  when:
+    - exports_content is undefined
+    - exports_content.content is undefined
+    - exports_content.failed
 
 - name: Parse existing exports from file
-  set_fact:
+  ansible.builtin.set_fact:
     existing_exports: "{{ (exports_content.content | b64decode).split('\n') | select('match', '^[^#].*') | list }}"
-  when: exports_content is defined and exports_content.content is defined
-  ignore_errors: yes
+  when:
+    - exports_content is defined
+    - exports_content.content is defined
+  ignore_errors: true
 
-# Create list of ansible managed exports in the same format as they appear in the file
 - name: Create list of managed exports
-  set_fact:
+  ansible.builtin.set_fact:
     managed_exports: "{{ [] }}"
 
 - name: Format ansible managed exports
-  set_fact:
+  ansible.builtin.set_fact:
     managed_exports: "{{ managed_exports + [item.0.path + ' ' + item.1 + '(' + item.0.options + ')'] }}"
-  with_subelements:
-    - "{{ nfs_exports }}"
-    - clients
+  loop: "{{ nfs_exports | subelements('clients') }}"
 
-# Extract non-ansible exports and remove duplicates
 - name: Extract non-duplicate custom exports
-  set_fact:
+  ansible.builtin.set_fact:
     custom_exports: "{{ existing_exports | difference(managed_exports) }}"
 
 - name: Create NFS export directories
-  file:
+  ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
     mode: "{{ item.mode | default('0777') }}"
     owner: "{{ item.owner | default('nobody') }}"
     group: "{{ item.group | default('nogroup') }}"
-    recurse: yes
+    recurse: true
   loop: "{{ nfs_exports }}"
 
 - name: Generate /etc/exports from template
-  template:
+  ansible.builtin.template:
     src: exports.j2
     dest: /etc/exports
     owner: root
     group: root
     mode: "0644"
-    backup: yes
+    backup: true
   register: exports_changed
+  notify: restart nfs
 
 - name: Check if NFS exports are correctly added
-  command: grep -q "{{ item.0.path }} {{ item.1 }}({{ item.0.options }})" /etc/exports
-  with_subelements:
-    - "{{ nfs_exports }}"
-    - clients
+  ansible.builtin.command: grep -q "{{ item.0.path }} {{ item.1 }}({{ item.0.options }})" /etc/exports
+  loop: "{{ nfs_exports | subelements('clients') }}"
   register: check_exports_final
   failed_when: check_exports_final.rc != 0
   changed_when: false
 
-- name: restart nfs
-  service:
+- name: Restart nfs
+  ansible.builtin.service:
     name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
     state: restarted
 
 - name: Reload exports
-  command: exportfs -ra
+  ansible.builtin.command: exportfs -ra
   become: true
   when: exports_changed.changed

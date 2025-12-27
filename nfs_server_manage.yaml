@@ -1,13 +1,10 @@
 ---
-# Comprehensive NFS management playbook
 - name: Manage NFS exports
   hosts: nfs_servers
   become: true
   vars:
-    # Operation mode: 'install' or 'remove'
     nfs_operation: "install"
 
-    # Define your exports
     nfs_exports:
       - path: "{{ ADD_NFS_SERVER_EXPORTS_PATH }}"
         clients: "{{ ADD_NFS_SERVER_EXPORTS }}"
@@ -17,14 +14,14 @@
       - path: "{{ REMOVE_NFS_SERVER_EXPORTS_PATH }}"
         clients: "{{ REMOVE_NFS_SERVER_EXPORTS }}"
         options: "rw,sync,no_subtree_check"
-        remove_dir: false # Only used in removal
+        remove_dir: false
 
   tasks:
     - name: Apply NFS server role
-      include_role:
+      ansible.builtin.include_role:
         name: nfs_server
       when: nfs_operation == "install"
 
     - name: Run NFS removal tasks
-      include_tasks: roles/nfs_server/tasks/remove.yaml
+      ansible.builtin.include_tasks: roles/nfs_server/tasks/remove.yaml
       when: nfs_operation == "remove"

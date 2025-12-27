@@ -1,25 +1,26 @@
+---
 - name: Gather mount facts
-  setup:
+  ansible.builtin.setup:
     filter: ansible_mounts
 
 - name: Check if folder is mounted
-  set_fact:
+  ansible.builtin.set_fact:
     mounted_folders: "{{ folders_list | selectattr('mount_point', 'in', ansible_mounts | map(attribute='mount')) | list }}"
 
 - name: Fail if folder is still mounted
-  fail:
+  ansible.builtin.fail:
     msg: "Folder '{{ item.mount_point }}' is still mounted — aborting!"
   loop: "{{ mounted_folders }}"
 
 - name: Check if folder is mounted via /proc/mounts
-  shell: "mountpoint -q {{ item.mount_point }}"
+  ansible.builtin.shell: "mountpoint -q {{ item.mount_point }}"
   loop: "{{ folders_list }}"
   register: mount_check
-  ignore_errors: yes
+  ignore_errors: true
   changed_when: false
 
 - name: Fail if folder is mounted
-  fail:
+  ansible.builtin.fail:
     msg: "Folder '{{ item.item.mount_point }}' is still mounted — aborting!"
   when: item.rc == 0
   loop: "{{ mount_check.results }}"

@@ -1,7 +1,7 @@
 ---
 - name: Install HAProxy
   hosts: workers_super
-  become: yes
+  become: true
   vars_files:
     - vars/packages.yaml
   vars:
