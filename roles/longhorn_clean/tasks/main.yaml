@@ -1,0 +1,3 @@
+---
+- name: Run Longhorn cleanup tasks
+  ansible.builtin.include_tasks: remove.yaml

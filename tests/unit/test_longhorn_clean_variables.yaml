@@ -1,0 +1,33 @@
+---
+- name: Test Longhorn clean role variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify longhorn_data_path variable exists
+      ansible.builtin.assert:
+        that:
+          - longhorn_data_path is defined
+          - longhorn_data_path is string
+        success_msg: "longhorn_data_path variable defined correctly"
+        fail_msg: "longhorn_data_path variable is missing or wrong type"
+
+    - name: Verify kubelet_pods_path variable exists
+      ansible.builtin.assert:
+        that:
+          - kubelet_pods_path is defined
+          - kubelet_pods_path is string
+        success_msg: "kubelet_pods_path variable defined correctly"
+        fail_msg: "kubelet_pods_path variable is missing or wrong type"
+
+    - name: Verify variable naming convention
+      ansible.builtin.set_fact:
+        variable_names: ["longhorn_data_path", "kubelet_pods_path"]
+
+    - name: Check each variable name follows convention
+      ansible.builtin.assert:
+        that:
+          - item is search("^[a-z][a-z0-9_]*$")
+        success_msg: "Variable {{ item }} follows lowercase_with_underscores convention"
+        fail_msg: "Variable {{ item }} does not follow naming convention"
+      loop: "{{ variable_names }}"

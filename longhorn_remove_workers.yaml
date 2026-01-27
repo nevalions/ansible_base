@@ -1,0 +1,6 @@
+---
+- name: Remove Longhorn Folders and Data from Workers
+  hosts: workers_all
+  become: true
+  roles:
+    - longhorn_clean

@@ -174,6 +174,24 @@ ansible-playbook -i hosts_bay.ini nfs_client_manage.yaml \
   -e add_nfs_clients_mount_point="/mnt/data"
 ```
 
+### Longhorn Clean
+Removes Longhorn storage folders and data from workers.
+
+**Variables:**
+- `longhorn_data_path`: Longhorn data directory (default: `/var/lib/longhorn`)
+- `kubelet_pods_path`: Kubelet pods directory (default: `/var/lib/kubelet/pods`)
+
+**Features:**
+- Removes `/var/lib/longhorn/` directory recursively
+- Finds and removes Longhorn-related pod data from `/var/lib/kubelet/pods/`
+- Verifies removal succeeded with assertions
+- Supports check mode for dry-run testing
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml
+```
+
 ### Zsh
 Installs and configures Zsh shell with Oh My Zsh.
 
@@ -236,6 +254,7 @@ ansible-playbook -i hosts.ini common_install.yaml
 | `nfs_server_manage.yaml` | Manage NFS exports | nfs_servers |
 | `nfs_client_manage.yaml` | Manage NFS mounts | nfs_clients |
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
+| `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 
 ### Subdirectory Playbooks
 
