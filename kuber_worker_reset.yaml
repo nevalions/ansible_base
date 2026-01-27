@@ -2,6 +2,14 @@
 - name: Clean Kubernetes Worker Node for Fresh Join
   hosts: workers_all
   become: true
+  gather_facts: false
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - reset
+    - cleanup
+    - worker
   vars:
     remove_container_images: false
   roles:

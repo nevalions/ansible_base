@@ -2,6 +2,13 @@
 - name: Install Workstation
   hosts: all
   become: true
+  gather_facts: true
+  tags:
+    - workstation
+    - setup
+    - zsh
+    - dotfiles
+    - docker
   vars_files:
     - vars/packages.yaml
   vars:

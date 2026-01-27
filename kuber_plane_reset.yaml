@@ -2,6 +2,14 @@
 - name: Clean Kubernetes Control Plane for Fresh Setup
   hosts: masters
   become: true
+  gather_facts: false
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - reset
+    - cleanup
+    - master
   vars:
     remove_container_images: false
   roles:

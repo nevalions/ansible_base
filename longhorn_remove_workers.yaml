@@ -2,5 +2,12 @@
 - name: Remove Longhorn Folders and Data from Workers
   hosts: workers_all
   become: true
+  gather_facts: false
+  serial: "30%"
+  tags:
+    - longhorn
+    - storage
+    - cleanup
+    - remove
   roles:
     - longhorn_clean

@@ -1,0 +1,24 @@
+galaxy_info:
+  author: [your-username]
+  description: Debian-specific system upgrade tasks
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - system
+    - debian
+    - upgrade
+    - maintenance
+
+dependencies: []

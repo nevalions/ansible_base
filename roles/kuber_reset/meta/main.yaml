@@ -1,0 +1,24 @@
+galaxy_info:
+  author: [your-username]
+  description: Reset Kubernetes worker and control plane nodes to clean state
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - cleanup
+    - reset
+
+dependencies: []

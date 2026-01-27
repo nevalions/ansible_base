@@ -2,6 +2,13 @@
 - name: Setup Kubernetes Cluster
   hosts: workers_super
   become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - install
+    - cluster
   vars_files:
     - vars/packages.yaml
   vars:

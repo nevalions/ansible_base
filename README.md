@@ -6,10 +6,12 @@ Automated system configuration using Ansible for deploying and managing infrastr
 
 - [Overview](#overview)
 - [Project Structure](#project-structure)
+- [Configuration](#configuration)
 - [Quick Start](#quick-start)
 - [Roles](#roles)
 - [Playbooks](#playbooks)
 - [Testing](#testing)
+- [Code Quality](#code-quality)
 - [Contributing](#contributing)
 - [Documentation](#documentation)
 
@@ -28,32 +30,100 @@ This repository contains Ansible playbooks and roles for:
 ```
 ansible/
 ├── AGENTS.md                    # Coding guidelines and conventions
+├── ansible.cfg                  # Project-wide Ansible configuration
+├── .ansible-lint                # Linting rules and configuration
 ├── hosts_bay.ini                # Main inventory (Bay cluster)
 ├── hosts_haproxy.ini            # HAProxy inventory
 ├── hosts_restream.ini           # Restream inventory
 ├── vars/
 │   └── packages.yaml            # Package definitions by OS
+├── group_vars/                  # Group-specific variables
+│   ├── bgp.yml                # BGP node variables
+│   ├── lb.yml                 # Load balancer variables
+│   ├── planes.yml              # Kubernetes planes variables
+│   ├── workers_super.yml       # Super workers variables
+│   ├── workers_vas.yml        # VAS workers variables
+│   ├── cloud_workers.yml       # Cloud workers variables
+│   ├── cloud_planes.yml        # Cloud planes variables
+│   └── bay_cluster_all.yml    # Bay cluster all variables
 ├── common/
 │   └── tasks/                  # Common validation tasks
 ├── playbooks/
 │   └── disk/                   # Disk management playbooks
 ├── roles/
 │   ├── common/                 # System package installation
+│   │   └── meta/              # Role metadata
 │   ├── docker/                 # Docker installation
+│   │   └── meta/              # Role metadata
 │   ├── dotfiles/               # Dotfiles management
+│   │   └── meta/              # Role metadata
 │   ├── kuber/                  # Kubernetes setup
+│   │   ├── meta/              # Role metadata
+│   │   └── templates/          # Configuration templates
 │   ├── kuber_reset/            # Kubernetes node cleanup (worker and control plane)
+│   │   ├── handlers/           # Service management handlers
+│   │   └── meta/              # Role metadata
 │   ├── longhorn_clean/         # Longhorn storage cleanup
+│   │   └── meta/              # Role metadata
 │   ├── nfs_client/             # NFS client configuration
+│   │   └── meta/              # Role metadata
 │   ├── nfs_server/             # NFS server configuration
+│   │   ├── meta/              # Role metadata
+│   │   └── templates/          # Configuration templates
 │   ├── setup/                  # Role orchestrator
+│   │   └── meta/              # Role metadata
 │   ├── upgrade/                # System upgrade wrapper
+│   │   └── meta/              # Role metadata
 │   ├── upgrade_deb/            # Debian-specific upgrade
+│   │   └── meta/              # Role metadata
 │   └── zsh/                    # Zsh shell setup
 └── tests/
     ├── integration/             # Integration tests
     ├── unit/                   # Unit tests
     └── README.md               # Testing documentation
+```
+
+## Configuration
+
+### ansible.cfg
+
+The `ansible.cfg` file provides project-wide configuration:
+
+- **Inventory**: Defaults to `./hosts_bay.ini`
+- **Roles path**: Set to `./roles`
+- **Fact caching**: Uses JSON file caching in `/tmp/ansible_facts`
+- **Output format**: Uses YAML output for better readability
+- **SSH pipelining**: Enabled for faster execution
+- **Gathering**: Smart gathering to optimize performance
+- **Logging**: Logs to `./ansible.log`
+
+### group_vars
+
+Variables are organized in `group_vars/` directory:
+
+- **bgp**: BGP node configuration
+- **lb**: Load balancer configuration
+- **planes**: Kubernetes control plane configuration
+- **workers_super**: Super worker configuration
+- **workers_vas**: VAS worker configuration
+- **cloud_workers**: Cloud worker configuration
+- **cloud_planes**: Cloud plane configuration
+- **bay_cluster_all**: Common cluster variables
+
+Each file contains connection parameters (port, user, become method, Python interpreter).
+
+### .ansible-lint
+
+Code quality rules for Ansible:
+
+- **Enabled rules**: FQCN enforcement, naming conventions, YAML validation
+- **Excluded paths**: `.git/`, `tests/`, `.cache/`
+- **Profile**: Production-level strictness
+- **Warn list**: Experimental rules, ignore-errors usage
+
+Run linting:
+```bash
+ansible-lint
 ```
 
 ## Quick Start
@@ -263,6 +333,85 @@ ansible-playbook -i hosts.ini common_install.yaml
 ### Subdirectory Playbooks
 
 `playbooks/disk/create_config_mount_new_disk.yaml` - Disk partitioning and mounting
+
+### Using Tags
+
+All playbooks support tags for selective execution:
+
+**Example usage:**
+```bash
+# Run only Docker-related tasks
+ansible-playbook workstation.yaml --tags docker
+
+# Run multiple specific tags
+ansible-playbook workstation.yaml --tags "zsh,dotfiles"
+
+# Skip specific tags
+ansible-playbook workstation.yaml --skip-tags docker
+
+# List all available tags
+ansible-playbook workstation.yaml --list-tags
+```
+
+**Available tags by playbook:**
+- **workstation.yaml**: `workstation`, `setup`, `zsh`, `dotfiles`, `docker`
+- **docker.yaml**: `docker`, `containers`, `install`
+- **kuber.yaml**: `kubernetes`, `k8s`, `install`, `cluster`
+- **haproxy.yaml**: `loadbalancer`, `haproxy`, `install`
+- **common_install.yaml**: `common`, `packages`, `tools`, `zsh`, `dotfiles`
+- **nfs_server_manage.yaml**: `nfs`, `server`, `storage`, `manage`
+- **nfs_client_manage.yaml**: `nfs`, `client`, `storage`, `manage`
+- **upgrade_deb.yaml**: `upgrade`, `maintenance`, `debian`
+- **longhorn_remove_workers.yaml**: `longhorn`, `storage`, `cleanup`, `remove`
+- **kuber_worker_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `worker`
+- **kuber_plane_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `master`
+- **playbooks/disk/create_config_mount_new_disk.yaml**: `disk`, `storage`, `partition`, `mount`
+
+## Code Quality
+
+### Running Linter
+
+Use ansible-lint to check code quality:
+```bash
+ansible-lint
+```
+
+This will:
+- Validate YAML syntax
+- Check FQCN usage
+- Enforce naming conventions
+- Validate role structure
+- Detect anti-patterns
+
+### Auto-formatting
+
+Install and run yamllint for YAML formatting:
+```bash
+pip install yamllint
+yamllint .
+```
+
+### Code Quality Checklist
+
+- [ ] All roles have `meta/main.yaml` with author and platform info
+- [ ] All playbooks have descriptive tags
+- [ ] All cluster operations use `serial` parameter
+- [ ] All modules use Fully Qualified Collection Names (FQCN)
+- [ ] All variables follow `lowercase_with_underscores` convention
+- [ ] All playbooks pass ansible-lint checks
+- [ ] All inventory variables are in `group_vars/`
+
+### Rolling Updates
+
+Cluster playbooks use rolling updates with `serial` parameter:
+
+- **kuber.yaml**: `serial: 1` - One node at a time for cluster safety
+- **longhorn_remove_workers.yaml**: `serial: "30%"` - 30% of workers at a time
+- **kuber_worker_reset.yaml**: `serial: 1` - One worker at a time
+- **kuber_plane_reset.yaml**: `serial: 1` - One control plane at a time
+- **nfs_server_manage.yaml**: `serial: 1` - Single NFS server at a time
+- **nfs_client_manage.yaml**: `serial: "50%"` - Half of clients at a time
+- **upgrade_deb.yaml**: `serial: "30%"` - 30% of cluster at a time
 
 ## Testing
 

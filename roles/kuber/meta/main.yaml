@@ -1,0 +1,25 @@
+galaxy_info:
+  author: [your-username]
+  description: Setup Kubernetes cluster components including kubelet, kubeadm, kubectl and containerd
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - cluster
+    - container
+    - containerd
+
+dependencies: []

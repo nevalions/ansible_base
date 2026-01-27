@@ -1,0 +1,27 @@
+galaxy_info:
+  author: [your-username]
+  description: Manage user dotfiles using GNU Stow
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Arch
+      versions:
+        - all
+
+  galaxy_tags:
+    - dotfiles
+    - configuration
+    - user
+    - stow
+
+dependencies: []

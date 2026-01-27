@@ -5,6 +5,147 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-01-27
+
+### Added
+- **Configuration Management**:
+  - `ansible.cfg` with project-wide defaults (inventory, roles_path, fact caching, logging)
+  - `.ansible-lint` configuration for code quality checks
+- **Role Metadata**:
+  - `meta/main.yaml` for all 11 roles with galaxy_info, platforms, tags, and dependencies
+- **Variable Organization**:
+  - `group_vars/` directory structure for inventory variables
+  - 8 group variable files: `bgp.yml`, `lb.yml`, `planes.yml`, `workers_super.yml`, `workers_vas.yml`, `cloud_workers.yml`, `cloud_planes.yml`, `bay_cluster_all.yml`
+- **Playbook Enhancements**:
+  - `tags:` parameter to all 12 playbooks for selective execution
+  - `gather_facts:` explicit declarations to all playbooks
+  - `serial:` parameter for rolling updates in cluster playbooks
+- **Role Completeness**:
+  - Handlers added to `kuber_reset` role (restart kubelet, restart containerd, reload systemd)
+  - Tasks updated to use handlers in `kuber_reset` role
+- **Documentation**:
+  - New Configuration section in README.md (ansible.cfg, group_vars, .ansible-lint)
+  - New Tags usage section in README.md with examples
+  - New Rolling Updates section in README.md
+  - New Code Quality section in README.md with linting and checklist
+  - Updated project structure in README.md to include meta/ and handlers/ directories
+  - New Configuration Management section in AGENTS.md
+  - New Playbook Best Practices section in AGENTS.md (tags, gather_facts, serial)
+  - New Role Metadata section in AGENTS.md
+
+### Changed
+- **Inventory Cleanup**:
+  - Removed all `:vars` sections from `hosts_bay.ini`
+  - Variables now managed in `group_vars/` directory
+- **Playbook Updates** (12 playbooks):
+  - Added tags for selective execution
+  - Added explicit `gather_facts: true/false` declarations
+  - Added rolling update support with `serial` parameter where appropriate
+  - **workstation.yaml**: tags (workstation, setup, zsh, dotfiles, docker), gather_facts: true
+  - **docker.yaml**: tags (docker, containers, install), gather_facts: true
+  - **kuber.yaml**: tags (kubernetes, k8s, install, cluster), gather_facts: true, serial: 1
+  - **haproxy.yaml**: tags (loadbalancer, haproxy, install), gather_facts: false
+  - **common_install.yaml**: tags (common, packages, tools, zsh, dotfiles), gather_facts: true
+  - **nfs_server_manage.yaml**: tags (nfs, server, storage, manage), gather_facts: true, serial: 1
+  - **nfs_client_manage.yaml**: tags (nfs, client, storage, manage), gather_facts: true, serial: "50%"
+  - **upgrade_deb.yaml**: tags (upgrade, maintenance, debian), gather_facts: true, serial: "30%"
+  - **longhorn_remove_workers.yaml**: tags (longhorn, storage, cleanup, remove), gather_facts: false, serial: "30%"
+  - **kuber_worker_reset.yaml**: tags (kubernetes, k8s, reset, cleanup, worker), gather_facts: false, serial: 1
+  - **kuber_plane_reset.yaml**: tags (kubernetes, k8s, reset, cleanup, master), gather_facts: false, serial: 1
+  - **playbooks/disk/create_config_mount_new_disk.yaml**: tags (disk, storage, partition, mount), gather_facts: false
+- **Role Tasks**:
+  - `kuber_reset/tasks/main.yaml`: Updated stop services tasks to notify handlers
+
+### Standardized
+- All roles now include complete metadata in `meta/main.yaml`
+- All playbooks use consistent tag naming conventions
+- All inventory variables organized in `group_vars/` directory
+- Consistent use of FQCN throughout codebase
+- All cluster operations implement rolling updates with serial parameter
+
+### Improved
+- Better organization of inventory variables with `group_vars/`
+- Selective playbook execution with tags
+- Safer cluster operations with rolling updates
+- Enhanced code quality with ansible-lint
+- Better configuration management with ansible.cfg
+- Comprehensive documentation updates
+- All tests pass (54/54)
+- All ansible-lint checks pass (0 failures, 0 warnings)
+
+### Refactored
+- Inventory variable management from inline `:vars` to `group_vars/` directory
+- Playbook structure to include tags, gather_facts, and serial parameters
+- kuber_reset role to use handlers for service management
+
+## [Unreleased]
+
+### Added
+- **Configuration Management**:
+  - `ansible.cfg` with project-wide defaults (inventory, roles_path, fact caching, logging)
+  - `.ansible-lint` configuration for code quality checks
+- **Role Metadata**:
+  - `meta/main.yaml` for all 11 roles with author, description, platforms, tags, and dependencies
+- **Variable Organization**:
+  - `group_vars/` directory structure for inventory variables
+  - 8 group variable files: `bgp.yml`, `lb.yml`, `planes.yml`, `workers_super.yml`, `workers_vas.yml`, `cloud_workers.yml`, `cloud_planes.yml`, `bay_cluster_all.yml`
+- **Playbook Enhancements**:
+  - `tags:` parameter to all 12 playbooks for selective execution
+  - `gather_facts:` explicit declarations to all playbooks
+  - `serial:` parameter for rolling updates in cluster playbooks
+- **Role Completeness**:
+  - Handlers added to `kuber_reset` role (restart kubelet, restart containerd, reload systemd)
+  - Tasks updated to use handlers in `kuber_reset` role
+- **Documentation**:
+  - New Configuration section in README.md (ansible.cfg, group_vars, .ansible-lint)
+  - New Tags usage section in README.md with examples
+  - New Rolling Updates section in README.md
+  - New Code Quality section in README.md with linting and checklist
+  - Updated project structure in README.md
+
+### Changed
+- **Inventory Cleanup**:
+  - Removed all `:vars` sections from `hosts_bay.ini`
+  - Variables now managed in `group_vars/` directory
+- **Playbook Updates** (12 playbooks):
+  - Added tags for selective execution
+  - Added explicit `gather_facts: true/false` declarations
+  - Added rolling update support with `serial` parameter where appropriate
+  - **workstation.yaml**: tags (workstation, setup, zsh, dotfiles, docker), gather_facts: true
+  - **docker.yaml**: tags (docker, containers, install), gather_facts: true
+  - **kuber.yaml**: tags (kubernetes, k8s, install, cluster), gather_facts: true, serial: 1
+  - **haproxy.yaml**: tags (loadbalancer, haproxy, install), gather_facts: false
+  - **common_install.yaml**: tags (common, packages, tools, zsh, dotfiles), gather_facts: true
+  - **nfs_server_manage.yaml**: tags (nfs, server, storage, manage), gather_facts: true, serial: 1
+  - **nfs_client_manage.yaml**: tags (nfs, client, storage, manage), gather_facts: true, serial: "50%"
+  - **upgrade_deb.yaml**: tags (upgrade, maintenance, debian), gather_facts: true, serial: "30%"
+  - **longhorn_remove_workers.yaml**: tags (longhorn, storage, cleanup, remove), gather_facts: false, serial: "30%"
+  - **kuber_worker_reset.yaml**: tags (kubernetes, k8s, reset, cleanup, worker), gather_facts: false, serial: 1
+  - **kuber_plane_reset.yaml**: tags (kubernetes, k8s, reset, cleanup, master), gather_facts: false, serial: 1
+  - **playbooks/disk/create_config_mount_new_disk.yaml**: tags (disk, storage, partition, mount), gather_facts: false
+- **Role Tasks**:
+  - `kuber_reset/tasks/main.yaml`: Updated stop services tasks to notify handlers
+
+### Standardized
+- All roles now include complete metadata in `meta/main.yaml`
+- All playbooks use consistent tag naming conventions
+- All inventory variables organized in `group_vars/` directory
+- Consistent use of FQCN throughout codebase
+- All cluster operations implement rolling updates with serial parameter
+
+### Improved
+- Better organization of inventory variables with `group_vars/`
+- Selective playbook execution with tags
+- Safer cluster operations with rolling updates
+- Enhanced code quality with ansible-lint
+- Better configuration management with ansible.cfg
+- Comprehensive documentation updates
+
+### Refactored
+- Inventory variable management from inline `:vars` to `group_vars/` directory
+- Playbook structure to include tags, gather_facts, and serial parameters
+- kuber_reset role to use handlers for service management
+
 ## [Unreleased]
 
 ### Added

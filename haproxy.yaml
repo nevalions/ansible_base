@@ -2,6 +2,11 @@
 - name: Install HAProxy
   hosts: all
   become: true
+  gather_facts: false
+  tags:
+    - loadbalancer
+    - haproxy
+    - install
   vars_files:
     - vars/packages.yaml
   vars:

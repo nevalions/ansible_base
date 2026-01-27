@@ -2,6 +2,12 @@
 - name: Configure Disk and Mount Point (With Partitioning)
   hosts: nfs_server
   become: true
+  gather_facts: false
+  tags:
+    - disk
+    - storage
+    - partition
+    - mount
   vars:
     disk: sda
     disk_num: 1

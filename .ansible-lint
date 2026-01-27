@@ -1,0 +1,35 @@
+---
+exclude_paths:
+  - .cache/
+  - .git/
+  - tests/
+  - roles/**/molecule/
+  - .venv/
+  - .github/
+
+profile: production
+
+skip_list:
+  - yaml[line-length]  # Allow longer lines for readability
+  - jinja[spacing]     # Skip Jinja spacing rules
+
+warn_list:
+  - experimental  # Allow experimental rules but warn
+  - ignore-errors # Warn about ignore_errors usage
+  - no-changed-when # Warn about missing changed_when
+
+enable_list:
+  - fqcn[action-core]
+  - fqcn[action-added]
+  - name[casing]
+  - name[template]
+  - yaml
+  - role-name
+  - no-handler
+  - no-relative-paths
+  - risky-file-permissions
+  - package-latest
+  - command-instead-of-shell
+
+rulesdir:
+  - .ansible-lint-rules

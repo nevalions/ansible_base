@@ -4,12 +4,14 @@
     name: kubelet
     state: stopped
   failed_when: false
+  notify: restart kubelet
 
 - name: Stop containerd service
   ansible.builtin.systemd:
     name: containerd
     state: stopped
   failed_when: false
+  notify: restart containerd
 
 - name: Check if kubeadm reset is available
   ansible.builtin.command: which kubeadm
@@ -134,12 +136,14 @@
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
+  notify: reload systemd
 
 - name: Start containerd service
   ansible.builtin.systemd:
     name: containerd
     state: started
     enabled: true
+  notify: restart containerd
 
 - name: Display reset completion message
   ansible.builtin.debug:

@@ -2,6 +2,13 @@
 - name: Manage NFS exports
   hosts: nfs_clients
   become: true
+  gather_facts: true
+  serial: "50%"
+  tags:
+    - nfs
+    - client
+    - storage
+    - manage
   vars:
     nfs_operation: "install"
 

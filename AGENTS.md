@@ -151,6 +151,96 @@ ansible-playbook -i inventory <playbook>.yaml -v
 - Arch/Manjaro: Use `pacman`
 - Always condition OS-specific tasks with `when: ansible_facts['os_family'] == "<family>"`
 
+## Configuration Management
+
+### ansible.cfg
+Always create an `ansible.cfg` file in project root with:
+- `inventory` - Default inventory file path
+- `roles_path` - Explicit roles directory
+- `fact_caching` - Enable fact caching (jsonfile recommended)
+- `fact_caching_connection` - Cache location (e.g., `/tmp/ansible_facts`)
+- `stdout_callback` - Output format (yaml recommended)
+- `gathering` - Fact gathering mode (smart recommended)
+- `log_path` - Log file location
+- SSH pipelining enabled for faster execution
+
+### group_vars and host_vars
+- Use `group_vars/` for group-level inventory variables
+- Use `host_vars/` for host-specific variables
+- Remove `:vars` sections from inventory files
+- Organize variables by function and purpose
+- Use `.yml` extension for variable files
+- Keep sensitive data separate (consider ansible-vault)
+
+### ansible-lint
+Always configure `.ansible-lint` with:
+- `profile: production` for production-level strictness
+- `exclude_paths` to ignore cache, git, tests
+- `enable_list` for specific rules (FQCN, naming conventions)
+- `skip_list` for rules to ignore (line-length, jinja spacing)
+- `warn_list` for rules to warn about (experimental, ignore-errors)
+
+## Playbook Best Practices
+
+### Tags
+- Always add `tags:` to playbooks for selective execution
+- Use descriptive tag names (lowercase with underscores)
+- Multiple tags allowed per playbook
+- Tags enable partial execution and testing
+- Example tags: `kubernetes`, `docker`, `nfs`, `upgrade`
+- Usage: `ansible-playbook playbook.yaml --tags docker`
+
+### gather_facts
+- Always declare `gather_facts: true` or `false` explicitly
+- Use `true` when playbooks need OS/system information
+- Use `false` for simple operations to save time
+- Default is `true` if not specified
+- Consider fact caching for large inventories
+
+### Rolling Updates (serial)
+- Use `serial:` for cluster operations
+- `serial: 1` for critical operations (one host at a time)
+- `serial: "30%"` for rolling updates across 30% of hosts
+- `serial: "50%"` for updates across half the hosts
+- Ensures service availability during updates
+- Important for Kubernetes, NFS, and multi-node deployments
+
+## Role Metadata
+
+### meta/main.yaml
+All roles MUST include `meta/main.yaml` with:
+- `author` - Role author name
+- `description` - Clear role purpose
+- `company` - Organization (null if personal)
+- `license` - License type (MIT recommended)
+- `min_ansible_version` - Minimum Ansible version required
+- `platforms` - Supported OS distributions and versions
+- `galaxy_tags` - Relevant tags for Ansible Galaxy
+- `dependencies` - List of role dependencies (empty list if none)
+
+### Example meta/main.yaml
+```yaml
+---
+author: yourname
+description: Brief description of role purpose
+company: null
+license: MIT
+min_ansible_version: 2.16
+platforms:
+  - name: Debian
+    versions:
+      - bullseye
+      - bookworm
+  - name: Ubuntu
+    versions:
+      - focal
+      - jammy
+galaxy_tags:
+  - category1
+  - category2
+dependencies: []
+```
+
 ## Testing
 
 ### Test Suite

@@ -2,6 +2,13 @@
 - name: Setup common tools, zsh and dotfiles
   hosts: workers_super
   become: true
+  gather_facts: true
+  tags:
+    - common
+    - packages
+    - tools
+    - zsh
+    - dotfiles
   vars_files:
     - vars/packages.yaml
   vars:
