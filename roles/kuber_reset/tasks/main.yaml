@@ -3,13 +3,13 @@
   ansible.builtin.systemd:
     name: kubelet
     state: stopped
-  ignore_errors: true
+  failed_when: false
 
 - name: Stop containerd service
   ansible.builtin.systemd:
     name: containerd
     state: stopped
-  ignore_errors: true
+  failed_when: false
 
 - name: Check if kubeadm reset is available
   ansible.builtin.command: which kubeadm
@@ -20,8 +20,9 @@
 - name: Run kubeadm reset to clean cluster configuration
   ansible.builtin.command: kubeadm reset --force
   when: kubeadm_check.rc == 0
-  ignore_errors: true
+  failed_when: false
   register: kubeadm_reset
+  changed_when: kubeadm_reset.rc == 0
 
 - name: Remove CNI plugins and configurations
   ansible.builtin.file:
@@ -34,27 +35,30 @@
 
 - name: Remove Calico network interfaces
   ansible.builtin.shell: |
+    set -e -o pipefail
     ip link show | grep -E "cali|tunl|flannel" | awk '{print $2}' | cut -d':' -f1 | xargs -r -I {} ip link delete {} type dummy
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Remove all Docker/Containerd containers
   ansible.builtin.shell: |
+    set -e -o pipefail
     if command -v crictl &> /dev/null; then
       crictl ps -q | xargs -r crictl stop
       crictl ps -aq | xargs -r crictl rm
     fi
-  ignore_errors: true
+  failed_when: false
   changed_when: false
   register: container_cleanup
 
 - name: Remove all container images (if configured)
   ansible.builtin.shell: |
+    set -e -o pipefail
     if command -v crictl &> /dev/null; then
       crictl images -q | xargs -r crictl rmi
     fi
   when: remove_container_images | default(false)
-  ignore_errors: true
+  failed_when: false
   changed_when: false
   register: image_cleanup
 
@@ -88,7 +92,7 @@
     iptables -P INPUT ACCEPT
     iptables -P FORWARD ACCEPT
     iptables -P OUTPUT ACCEPT
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Flush ip6tables rules
@@ -102,19 +106,21 @@
     ip6tables -P INPUT ACCEPT
     ip6tables -P FORWARD ACCEPT
     ip6tables -P OUTPUT ACCEPT
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Clean kube-proxy iptables rules
   ansible.builtin.shell: |
+    set -e -o pipefail
     iptables-save | grep -v KUBE | grep -v CNI | iptables-restore
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Remove Kubernetes network namespaces
   ansible.builtin.shell: |
+    set -e -o pipefail
     ip netns list 2>/dev/null | grep -E 'cni|k8s' | xargs -r -I {} ip netns delete {}
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Clean any remaining Calico data
@@ -127,7 +133,7 @@
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
-    daemon_reload: yes
+    daemon_reload: true
 
 - name: Start containerd service
   ansible.builtin.systemd:

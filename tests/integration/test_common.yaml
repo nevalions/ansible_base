@@ -2,8 +2,8 @@
 - name: Test common role - localhost
   hosts: localhost
   connection: local
-  gather_facts: yes
-  become: yes
+  gather_facts: true
+  become: true
   vars:
     test_mode: true
   tasks:

@@ -1,7 +1,7 @@
 ---
 - name: Update package lists (Ubuntu/Debian)
   ansible.builtin.apt:
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Install required packages
@@ -28,7 +28,7 @@
 
 - name: Update package lists (Ubuntu/Debian)
   ansible.builtin.apt:
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Install Kubernetes components
@@ -51,7 +51,8 @@
 
 - name: Disable swap
   ansible.builtin.command: swapoff -a
-  ignore_errors: true
+  failed_when: false
+  changed_when: false
 
 - name: Comment out swap entry in /etc/fstab
   ansible.builtin.replace:
@@ -71,9 +72,9 @@
   ansible.posix.sysctl:
     name: "{{ item.name }}"
     value: "{{ item.value }}"
-    sysctl_set: yes
+    sysctl_set: true
     state: present
-    reload: yes
+    reload: true
   loop:
     - { name: "net.ipv4.ip_forward", value: "1" }
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
@@ -83,7 +84,7 @@
     src: containerd-config.toml.j2
     dest: /etc/containerd/config.toml
     mode: "0644"
-    backup: yes
+    backup: true
   notify: Restart containerd
 
 - name: Restart containerd
@@ -96,7 +97,7 @@
   ansible.builtin.apt:
     name: ufw
     state: present
-    update_cache: yes
+    update_cache: true
 
 - name: Allow necessary ports and ranges
   community.general.ufw:

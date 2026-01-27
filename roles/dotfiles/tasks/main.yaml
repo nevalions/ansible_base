@@ -12,6 +12,7 @@
   ansible.builtin.git:
     repo: "https://github.com/nevalions/dotfiles.git"
     dest: "{{ user_home }}/dotfiles"
+    version: main
   become: true
   become_user: "{{ ansible_user }}"
 
@@ -33,3 +34,5 @@
   ansible.builtin.shell: "cd {{ user_home }}/dotfiles && stow */"
   become: true
   become_user: "{{ ansible_user }}"
+  register: stow_result
+  changed_when: stow_result.rc == 0

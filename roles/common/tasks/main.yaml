@@ -1,13 +1,13 @@
 ---
 - name: Update package lists (Ubuntu/Debian)
   ansible.builtin.apt:
-    update_cache: yes
+    update_cache: true
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Update system packages (Arch/Manjaro)
   community.general.pacman:
-    update_cache: yes
-    upgrade: yes
+    update_cache: true
+    upgrade: true
   when: ansible_facts['os_family'] == "Archlinux"
 
 - name: Install common packages

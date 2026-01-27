@@ -13,10 +13,10 @@
   loop: "{{ mounted_folders }}"
 
 - name: Check if folder is mounted via /proc/mounts
-  ansible.builtin.shell: "mountpoint -q {{ item.mount_point }}"
+  ansible.builtin.command: mountpoint -q {{ item.mount_point }}
   loop: "{{ folders_list }}"
   register: mount_check
-  ignore_errors: true
+  failed_when: false
   changed_when: false
 
 - name: Fail if folder is mounted

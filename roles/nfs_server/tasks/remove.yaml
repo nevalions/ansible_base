@@ -18,30 +18,22 @@
   loop: "{{ nfs_exports_to_remove | subelements('clients') }}"
   when: exports_file.stat.exists
   register: exports_changed
-  notify: restart nfs
+  notify:
+    - Restart nfs
+    - Reload exports
 
 - name: Ensure NFS exports are removed
   ansible.builtin.command: grep -q "{{ item.0.path }} {{ item.1 }}" /etc/exports
   loop: "{{ nfs_exports_to_remove | subelements('clients') }}"
   register: check_exports_final
   changed_when: false
-  ignore_errors: true
+  failed_when: false
 
 - name: Fail if export still exists
   ansible.builtin.fail:
     msg: "Export {{ item.item.0.path }} {{ item.item.1 }} still exists in /etc/exports!"
   loop: "{{ check_exports_final.results }}"
   when: item.rc == 0
-
-- name: Restart nfs
-  ansible.builtin.service:
-    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
-    state: restarted
-
-- name: Reload exports after removal
-  ansible.builtin.command: exportfs -ra
-  become: true
-  when: exports_changed.changed
 
 - name: Remove export directories
   ansible.builtin.file:
@@ -55,7 +47,6 @@
   ansible.builtin.debug:
     msg: "Removed folder {{ item.path }}"
   loop: "{{ removed_folders.results }}"
-  when: item.changed
 
 - name: Remove NFS rule from firewall for each client
   community.general.ufw:
@@ -72,6 +63,7 @@
 - name: Check if NFS rule is removed for client
   ansible.builtin.command: ufw status
   register: ufw_status
+  changed_when: false
   when: ansible_os_family == 'Debian'
 
 - name: Ensure NFS rule is removed for client

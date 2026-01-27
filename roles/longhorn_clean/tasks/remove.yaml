@@ -54,8 +54,6 @@
   ansible.builtin.debug:
     msg: "Removed {{ item.item.path }}"
   loop: "{{ pods_removed.results }}"
-  when:
-    - item.changed
   loop_control:
     label: "{{ item.item.path | basename }}"
 

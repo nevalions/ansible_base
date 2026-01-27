@@ -1,5 +1,10 @@
 ---
-- name: restart nfs
+- name: Restart NFS
   ansible.builtin.service:
     name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
     state: restarted
+
+- name: Reload exports
+  ansible.builtin.command: exportfs -ra
+  become: true
+  changed_when: false

@@ -2,7 +2,7 @@
 - name: Test docker role variables and structure
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   vars:
     install_docker: true
   tasks:

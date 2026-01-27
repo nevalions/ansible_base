@@ -24,14 +24,22 @@
   loop: "{{ nfs_mounts }}"
   when: item.fstab | default(false)
 
+- name: Mount all NFS shares from fstab
+  ansible.posix.mount:
+    path: "{{ item.mount_point }}"
+    src: "{{ item.server }}:{{ item.path }}"
+    fstype: nfs
+    opts: "{{ item.options }}"
+    state: mounted
+  loop: "{{ nfs_mounts }}"
+  when:
+    - item.fstab | default(false)
+    - nfs_mounts | selectattr('fstab', 'defined') | selectattr('fstab') | list | length > 0
+
 - name: Include items in fstab
   ansible.builtin.include_tasks: common/tasks/check_nfs_item_in_fstab_exist.yaml
   vars:
     folders_list: "{{ nfs_mounts }}"
-
-- name: Mount all filesystems (for fstab entries)
-  ansible.builtin.command: mount -a
-  when: nfs_mounts | selectattr('fstab', 'defined') | selectattr('fstab') | list | length > 0
 
 - name: Verify NFS mounts are active
   ansible.builtin.command: findmnt -n -o SOURCE,TARGET "{{ item.mount_point }}"

@@ -2,8 +2,8 @@
 - name: Upgrade Debian packages
   become: true
   ansible.builtin.apt:
-    upgrade: yes
-    update_cache: yes
+    upgrade: true
+    update_cache: true
 
 - name: Check if reboot is required
   become: true

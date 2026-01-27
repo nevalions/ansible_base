@@ -2,7 +2,10 @@
 - name: Test Longhorn clean role variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
+  vars:
+    longhorn_data_path: "/var/lib/longhorn"
+    kubelet_pods_path: "/var/lib/kubelet/pods"
   tasks:
     - name: Verify longhorn_data_path variable exists
       ansible.builtin.assert:

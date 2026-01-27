@@ -11,7 +11,7 @@
     fstype: nfs
     state: unmounted
   loop: "{{ nfs_unmounts }}"
-  ignore_errors: true
+  failed_when: false
 
 - name: Include folders mount list unmounted
   ansible.builtin.include_tasks: common/tasks/check_folders_mount_list_unmounted.yaml

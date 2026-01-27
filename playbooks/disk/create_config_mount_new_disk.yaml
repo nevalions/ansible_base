@@ -25,7 +25,7 @@
       failed_when: false
 
     - name: Check where partition is mounted (if anywhere)
-      ansible.builtin.shell: findmnt -n -o TARGET "/dev/{{ disk }}{{ disk_num }}"
+      ansible.builtin.command: findmnt -n -o TARGET "/dev/{{ disk }}{{ disk_num }}"
       register: mount_location
       changed_when: false
       failed_when: false
@@ -46,7 +46,7 @@
       when: not partition_exists.stat.exists and mount_check.rc != 0
 
     - name: Get filesystem information
-      ansible.builtin.shell: blkid -s TYPE -o value /dev/{{ disk }}{{ disk_num }}
+      ansible.builtin.command: blkid -s TYPE -o value /dev/{{ disk }}{{ disk_num }}
       register: fs_type
       failed_when: false
       changed_when: false
@@ -104,7 +104,10 @@
 
     - name: Warning if already mounted at different location
       ansible.builtin.debug:
-        msg: "WARNING: /dev/{{ disk }}{{ disk_num }} is already mounted at {{ mount_location.stdout }} which differs from requested {{ mount_point }}. No changes were made."
+        msg: >-
+          WARNING: /dev/{{ disk }}{{ disk_num }} is already mounted at
+          {{ mount_location.stdout }} which differs from requested
+          {{ mount_point }}. No changes were made.
       when:
         - mount_check.rc == 0
         - mount_location.stdout != mount_point

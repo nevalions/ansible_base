@@ -12,6 +12,7 @@
   ansible.builtin.git:
     repo: "https://github.com/ohmyzsh/ohmyzsh.git"
     dest: "{{ user_home }}/.oh-my-zsh"
+    version: master
   become: true
   become_user: "{{ ansible_user }}"
 
@@ -19,6 +20,7 @@
   ansible.builtin.git:
     repo: "https://github.com/romkatv/powerlevel10k.git"
     dest: "{{ user_home }}/.oh-my-zsh/custom/themes/powerlevel10k"
+    version: master
   become: true
   become_user: "{{ ansible_user }}"
 
@@ -26,18 +28,19 @@
   ansible.builtin.git:
     repo: "{{ item.repo }}"
     dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/{{ item.name }}"
+    version: master
   become: true
   become_user: "{{ ansible_user }}"
   loop:
     - {
-        name: "zsh-autosuggestions",
-        repo: "https://github.com/zsh-users/zsh-autosuggestions.git",
-      }
+      name: "zsh-autosuggestions",
+      repo: "https://github.com/zsh-users/zsh-autosuggestions.git",
+    }
     - {
-        name: "zsh-syntax-highlighting",
-        repo: "https://github.com/zsh-users/zsh-syntax-highlighting.git",
-      }
+      name: "zsh-syntax-highlighting",
+      repo: "https://github.com/zsh-users/zsh-syntax-highlighting.git",
+    }
     - {
-        name: "fast-syntax-highlighting",
-        repo: "https://github.com/zdharma-continuum/fast-syntax-highlighting.git",
-      }
+      name: "fast-syntax-highlighting",
+      repo: "https://github.com/zdharma-continuum/fast-syntax-highlighting.git",
+    }

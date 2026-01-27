@@ -11,9 +11,11 @@ tests/
 │   ├── test_zsh.yaml
 │   ├── test_dotfiles.yaml
 │   └── test_upgrade_deb.yaml
-└── unit/               # Unit tests (validate variables & structure)
-    ├── test_docker_variables.yaml
-    └── test_nfs_server_variables.yaml
+ └── unit/               # Unit tests (validate variables & structure)
+     ├── test_docker_variables.yaml
+     ├── test_kuber_reset_variables.yaml
+     ├── test_longhorn_clean_variables.yaml
+     └── test_nfs_server_variables.yaml
 ```
 
 ## Running Tests
@@ -54,6 +56,8 @@ Verifies each role has:
 ### 3. Unit Tests
 Tests variable definitions and structures without executing roles:
 - **Docker role**: Validates `install_docker` variable and package list
+- **Kuber reset role**: Validates `remove_container_images` variable
+- **Longhorn clean role**: Validates `longhorn_data_path` and `kubelet_pods_path` variables
 - **NFS Server role**: Validates `skip_folder_check` variable and exports structure
 - **Variable naming**: Ensures lowercase_with_underscores convention
 
@@ -65,9 +69,9 @@ Tests variable definitions and structures without executing roles:
 ### 5. Integration Tests
 Tests role execution in check mode (no actual changes):
 - Common role
-- Zsh role
 - Dotfiles role
 - Upgrade Debian role
+- Zsh role
 
 ## Test Results
 

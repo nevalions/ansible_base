@@ -2,7 +2,7 @@
 - name: Test kuber_reset role variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   vars:
     remove_container_images: false
   tasks:
