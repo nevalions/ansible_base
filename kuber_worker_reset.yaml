@@ -1,0 +1,8 @@
+---
+- name: Clean Kubernetes Worker Node for Fresh Join
+  hosts: workers_all
+  become: true
+  vars:
+    remove_container_images: false
+  roles:
+    - kuber_reset

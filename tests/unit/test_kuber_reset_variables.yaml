@@ -1,0 +1,15 @@
+---
+- name: Test kuber_reset role variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    remove_container_images: false
+  tasks:
+    - name: Verify remove_container_images variable
+      ansible.builtin.assert:
+        that:
+          - remove_container_images is defined
+          - remove_container_images is boolean
+        success_msg: "remove_container_images variable defined correctly"
+        fail_msg: "remove_container_images variable is missing or not a boolean"
