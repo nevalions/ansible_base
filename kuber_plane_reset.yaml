@@ -1,0 +1,8 @@
+---
+- name: Clean Kubernetes Control Plane for Fresh Setup
+  hosts: masters
+  become: true
+  vars:
+    remove_container_images: false
+  roles:
+    - kuber_reset

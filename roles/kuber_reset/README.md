@@ -1,6 +1,6 @@
-# Kubernetes Worker Reset Role
+# Kubernetes Node Reset Role
 
-This role completely cleans a Kubernetes worker node to prepare it for a fresh `kubeadm join` operation.
+This role completely cleans a Kubernetes node (worker or control plane) to prepare it for a fresh `kubeadm join` or `kubeadm init` operation.
 
 ## What It Cleans
 
@@ -14,16 +14,26 @@ This role completely cleans a Kubernetes worker node to prepare it for a fresh `
 
 ## Usage
 
-### Basic usage (preserves container images)
+### Reset worker nodes (preserves container images)
 
 ```bash
 ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
 ```
 
+### Reset control plane nodes (preserves container images)
+
+```bash
+ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
+```
+
 ### Remove container images as well
 
 ```bash
+# Worker nodes
 ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml -e "remove_container_images=true"
+
+# Control plane nodes
+ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml -e "remove_container_images=true"
 ```
 
 ### Target specific worker groups
@@ -37,6 +47,9 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_office
 
 # Super worker
 ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_super
+
+# Specific masters
+ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --limit master1
 ```
 
 ## Variables
@@ -53,20 +66,27 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_super
 
 - This operation is destructive
 - Stops all running pods on the target nodes
-- Removes all Kubernetes configuration
+- Removes all Kubernetes configuration (including etcd data on control plane)
 - Ensure you have proper backups before running
-- Run against correct target group only
+- Run against correct target group only (workers or masters)
+- Control plane reset will remove etcd data and cluster state
 
 ## Example Workflow
 
 ```bash
-# 1. Reset workers
+# 1. Reset control plane
+ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
+
+# 2. Initialize new control plane (on master node)
+# kubeadm init --config=kubeadm-config.yaml
+
+# 3. Reset workers
 ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
 
-# 2. Get fresh join command from control plane
+# 4. Get fresh join command from control plane
 # On control plane:
 # kubeadm token create --print-join-command
 
-# 3. Join workers to cluster
+# 5. Join workers to cluster
 # Execute the join command on each worker or via automation
 ```

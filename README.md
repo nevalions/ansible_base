@@ -42,7 +42,7 @@ ansible/
 │   ├── docker/                 # Docker installation
 │   ├── dotfiles/               # Dotfiles management
 │   ├── kuber/                  # Kubernetes setup
-│   ├── kuber_reset/            # Kubernetes worker node cleanup
+│   ├── kuber_reset/            # Kubernetes node cleanup (worker and control plane)
 │   ├── longhorn_clean/         # Longhorn storage cleanup
 │   ├── nfs_client/             # NFS client configuration
 │   ├── nfs_server/             # NFS server configuration
@@ -258,6 +258,7 @@ ansible-playbook -i hosts.ini common_install.yaml
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `kuber_worker_reset.yaml` | Reset Kubernetes worker nodes | workers_all |
+| `kuber_plane_reset.yaml` | Reset Kubernetes control plane nodes | masters |
 
 ### Subdirectory Playbooks
 
