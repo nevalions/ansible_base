@@ -1,0 +1,36 @@
+---
+- name: Test kuber_init variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify kubeadm_pod_subnet variable exists
+      ansible.builtin.assert:
+        that:
+          - kubeadm_pod_subnet is defined
+          - kubeadm_pod_subnet | length > 0
+        success_msg: "kubeadm_pod_subnet variable defined correctly"
+        fail_msg: "kubeadm_pod_subnet variable is missing or empty"
+      vars:
+        kubeadm_pod_subnet: "[internal-ip]/16"
+
+    - name: Verify kubeadm_service_subnet variable exists
+      ansible.builtin.assert:
+        that:
+          - kubeadm_service_subnet is defined
+          - kubeadm_service_subnet | length > 0
+        success_msg: "kubeadm_service_subnet variable defined correctly"
+        fail_msg: "kubeadm_service_subnet variable is missing or empty"
+      vars:
+        kubeadm_service_subnet: "[internal-ip]/16"
+
+    - name: Verify calico_tigera_operator_url is valid URL
+      ansible.builtin.assert:
+        that:
+          - calico_tigera_operator_url is defined
+          - calico_tigera_operator_url | length > 0
+          - "'https://' in calico_tigera_operator_url"
+        success_msg: "calico_tigera_operator_url is valid"
+        fail_msg: "calico_tigera_operator_url is invalid or missing"
+      vars:
+        calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.1/manifests/tigera-operator.yaml"

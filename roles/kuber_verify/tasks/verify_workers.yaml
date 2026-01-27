@@ -1,0 +1,69 @@
+---
+- name: Get all worker nodes
+  ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane'
+  register: worker_nodes
+  changed_when: false
+
+- name: Display worker nodes
+  ansible.builtin.debug:
+    var: worker_nodes.stdout_lines
+
+- name: Get worker node count
+  ansible.builtin.set_fact:
+    worker_node_count: "{{ worker_nodes.stdout_lines[1:] | length if worker_nodes.stdout_lines is defined and worker_nodes.stdout_lines | length > 1 else 0 }}"
+
+- name: Assert workers are joined
+  ansible.builtin.assert:
+    that:
+      - worker_node_count | int > 0
+    success_msg: "{{ worker_node_count }} worker node(s) are joined"
+    fail_msg: "No worker nodes are joined to the cluster"
+  when: worker_node_count is defined
+
+- name: Check if all worker nodes are Ready
+  ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  register: workers_ready
+  changed_when: false
+  ignore_errors: true
+
+- name: Display worker readiness status
+  ansible.builtin.debug:
+    msg: "{{ workers_ready.stdout_lines }}"
+  when: workers_ready.stdout is defined
+
+- name: Assert all worker nodes are Ready
+  ansible.builtin.assert:
+    that:
+      - "'False' not in workers_ready.stdout"
+    success_msg: "All worker nodes are Ready"
+    fail_msg: "Some worker nodes are not Ready"
+  when: workers_ready.stdout is defined and workers_ready.stdout | length > 0
+
+- name: Get Calico pods on all nodes
+  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  register: calico_pods_wide
+  changed_when: false
+
+- name: Display Calico pods distribution
+  ansible.builtin.debug:
+    var: calico_pods_wide.stdout_lines
+
+- name: Count Calico pods
+  ansible.builtin.set_fact:
+    calico_pod_count: "{{ calico_pods_wide.stdout_lines[1:] | length if calico_pods_wide.stdout_lines is defined and calico_pods_wide.stdout_lines | length > 1 else 0 }}"
+
+- name: Verify Calico pods match cluster nodes
+  ansible.builtin.assert:
+    that:
+      - calico_pod_count | int == worker_node_count | int + 1
+    success_msg: "Calico pods ({{ calico_pod_count }}) match cluster nodes"
+    fail_msg: "Calico pods ({{ calico_pod_count }}) do not match expected cluster nodes"
+  when: calico_pod_count is defined and worker_node_count is defined
+
+- name: Get node details for each worker
+  ansible.builtin.command: kubectl describe node {{ item }}
+  register: node_details
+  changed_when: false
+  loop: "{{ worker_nodes.stdout_lines[1:] }}"
+  when: worker_nodes.stdout_lines is defined
+  ignore_errors: true

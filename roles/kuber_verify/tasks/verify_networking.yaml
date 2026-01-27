@@ -1,0 +1,132 @@
+---
+- name: Create test namespace
+  ansible.builtin.command: kubectl create namespace {{ verify_test_namespace }}
+  register: create_namespace
+  changed_when: "'created' in create_namespace.stdout"
+  ignore_errors: true
+
+- name: Create test pod manifest
+  ansible.builtin.copy:
+    dest: /tmp/test-pod.yaml
+    content: |
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-1
+        namespace: {{ verify_test_namespace }}
+      spec:
+        containers:
+        - name: nginx
+          image: {{ verify_test_pod_image }}
+          ports:
+          - containerPort: {{ verify_test_pod_port }}
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: test-pod-2
+        namespace: {{ verify_test_namespace }}
+      spec:
+        containers:
+        - name: nginx
+          image: {{ verify_test_pod_image }}
+          ports:
+          - containerPort: {{ verify_test_pod_port }}
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: dns-test-pod
+        namespace: {{ verify_test_namespace }}
+      spec:
+        containers:
+        - name: dns-test
+          image: {{ verify_test_pod_image }}
+          command: ["sh", "-c", "sleep 3600"]
+
+- name: Apply test pods
+  ansible.builtin.command: kubectl apply -f /tmp/test-pod.yaml
+  register: apply_test_pods
+  changed_when: true
+
+- name: Wait for test pods to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l app=nginx -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
+  register: wait_test_pods
+  changed_when: false
+  until: wait_test_pods.rc == 0
+  retries: "{{ verify_retry_count }}"
+  delay: "{{ verify_sleep_seconds }}"
+  ignore_errors: true
+
+- name: Display test pods status
+  ansible.builtin.command: kubectl get pods -n {{ verify_test_namespace }} -o wide
+  register: test_pods_status
+  changed_when: false
+
+- name: Show test pods
+  ansible.builtin.debug:
+    var: test_pods_status.stdout_lines
+
+- name: Get pod IP addresses
+  ansible.builtin.command: kubectl get pods -n {{ verify_test_namespace }} -o jsonpath='{.items[*].status.podIP}'
+  register: pod_ips
+  changed_when: false
+
+- name: Display pod IP addresses
+  ansible.builtin.debug:
+    msg: "Pod IPs: {{ pod_ips.stdout }}"
+
+- name: Test pod-to-pod connectivity (same namespace)
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- http://{{ pod_ips.stdout.split(' ')[1] }}/ --timeout=5
+  register: pod_connectivity
+  changed_when: false
+  ignore_errors: true
+  when: pod_ips.stdout.split(' ') | length >= 2
+
+- name: Display connectivity result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod connectivity: SUCCESS' if pod_connectivity.rc == 0 else 'Pod-to-pod connectivity: FAILED' }}"
+  when: pod_connectivity.rc is defined
+
+- name: Test DNS resolution
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} dns-test-pod -- nslookup [k8s-service]
+  register: dns_resolution
+  changed_when: false
+  ignore_errors: true
+
+- name: Display DNS result
+  ansible.builtin.debug:
+    msg: "{{ 'DNS resolution: SUCCESS' if dns_resolution.rc == 0 else 'DNS resolution: FAILED' }}"
+
+- name: Test external connectivity
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://[your-username].google.com --timeout=5 --spider
+  register: external_connectivity
+  changed_when: false
+  ignore_errors: true
+
+- name: Display external connectivity result
+  ansible.builtin.debug:
+    msg: "{{ 'External connectivity: SUCCESS' if external_connectivity.rc == 0 else 'External connectivity: FAILED' }}"
+
+- name: Get pod logs
+  ansible.builtin.command: kubectl logs -n {{ verify_test_namespace }} test-pod-1
+  register: pod_logs
+  changed_when: false
+  ignore_errors: true
+
+- name: Describe pods for troubleshooting
+  ansible.builtin.command: kubectl describe pod -n {{ verify_test_namespace }} test-pod-1
+  register: pod_describe
+  changed_when: false
+  ignore_errors: true
+
+- name: Clean up test namespace
+  ansible.builtin.command: kubectl delete namespace {{ verify_test_namespace }}
+  register: delete_namespace
+  changed_when: "'deleted' in delete_namespace.stdout"
+  ignore_errors: true
+
+- name: Display cleanup result
+  ansible.builtin.debug:
+    msg: "Test namespace {{ verify_test_namespace }} deleted"
+  when: delete_namespace.rc == 0

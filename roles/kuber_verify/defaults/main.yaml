@@ -1,0 +1,7 @@
+---
+verify_test_namespace: "kuber-verify-test"
+verify_test_pod_image: "nginx:alpine"
+verify_test_pod_port: "80"
+verify_timeout_seconds: "300"
+verify_sleep_seconds: "5"
+verify_retry_count: "20"

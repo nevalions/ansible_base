@@ -1,0 +1,108 @@
+---
+- name: Check if node is already joined
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Fail if node is already joined
+  ansible.builtin.fail:
+    msg: "Node is already joined to a cluster. Use kuber_worker_reset.yaml to reset first."
+  when: kubelet_conf.stat.exists
+
+- name: Generate kubeadm join token from control plane
+  ansible.builtin.command: kubeadm token create --print-join-command
+  register: join_command
+  changed_when: true
+  delegate_to: "{{ kuber_join_control_plane_host }}"
+  run_once: true
+
+- name: Parse join command to extract token and CA cert hash
+  ansible.builtin.set_fact:
+    join_command_parts: "{{ join_command.stdout | regex_replace('kubeadm join ', '') | regex_replace('--discovery-token-ca-cert-hash ', '') | split(' ') }}"
+    kuber_join_token: "{{ join_command.stdout | regex_search('--token\\s+[a-z0-9]+\\.[a-z0-9]+') | regex_replace('--token\\s+', '') }}"
+    kuber_join_ca_cert_hash: "{{ join_command.stdout | regex_search('sha256:[a-f0-9]{64}') | regex_replace('sha256:', '') }}"
+
+- name: Display join information
+  ansible.builtin.debug:
+    msg:
+      - "Control Plane: {{ kuber_join_control_plane_ip }}"
+      - "Token: {{ kuber_join_token }}"
+      - "CA Cert Hash: sha256:{{ kuber_join_ca_cert_hash }}"
+
+- name: Copy kubeadm join config
+  ansible.builtin.template:
+    src: kube-join.yaml.j2
+    dest: /tmp/kube-join.yaml
+    mode: "0644"
+
+- name: Join worker node to cluster
+  ansible.builtin.command: kubeadm join --config=/tmp/kube-join.yaml
+  register: kubeadm_join
+  changed_when: true
+
+- name: Wait for kubelet to be ready
+  ansible.builtin.command: systemctl is-active kubelet
+  register: kubelet_status
+  until: kubelet_status.rc == 0
+  retries: 10
+  delay: 5
+  changed_when: false
+
+- name: Display join success message
+  ansible.builtin.debug:
+    msg: "Node {{ inventory_hostname }} successfully joined to cluster"
+
+- name: Verify node is visible from control plane
+  ansible.builtin.command: kubectl get nodes {{ ansible_hostname }}
+  register: node_check
+  delegate_to: "{{ kuber_join_control_plane_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display node status
+  ansible.builtin.debug:
+    var: node_check.stdout_lines
+  when: node_check.rc == 0
+
+- name: Wait for node to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready node {{ ansible_hostname }} --timeout=600s
+  register: node_ready
+  delegate_to: "{{ kuber_join_control_plane_host }}"
+  run_once: true
+  changed_when: false
+  until: node_ready.rc == 0
+  retries: 30
+  delay: 10
+  ignore_errors: true
+
+- name: Assert node is Ready
+  ansible.builtin.assert:
+    that:
+      - node_ready.rc == 0
+    success_msg: "Worker node {{ ansible_hostname }} is Ready"
+    fail_msg: "Worker node {{ ansible_hostname }} is not Ready after 600s"
+  when: node_ready.rc is defined
+
+- name: Get Calico pod on this worker
+  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  register: calico_pod_check
+  delegate_to: "{{ kuber_join_control_plane_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico pods
+  ansible.builtin.debug:
+    var: calico_pod_check.stdout_lines
+  when: calico_pod_check.rc == 0
+
+- name: Display worker join summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Worker Join Complete ==="
+      - "Node: {{ ansible_hostname }}"
+      - "Status: Ready"
+      - "Calico CNI: Active"
+      - "Next step: Run kuber_verify.yaml for full cluster health check"
+

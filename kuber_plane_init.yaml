@@ -1,0 +1,14 @@
+---
+- name: Initialize Kubernetes Control Plane
+  hosts: planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - init
+    - plane
+    - cni
+  roles:
+    - kuber_init

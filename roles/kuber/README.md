@@ -58,6 +58,43 @@ roles/kuber/
     - kuber
 ```
 
+### Automated Cluster Setup
+
+After running this role on all nodes, use automated playbooks for full cluster setup:
+
+```bash
+# 1. Install packages on all nodes (this role)
+ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
+
+# 2. Initialize control plane with Calico (automated)
+ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+
+# 3. Join workers to cluster (automated)
+ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
+
+# 4. Verify cluster health (automated)
+ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+```
+
+For complete setup documentation, see [../../KUBERNETES_SETUP.md](../../KUBERNETES_SETUP.md).
+
+### Manual Installation (Alternative)
+
+If you prefer manual setup:
+
+```bash
+# On control plane node only
+sudo kubeadm init --pod-network-cidr=[internal-ip]/16
+
+# Setup kubectl for current user
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Join worker nodes
+sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+```
+
 ### After Installation
 
 After running this role on all nodes, initialize the cluster on the control plane:

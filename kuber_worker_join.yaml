@@ -1,0 +1,13 @@
+---
+- name: Join Worker Nodes to Kubernetes Cluster
+  hosts: workers_all
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - join
+    - worker
+  roles:
+    - kuber_join

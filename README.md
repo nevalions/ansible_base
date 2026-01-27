@@ -35,6 +35,8 @@ ansible/
 ├── hosts_bay.ini                # Main inventory (Bay cluster)
 ├── hosts_haproxy.ini            # HAProxy inventory
 ├── hosts_restream.ini           # Restream inventory
+├── KUBERNETES_SETUP.md         # Kubernetes setup guide
+├── KUBERNETES_QUICKREF.md      # Kubernetes quick reference
 ├── vars/
 │   └── packages.yaml            # Package definitions by OS
 ├── group_vars/                  # Group-specific variables
@@ -50,6 +52,12 @@ ansible/
 │   └── tasks/                  # Common validation tasks
 ├── playbooks/
 │   └── disk/                   # Disk management playbooks
+├── kuber.yaml                  # Kubernetes package installation
+├── kuber_plane_init.yaml        # Control plane initialization
+├── kuber_worker_join.yaml       # Worker node joining
+├── kuber_verify.yaml            # Cluster health verification
+├── kuber_plane_reset.yaml       # Control plane cleanup
+├── kuber_worker_reset.yaml      # Worker node cleanup
 ├── roles/
 │   ├── common/                 # System package installation
 │   │   └── meta/              # Role metadata
@@ -57,9 +65,21 @@ ansible/
 │   │   └── meta/              # Role metadata
 │   ├── dotfiles/               # Dotfiles management
 │   │   └── meta/              # Role metadata
-│   ├── kuber/                  # Kubernetes setup
+│   ├── kuber/                  # Kubernetes package setup
 │   │   ├── meta/              # Role metadata
 │   │   └── templates/          # Configuration templates
+│   ├── kuber_init/            # Control plane initialization
+│   │   ├── tasks/             # Init, Calico install, verification
+│   │   ├── handlers/          # Service handlers
+│   │   ├── defaults/          # Variables (pod CIDR, service CIDR)
+│   │   └── templates/         # kubeadm config template
+│   ├── kuber_join/            # Worker node joining
+│   │   ├── tasks/             # Token generation, join, verification
+│   │   ├── defaults/          # Variables (control plane IP)
+│   │   └── templates/         # kubeadm join config template
+│   ├── kuber_verify/          # Cluster health verification
+│   │   ├── tasks/             # Control plane, worker, network checks
+│   │   └── defaults/          # Verification configuration
 │   ├── kuber_reset/            # Kubernetes node cleanup (worker and control plane)
 │   │   ├── handlers/           # Service management handlers
 │   │   └── meta/              # Role metadata
@@ -193,7 +213,7 @@ ansible-playbook -i hosts.ini docker.yaml
 ```
 
 ### Kuber
-Sets up Kubernetes cluster components.
+Sets up Kubernetes cluster components (packages only).
 
 **Features:**
 - Installs kubelet, kubeadm, kubectl
@@ -207,6 +227,14 @@ Sets up Kubernetes cluster components.
 ```bash
 ansible-playbook -i hosts.ini kuber.yaml
 ```
+
+**Automated Cluster Setup:**
+Use these playbooks for full cluster automation:
+- `kuber_plane_init.yaml` - Initialize control plane with Calico
+- `kuber_worker_join.yaml` - Join workers to cluster
+- `kuber_verify.yaml` - Verify cluster health
+
+See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) for complete setup guide.
 
 ### NFS Server
 Configures NFS server with export management.
@@ -320,15 +348,18 @@ ansible-playbook -i hosts.ini common_install.yaml
 |----------|---------|-------|
 | `workstation.yaml` | Full workstation setup | workers |
 | `docker.yaml` | Install Docker only | workers |
-| `kuber.yaml` | Setup Kubernetes cluster | workers |
+| `kuber.yaml` | Setup Kubernetes packages | workers |
+| `kuber_plane_init.yaml` | Initialize control plane with Calico | planes |
+| `kuber_worker_join.yaml` | Join workers to cluster | workers_all |
+| `kuber_verify.yaml` | Verify cluster health | planes |
+| `kuber_plane_reset.yaml` | Reset control plane nodes | masters |
+| `kuber_worker_reset.yaml` | Reset worker nodes | workers_all |
 | `haproxy.yaml` | Install HAProxy | haproxy |
 | `common_install.yaml` | Setup common tools, zsh, dotfiles | workers |
 | `nfs_server_manage.yaml` | Manage NFS exports | nfs_servers |
 | `nfs_client_manage.yaml` | Manage NFS mounts | nfs_clients |
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
-| `kuber_worker_reset.yaml` | Reset Kubernetes worker nodes | workers_all |
-| `kuber_plane_reset.yaml` | Reset Kubernetes control plane nodes | masters |
 
 ### Subdirectory Playbooks
 
@@ -357,6 +388,9 @@ ansible-playbook workstation.yaml --list-tags
 - **workstation.yaml**: `workstation`, `setup`, `zsh`, `dotfiles`, `docker`
 - **docker.yaml**: `docker`, `containers`, `install`
 - **kuber.yaml**: `kubernetes`, `k8s`, `install`, `cluster`
+- **kuber_plane_init.yaml**: `kubernetes`, `k8s`, `init`, `plane`, `cni`
+- **kuber_worker_join.yaml**: `kubernetes`, `k8s`, `join`, `worker`
+- **kuber_verify.yaml**: `kubernetes`, `k8s`, `verify`, `test`
 - **haproxy.yaml**: `loadbalancer`, `haproxy`, `install`
 - **common_install.yaml**: `common`, `packages`, `tools`, `zsh`, `dotfiles`
 - **nfs_server_manage.yaml**: `nfs`, `server`, `storage`, `manage`
@@ -491,6 +525,8 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 ### Project Documentation
 - [AGENTS.md](AGENTS.md) - Coding guidelines and conventions
 - [tests/README.md](tests/README.md) - Testing documentation
+- [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Complete Kubernetes setup guide
+- [KUBERNETES_QUICKREF.md](KUBERNETES_QUICKREF.md) - Kubernetes quick reference
 
 ### Role Documentation
 Each role includes:

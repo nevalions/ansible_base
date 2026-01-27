@@ -1,0 +1,22 @@
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+nodeRegistration:
+  kubeletExtraArgs:
+    node-ip: "{{ kubeadm_kubelet_extra_args.node_ip }}"
+{% if kubeadm_kubelet_extra_args is defined %}
+{% for key, value in kubeadm_kubelet_extra_args.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+controlPlaneEndpoint: "{{ kubeadm_control_plane_endpoint }}"
+apiServer:
+  extraArgs:
+    advertise-address: "{{ kubeadm_api_server_advertise_address }}"
+networking:
+  podSubnet: "{{ kubeadm_pod_subnet }}"
+  serviceSubnet: "{{ kubeadm_service_subnet }}"

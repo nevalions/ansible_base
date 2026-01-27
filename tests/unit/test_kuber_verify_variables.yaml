@@ -1,0 +1,46 @@
+---
+- name: Test kuber_verify variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify verify_test_namespace variable exists
+      ansible.builtin.assert:
+        that:
+          - verify_test_namespace is defined
+          - verify_test_namespace | length > 0
+        success_msg: "verify_test_namespace variable defined correctly"
+        fail_msg: "verify_test_namespace variable is missing or empty"
+      vars:
+        verify_test_namespace: "kuber-verify-test"
+
+    - name: Verify verify_test_pod_image is valid
+      ansible.builtin.assert:
+        that:
+          - verify_test_pod_image is defined
+          - verify_test_pod_image | length > 0
+          - "':' in verify_test_pod_image"
+        success_msg: "verify_test_pod_image is valid"
+        fail_msg: "verify_test_pod_image is invalid or missing"
+      vars:
+        verify_test_pod_image: "nginx:alpine"
+
+    - name: Verify verify_timeout_seconds is positive
+      ansible.builtin.assert:
+        that:
+          - verify_timeout_seconds is defined
+          - verify_timeout_seconds | int > 0
+        success_msg: "verify_timeout_seconds is valid"
+        fail_msg: "verify_timeout_seconds is invalid or missing"
+      vars:
+        verify_timeout_seconds: "300"
+
+    - name: Verify verify_retry_count is positive
+      ansible.builtin.assert:
+        that:
+          - verify_retry_count is defined
+          - verify_retry_count | int > 0
+        success_msg: "verify_retry_count is valid"
+        fail_msg: "verify_retry_count is invalid or missing"
+      vars:
+        verify_retry_count: "20"

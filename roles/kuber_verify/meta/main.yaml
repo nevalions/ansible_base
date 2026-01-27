@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Verify Kubernetes cluster health including Calico networking
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - verification
+    - calico
+    - networking
+
+dependencies: []

@@ -1,0 +1,35 @@
+---
+- name: Test kuber_join variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify kuber_join_control_plane_host can be defined
+      ansible.builtin.assert:
+        that:
+          - kuber_join_control_plane_host is defined
+          - kuber_join_control_plane_host | length > 0
+        success_msg: "kuber_join_control_plane_host variable defined correctly"
+        fail_msg: "kuber_join_control_plane_host variable is missing or empty"
+      vars:
+        kuber_join_control_plane_host: "[internal-ip]"
+
+    - name: Verify kuber_join_control_plane_ip can be defined
+      ansible.builtin.assert:
+        that:
+          - kuber_join_control_plane_ip is defined
+          - kuber_join_control_plane_ip | length > 0
+        success_msg: "kuber_join_control_plane_ip variable defined correctly"
+        fail_msg: "kuber_join_control_plane_ip variable is missing or empty"
+      vars:
+        kuber_join_control_plane_ip: "[internal-ip]"
+
+    - name: Verify kuber_join_api_port is defined
+      ansible.builtin.assert:
+        that:
+          - kuber_join_api_port is defined
+          - kuber_join_api_port == "6443"
+        success_msg: "kuber_join_api_port variable defined correctly"
+        fail_msg: "kuber_join_api_port variable is missing or incorrect"
+      vars:
+        kuber_join_api_port: "6443"

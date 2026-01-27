@@ -1,0 +1,111 @@
+---
+- name: Verify control plane is running
+  ansible.builtin.command: kubectl get nodes
+  register: kubectl_nodes
+  changed_when: false
+  ignore_errors: true
+
+- name: Display all nodes
+  ansible.builtin.debug:
+    var: kubectl_nodes.stdout_lines
+
+- name: Check if control plane node is Ready
+  ansible.builtin.command: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  register: control_plane_ready
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert control plane is Ready
+  ansible.builtin.assert:
+    that:
+      - "'True' in control_plane_ready.stdout"
+    success_msg: "Control plane node is Ready"
+    fail_msg: "Control plane node is not Ready"
+  when: control_plane_ready.stdout is defined
+
+- name: Get all Calico node pods
+  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  register: calico_node_pods
+  changed_when: false
+
+- name: Display Calico node pods
+  ansible.builtin.debug:
+    var: calico_node_pods.stdout_lines
+
+- name: Get Tigera Operator pods
+  ansible.builtin.command: kubectl get pods -n tigera-operator
+  register: tigera_operator_pods
+  changed_when: false
+
+- name: Display Tigera Operator pods
+  ansible.builtin.debug:
+    var: tigera_operator_pods.stdout_lines
+
+- name: Verify Tigera Operator is running
+  ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
+  register: tigera_operator_phase
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert Tigera Operator is Running
+  ansible.builtin.assert:
+    that:
+      - "'Running' in tigera_operator_phase.stdout"
+    success_msg: "Tigera Operator is Running"
+    fail_msg: "Tigera Operator is not Running"
+  when: tigera_operator_phase.stdout is defined
+
+- name: Wait for all Calico node pods to be Running
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout={{ verify_timeout_seconds }}s
+  register: calico_wait
+  changed_when: false
+  until: calico_wait.rc == 0
+  retries: "{{ verify_retry_count }}"
+  delay: "{{ verify_sleep_seconds }}"
+  ignore_errors: true
+
+- name: Display Calico readiness status
+  ansible.builtin.debug:
+    msg: "{{ 'All Calico node pods are Ready' if calico_wait.rc == 0 else 'Some Calico node pods are not Ready' }}"
+
+- name: Get cluster info
+  ansible.builtin.command: kubectl cluster-info
+  register: cluster_info
+  changed_when: false
+
+- name: Display cluster info
+  ansible.builtin.debug:
+    var: cluster_info.stdout_lines
+
+- name: Get Calico Installation status
+  ansible.builtin.command: kubectl get installation -o yaml
+  register: calico_installation
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico Installation
+  ansible.builtin.debug:
+    var: calico_installation.stdout_lines
+  when: calico_installation.rc == 0
+
+- name: Get Calico FelixConfiguration
+  ansible.builtin.command: kubectl get felixconfiguration default -o yaml
+  register: calico_felix
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico FelixConfiguration
+  ansible.builtin.debug:
+    var: calico_felix.stdout_lines
+  when: calico_felix.rc == 0
+
+- name: Get Calico IP pools
+  ansible.builtin.command: kubectl get ippool -o wide
+  register: calico_ippool
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico IP pools
+  ansible.builtin.debug:
+    var: calico_ippool.stdout_lines
+  when: calico_ippool.rc == 0

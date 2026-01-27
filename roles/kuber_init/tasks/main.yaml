@@ -1,0 +1,160 @@
+---
+- name: Check if Kubernetes is already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_admin_conf
+
+- name: Fail if Kubernetes is already initialized
+  ansible.builtin.fail:
+    msg: "Kubernetes cluster is already initialized. Use kuber_plane_reset.yaml to reset first."
+  when: k8s_admin_conf.stat.exists
+
+- name: Copy kubeadm config
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /tmp/kubeadm-config.yaml
+    mode: "0644"
+
+- name: Initialize Kubernetes control plane
+  ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
+  register: kubeadm_init
+  changed_when: true
+
+- name: Create .kube directory
+  ansible.builtin.file:
+    path: "{{ kubeconfig_path | dirname }}"
+    state: directory
+    mode: "0755"
+    owner: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+    group: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+
+- name: Copy admin.conf to user's kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kubeconfig_path }}"
+    remote_src: true
+    mode: "0644"
+    owner: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+    group: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+
+- name: Install Calico Tigera Operator
+  ansible.builtin.command: kubectl apply -f {{ calico_tigera_operator_url }}
+  register: calico_operator
+  changed_when: "'created' in calico_operator.stdout or 'configured' in calico_operator.stdout"
+  until: calico_operator.rc == 0
+  retries: 3
+  delay: 5
+
+- name: Wait for Tigera Operator to be ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l name=tigera-operator -n tigera-operator --timeout=300s
+  register: operator_wait
+  changed_when: false
+  until: operator_wait.rc == 0
+  retries: 10
+  delay: 10
+
+- name: Check if Calico custom resources file exists
+  ansible.builtin.stat:
+    path: "{{ calico_custom_resources_src }}"
+  delegate_to: localhost
+  become: false
+  register: calico_custom
+
+- name: Copy Calico custom resources
+  ansible.builtin.copy:
+    src: "{{ calico_custom_resources_src }}"
+    dest: /tmp/calico-custom-resources.yaml
+    mode: "0644"
+  when: calico_custom.stat.exists
+
+- name: Apply Calico custom resources
+  ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resources.yaml
+  register: calico_custom_apply
+  changed_when: "'created' in calico_custom_apply.stdout or 'configured' in calico_custom_apply.stdout"
+  when: calico_custom.stat.exists
+
+- name: Wait for Calico to be ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=600s
+  register: calico_wait
+  changed_when: false
+  until: calico_wait.rc == 0
+  retries: 20
+  delay: 10
+
+- name: Get cluster node status
+  ansible.builtin.command: kubectl get nodes
+  register: node_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display cluster node status
+  ansible.builtin.debug:
+    var: node_status.stdout_lines
+
+- name: Verify control plane node is Ready
+  ansible.builtin.command: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  register: control_plane_ready
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert control plane is Ready
+  ansible.builtin.assert:
+    that:
+      - "'True' in control_plane_ready.stdout"
+    success_msg: "Control plane node is Ready"
+    fail_msg: "Control plane node is not Ready"
+  when: control_plane_ready.stdout is defined
+
+- name: Get Calico node pods
+  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node
+  register: calico_pods
+  changed_when: false
+
+- name: Display Calico pods
+  ansible.builtin.debug:
+    var: calico_pods.stdout_lines
+
+- name: Get Tigera Operator pods
+  ansible.builtin.command: kubectl get pods -n tigera-operator
+  register: tigera_pods
+  changed_when: false
+
+- name: Display Tigera Operator pods
+  ansible.builtin.debug:
+    var: tigera_pods.stdout_lines
+
+- name: Verify Tigera Operator is Running
+  ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
+  register: tigera_phase
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert Tigera Operator is Running
+  ansible.builtin.assert:
+    that:
+      - "'Running' in tigera_phase.stdout"
+    success_msg: "Tigera Operator is Running"
+    fail_msg: "Tigera Operator is not Running"
+  when: tigera_phase.stdout is defined
+
+- name: Get Calico IP pools
+  ansible.builtin.command: kubectl get ippool -o wide
+  register: ippool_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico IP pools
+  ansible.builtin.debug:
+    var: ippool_status.stdout_lines
+  when: ippool_status.rc == 0
+
+- name: Display control plane initialization summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Control Plane Initialization Complete ==="
+      - "Kubernetes API: Ready"
+      - "Calico CNI: Installed"
+      - "Tigera Operator: Running"
+      - "Next step: Run kuber_worker_join.yaml to join workers"
+      - "Verification: Run kuber_verify.yaml for full cluster health check"
+
