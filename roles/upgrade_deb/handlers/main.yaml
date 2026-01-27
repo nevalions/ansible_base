@@ -1,0 +1,5 @@
+---
+- name: Reboot system if required
+  ansible.builtin.reboot:
+    reboot_timeout: 300
+  when: reboot_required.stat.exists | default(false)

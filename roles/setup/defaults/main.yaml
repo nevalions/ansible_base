@@ -1,0 +1,7 @@
+---
+common: false
+zsh: false
+dotfiles: false
+install_docker: false
+kuber: false
+install_haproxy: false

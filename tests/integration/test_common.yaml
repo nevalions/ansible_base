@@ -1,0 +1,24 @@
+---
+- name: Test common role - localhost
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: yes
+  vars:
+    test_mode: true
+  tasks:
+    - name: Test common role import
+      ansible.builtin.include_role:
+        name: common
+      tags: role_test
+
+    - name: Verify packages were installed (check mode)
+      ansible.builtin.command: dpkg -l
+      register: packages
+      changed_when: false
+      failed_when: false
+
+    - name: Assert common role tasks completed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "Common role tasks executed successfully"

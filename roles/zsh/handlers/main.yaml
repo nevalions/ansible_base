@@ -1,0 +1,4 @@
+---
+- name: Reload zsh config
+  ansible.builtin.command: exec zsh
+  changed_when: false

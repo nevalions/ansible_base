@@ -13,16 +13,18 @@
     state: present
 
 - name: Add Kubernetes GPG key
-  ansible.builtin.shell: |
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-  args:
-    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
+    dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    mode: "0644"
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Add Kubernetes repository
-  ansible.builtin.shell: |
-    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
-  args:
-    creates: /etc/apt/sources.list.d/kubernetes.list
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
+    state: present
+    filename: kubernetes
+  when: ansible_facts['os_family'] == "Debian"
 
 - name: Update package lists (Ubuntu/Debian)
   ansible.builtin.apt:
@@ -77,11 +79,12 @@
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
 
 - name: Configure containerd cgroup driver
-  ansible.builtin.shell: |
-    mkdir -p /etc/containerd
-    containerd config default | sed -e 's#SystemdCgroup = false#SystemdCgroup = true#g' > /etc/containerd/config.toml
-  args:
-    creates: /etc/containerd/config.toml
+  ansible.builtin.template:
+    src: containerd-config.toml.j2
+    dest: /etc/containerd/config.toml
+    mode: "0644"
+    backup: yes
+  notify: Restart containerd
 
 - name: Restart containerd
   ansible.builtin.systemd:

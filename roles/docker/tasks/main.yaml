@@ -30,13 +30,10 @@
     - docker_check.rc != 0
 
 - name: Add Docker repository
-  ansible.builtin.shell: |
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-    https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} \
-    {{ ansible_facts['distribution_release'] }} stable" | \
-    tee /etc/apt/sources.list.d/docker.list > /dev/null
-  args:
-    executable: /bin/bash
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ ansible_facts['architecture'] }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }} {{ ansible_facts['distribution_release'] }} stable"
+    state: present
+    filename: docker
   when:
     - ansible_facts['os_family'] == "Debian"
     - docker_check.rc != 0
@@ -71,3 +68,20 @@
   when:
     - ansible_facts['os_family'] == "Debian"
     - docker_check.rc != 0
+  notify: Start docker
+
+- name: Verify Docker installation
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+  when:
+    - ansible_facts['os_family'] == "Debian"
+
+- name: Assert Docker is installed
+  ansible.builtin.assert:
+    that:
+      - docker_version.rc == 0
+    success_msg: "Docker successfully installed: {{ docker_version.stdout }}"
+    fail_msg: "Docker installation verification failed"
+  when:
+    - ansible_facts['os_family'] == "Debian"

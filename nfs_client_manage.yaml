@@ -6,15 +6,15 @@
     nfs_operation: "install"
 
     nfs_mounts:
-      - server: "{{ADD_NFS_SERVER}}"
-        path: "{{ADD_NFS_CLIENTS_PATH}}"
-        mount_point: "{{ADD_NFS_CLIENTS_MOUNT_POINT}}"
+      - server: "{{add_nfs_server}}"
+        path: "{{add_nfs_clients_path}}"
+        mount_point: "{{add_nfs_clients_mount_point}}"
         options: "defaults"
         fstab: true
     nfs_unmounts:
-      - server: "{{REMOVE_NFS_SERVER}}"
-        path: "{{REMOVE_NFS_CLIENTS_PATH}}"
-        mount_point: "{{REMOVE_NFS_CLIENTS_MOUNT_POINT}}"
+      - server: "{{remove_nfs_server}}"
+        path: "{{remove_nfs_clients_path}}"
+        mount_point: "{{remove_nfs_clients_mount_point}}"
         options: "defaults"
         fstab: true
 

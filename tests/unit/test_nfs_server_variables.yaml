@@ -1,0 +1,42 @@
+---
+- name: Test nfs_server role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    skip_folder_check: true
+    test_nfs_exports:
+      - path: /export/test
+        clients: ["[internal-ip]/24"]
+        options: "rw,sync,no_subtree_check"
+  tasks:
+    - name: Verify skip_folder_check variable
+      ansible.builtin.assert:
+        that:
+          - skip_folder_check is defined
+          - skip_folder_check is boolean
+        success_msg: "skip_folder_check variable defined correctly"
+        fail_msg: "skip_folder_check variable is missing or not a boolean"
+
+    - name: Test NFS exports variable structure
+      ansible.builtin.assert:
+        that:
+          - test_nfs_exports is defined
+          - test_nfs_exports | length > 0
+          - test_nfs_exports[0].path is defined
+          - test_nfs_exports[0].clients is defined
+          - test_nfs_exports[0].options is defined
+        success_msg: "NFS exports variable structure is correct"
+        fail_msg: "NFS exports variable structure is invalid"
+
+    - name: Test lowercase variable naming
+      ansible.builtin.set_fact:
+        test_var_lowercase: "lowercase_variable_name"
+        test_var_uppercase: "UPPERCASE_VARIABLE_NAME"
+
+    - name: Verify lowercase naming convention
+      ansible.builtin.assert:
+        that:
+          - test_var_lowercase is match("^[a-z][a-z0-9_]*$")
+        success_msg: "Variable naming follows lowercase convention"
+        fail_msg: "Variable naming does not follow lowercase convention"

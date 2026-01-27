@@ -31,6 +31,7 @@
   ansible.builtin.command: ufw status
   register: ufw_status
   when: ansible_os_family == 'Debian'
+  changed_when: false
 
 - name: Ensure NFS rule is present for client
   ansible.builtin.assert:

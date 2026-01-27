@@ -1,0 +1,16 @@
+---
+- name: Restart kubelet
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    enabled: true
+
+- name: Restart containerd
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    enabled: true
+
+- name: Reload ufw
+  community.general.ufw:
+    state: reloaded

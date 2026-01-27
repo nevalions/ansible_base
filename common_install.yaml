@@ -1,5 +1,5 @@
 ---
-- name: Install HAProxy
+- name: Setup common tools, zsh and dotfiles
   hosts: workers_super
   become: true
   vars_files:

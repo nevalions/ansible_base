@@ -6,13 +6,13 @@
     nfs_operation: "install"
 
     nfs_exports:
-      - path: "{{ ADD_NFS_SERVER_EXPORTS_PATH }}"
-        clients: "{{ ADD_NFS_SERVER_EXPORTS }}"
+      - path: "{{ add_nfs_server_exports_path }}"
+        clients: "{{ add_nfs_server_exports }}"
         options: "rw,sync,no_subtree_check"
 
     nfs_exports_to_remove:
-      - path: "{{ REMOVE_NFS_SERVER_EXPORTS_PATH }}"
-        clients: "{{ REMOVE_NFS_SERVER_EXPORTS }}"
+      - path: "{{ remove_nfs_server_exports_path }}"
+        clients: "{{ remove_nfs_server_exports }}"
         options: "rw,sync,no_subtree_check"
         remove_dir: false
 

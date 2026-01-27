@@ -1,0 +1,9 @@
+---
+- name: Restart remote-fs target
+  ansible.builtin.systemd:
+    name: remote-fs.target
+    state: restarted
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true

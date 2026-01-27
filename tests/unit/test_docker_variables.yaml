@@ -1,0 +1,33 @@
+---
+- name: Test docker role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars:
+    install_docker: true
+  tasks:
+    - name: Verify install_docker variable
+      ansible.builtin.assert:
+        that:
+          - install_docker is defined
+          - install_docker is boolean
+        success_msg: "install_docker variable defined correctly"
+        fail_msg: "install_docker variable is missing or not a boolean"
+
+    - name: Test Docker package list structure
+      ansible.builtin.set_fact:
+        docker_packages:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+
+    - name: Verify Docker packages are defined
+      ansible.builtin.assert:
+        that:
+          - docker_packages is defined
+          - docker_packages | length == 5
+          - "'docker-ce' in docker_packages"
+        success_msg: "Docker packages structure is correct"
+        fail_msg: "Docker packages structure is invalid"

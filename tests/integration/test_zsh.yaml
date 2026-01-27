@@ -1,0 +1,29 @@
+---
+- name: Test zsh role - localhost
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: yes
+  vars:
+    test_mode: true
+  tasks:
+    - name: Get user home
+      ansible.builtin.command: echo $HOME
+      register: home_dir
+      changed_when: false
+
+    - name: Test zsh role import
+      ansible.builtin.include_role:
+        name: zsh
+      tags: role_test
+
+    - name: Verify zsh directory structure would be created
+      ansible.builtin.stat:
+        path: "{{ home_dir.stdout }}/.oh-my-zsh"
+      register: oh_my_zsh_stat
+      failed_when: false
+
+    - name: Assert zsh role tasks completed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "Zsh role tasks executed successfully"

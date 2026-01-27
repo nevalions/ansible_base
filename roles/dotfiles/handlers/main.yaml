@@ -1,0 +1,4 @@
+---
+- name: Apply dotfiles
+  ansible.builtin.command: exec zsh
+  changed_when: false

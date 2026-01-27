@@ -1,0 +1,4 @@
+---
+- name: Notify setup complete
+  ansible.builtin.debug:
+    msg: "Setup completed successfully"

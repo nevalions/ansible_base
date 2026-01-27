@@ -1,5 +1,5 @@
 ---
-- name: Install Docker on target servers
+- name: Upgrade Debian packages
   hosts: bay_cluster_all
   become: true
   vars:

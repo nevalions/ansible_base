@@ -5,10 +5,11 @@
   loop: "{{ folders_list }}"
   register: folder_check
   ignore_errors: true
+  changed_when: false
 
 - name: Skip folder creation if skip_folder_check is true
   ansible.builtin.debug:
-    msg: "Skipping folder check for {{ item.item.path }}"
+    msg: "Skipping folder check for {{ item.item.mount_point }}"
   when:
     - item.stat.exists
     - skip_folder_check | default(false)
@@ -16,7 +17,7 @@
 
 - name: Fail if folders exist and not skipping checks
   ansible.builtin.fail:
-    msg: "ERROR: The folder '{{ item.item.path }}' already exists. Please remove it or choose a different path."
+    msg: "ERROR: The folder '{{ item.item.mount_point }}' already exists. Please remove it or choose a different path."
   when:
     - item.stat.exists
     - not skip_folder_check | default(false)

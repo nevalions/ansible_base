@@ -150,3 +150,113 @@ ansible-playbook -i inventory <playbook>.yaml -v
 - Debian/Ubuntu: Use `apt`, `ufw`, `systemd`
 - Arch/Manjaro: Use `pacman`
 - Always condition OS-specific tasks with `when: ansible_facts['os_family'] == "<family>"`
+
+## Testing
+
+### Test Suite
+```bash
+# Run all tests (syntax, structure, conventions, unit tests)
+./run_tests.sh
+
+# Run specific test category
+ansible-playbook tests/unit/test_docker_variables.yaml
+ansible-playbook tests/integration/test_common.yaml --check
+```
+
+### Test Types
+
+#### 1. Unit Tests
+Test variable definitions and structures without executing roles:
+- Validate variable existence and types
+- Test naming conventions (lowercase_with_underscores)
+- Verify data structures (lists, dicts)
+
+#### 2. Integration Tests
+Run role execution in check mode (no actual changes):
+- Test role imports and task execution
+- Validate task flow and logic
+- Ensure handlers are properly defined
+
+#### 3. Validation Tests
+- Syntax validation: `ansible-playbook --syntax-check`
+- Role structure: Verify tasks/defaults/handlers exist
+- Naming conventions: Detect ALL_CAPS violations
+- FQCN usage: Ensure modules use fully qualified names
+
+### Adding Tests
+
+**Unit Test Example:**
+```yaml
+---
+- name: Test <role_name> variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify variable exists
+      ansible.builtin.assert:
+        that:
+          - variable_name is defined
+          - variable_name is expected_type
+        success_msg: "Variable defined correctly"
+        fail_msg: "Variable is missing or wrong type"
+```
+
+**Integration Test Example:**
+```yaml
+---
+- name: Test <role_name> role
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: yes
+  vars:
+    test_mode: true
+  tasks:
+    - name: Test role import
+      ansible.builtin.include_role:
+        name: <role_name>
+
+    - name: Assert role completed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "Role executed successfully"
+```
+
+### Test Requirements
+- Tests run locally without real servers
+- Use `connection: local` for localhost tests
+- Use `--check` mode for non-destructive testing
+- Tests should be idempotent and repeatable
+
+### CI/CD Integration
+Add to your pipeline:
+```yaml
+test:
+  script:
+    - ./run_tests.sh
+  only:
+    - merge_requests
+    - main
+```
+
+## Documentation
+
+### Role Documentation
+Each role should include:
+- `README.md` in role directory describing purpose and usage
+- Default variables in `defaults/main.yaml` with comments
+- Handler documentation in `handlers/main.yaml`
+
+### Playbook Documentation
+Each playbook should include:
+- Descriptive name and purpose
+- Host pattern description
+- Required variables (if any)
+- Usage examples in comments
+
+### Changelog
+Track changes in `CHANGELOG.md`:
+- Version number
+- Date
+- Changes (Added, Changed, Fixed, Removed)

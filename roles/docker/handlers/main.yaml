@@ -1,0 +1,22 @@
+---
+- name: Restart docker
+  ansible.builtin.systemd:
+    name: docker
+    state: restarted
+    enabled: true
+
+- name: Reload docker
+  ansible.builtin.systemd:
+    name: docker
+    state: reloaded
+
+- name: Start docker
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Stop docker
+  ansible.builtin.systemd:
+    name: docker
+    state: stopped

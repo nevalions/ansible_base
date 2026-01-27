@@ -1,0 +1,23 @@
+---
+- name: Test upgrade_deb role - localhost
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  become: yes
+  vars:
+    test_mode: true
+  tasks:
+    - name: Test upgrade_deb role import
+      ansible.builtin.include_role:
+        name: upgrade_deb
+      tags: role_test
+
+    - name: Check if reboot required file exists
+      ansible.builtin.stat:
+        path: /var/run/reboot_required
+      register: reboot_required
+
+    - name: Assert upgrade_deb role tasks completed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "Upgrade Debian role tasks executed successfully"
