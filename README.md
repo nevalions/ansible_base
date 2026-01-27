@@ -37,6 +37,9 @@ ansible/
 ├── hosts_restream.ini           # Restream inventory
 ├── KUBERNETES_SETUP.md         # Kubernetes setup guide
 ├── KUBERNETES_QUICKREF.md      # Kubernetes quick reference
+├── SSH_AGENT_QUICKREF.md       # SSH agent usage guide
+├── ssh-agent-setup.sh          # SSH agent setup script
+├── ssh-agent-stop.sh           # SSH agent stop script
 ├── vars/
 │   └── packages.yaml            # Package definitions by OS
 ├── group_vars/                  # Group-specific variables
@@ -152,6 +155,7 @@ ansible-lint
 - Ansible 2.16+
 - Target systems with SSH access
 - Sudo privileges on target systems
+- SSH keys configured for target systems (use SSH agent for key-based authentication)
 
 ### Installation
 
@@ -172,7 +176,13 @@ cp hosts_bay.ini hosts.ini
 # Edit hosts.ini with your target hosts
 ```
 
-4. Run a playbook:
+4. Configure SSH agent for key-based authentication (recommended):
+```bash
+./ssh-agent-setup.sh
+```
+See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for complete documentation.
+
+5. Run a playbook:
 ```bash
 ansible-playbook -i hosts.ini workstation.yaml
 ```
@@ -527,6 +537,7 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 - [tests/README.md](tests/README.md) - Testing documentation
 - [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Complete Kubernetes setup guide
 - [KUBERNETES_QUICKREF.md](KUBERNETES_QUICKREF.md) - Kubernetes quick reference
+- [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) - SSH agent usage guide
 
 ### Role Documentation
 Each role includes:
@@ -579,6 +590,19 @@ ssh ansible_user@target_host
 
 # Check inventory
 ansible-inventory -i hosts_bay.ini --list
+
+# Start SSH agent if needed
+./ssh-agent-setup.sh
+```
+
+**Could not open a connection to your authentication agent:**
+```bash
+# Start SSH agent
+eval "$(ssh-agent -s)"
+
+# Add SSH keys
+ssh-add ~/.ssh/id_rsa
+ssh-add ~/.ssh/id_ed25519
 ```
 
 **Playbook hangs on package installation:**
