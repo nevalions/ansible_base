@@ -56,3 +56,23 @@
     - item.stdout == ''
   loop: "{{ mount_verify.results }}"
   run_once: true
+
+- name: Get current mount list
+  ansible.builtin.command: mount -t nfs4,nfs
+  register: current_nfs_mounts
+  changed_when: false
+  failed_when: false
+
+- name: Display active NFS mounts
+  ansible.builtin.debug:
+    var: current_nfs_mounts.stdout_lines
+  when: current_nfs_mounts.rc == 0
+
+- name: Display NFS client management completion
+  ansible.builtin.debug:
+    msg:
+      - "=== NFS Client Management Complete ==="
+      - "Operation: {{ nfs_operation }}"
+      - "Active NFS mounts: {{ current_nfs_mounts.stdout_lines | length if current_nfs_mounts.rc == 0 else 0 }}"
+      - "Next step: Verify access to mounted filesystems"
+  when: nfs_operation == "install"

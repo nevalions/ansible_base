@@ -1,4 +1,19 @@
 ---
+- name: Check if NFS server is installed
+  ansible.builtin.command: dpkg -l | grep nfs-kernel-server
+  register: nfs_installed_check
+  changed_when: false
+  failed_when: false
+
+- name: Display NFS server installation start
+  ansible.builtin.debug:
+    msg:
+      - "=== NFS Server Management Start ==="
+      - "NFS server installed: {{ 'Yes' if nfs_installed_check.rc == 0 else 'No' }}"
+      - "Operation: {{ nfs_operation }}"
+      - "Exports to add: {{ nfs_exports | length }}"
+      - "Exports to remove: {{ nfs_exports_to_remove | length }}"
+
 - name: Install NFS server packages
   ansible.builtin.apt:
     name: nfs-kernel-server
@@ -44,3 +59,56 @@
   when: ansible_os_family == 'Debian'
   vars:
     client: "{{ item.1 }}"
+
+- name: Verify NFS server service is running
+  ansible.builtin.systemd:
+    name: "{{ 'nfs-kernel-server' if ansible_os_family == 'Debian' else 'nfs-server' }}"
+  register: nfs_server_running
+  failed_when: false
+  when: nfs_operation == "install"
+
+- name: Assert NFS server is running
+  ansible.builtin.assert:
+    that:
+      - nfs_server_running.status.ActiveState == 'active'
+    success_msg: "NFS server service is running"
+    fail_msg: "NFS server service is not running"
+  when:
+    - nfs_operation == "install"
+    - nfs_server_running.status is defined
+
+- name: Get NFS exports list
+  ansible.builtin.command: exportfs -v
+  register: nfs_exports_list
+  changed_when: false
+  failed_when: false
+  when: nfs_operation == "install"
+
+- name: Display NFS exports
+  ansible.builtin.debug:
+    var: nfs_exports_list.stdout_lines
+  when:
+    - nfs_operation == "install"
+    - nfs_exports_list.rc == 0
+
+- name: Verify configured exports are listed
+  ansible.builtin.assert:
+    that:
+      - item.path in nfs_exports_list.stdout
+    success_msg: "Export {{ item.path }} is configured"
+    fail_msg: "Export {{ item.path }} is not listed in exports"
+  loop: "{{ nfs_exports }}"
+  when:
+    - nfs_operation == "install"
+    - nfs_exports_list.rc == 0
+    - nfs_exports_list.stdout is defined
+
+- name: Display NFS server management completion
+  ansible.builtin.debug:
+    msg:
+      - "=== NFS Server Management Complete ==="
+      - "Operation: {{ nfs_operation }}"
+      - "NFS server service: {{ 'Running' if nfs_operation == 'install' and nfs_server_running.status.ActiveState == 'active' else 'N/A' }}"
+      - "Exports configured: {{ nfs_exports | length }}"
+      - "Next step: Configure clients with nfs_client_manage.yaml"
+  when: nfs_operation == "install"

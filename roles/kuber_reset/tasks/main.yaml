@@ -1,4 +1,25 @@
 ---
+- name: Check if Kubernetes configuration exists
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: k8s_config_exists
+  loop:
+    - /etc/kubernetes/admin.conf
+    - /etc/kubernetes/kubelet.conf
+  failed_when: false
+
+- name: Fail if Kubernetes is not installed
+  ansible.builtin.fail:
+    msg: "Kubernetes is not installed. No reset needed."
+  when: not k8s_config_exists.results[0].stat.exists and not k8s_config_exists.results[1].stat.exists
+
+- name: Display Kubernetes configuration status
+  ansible.builtin.debug:
+    msg:
+      - "=== Kubernetes Reset Start ==="
+      - "Kubernetes admin.conf exists: {{ k8s_config_exists.results[0].stat.exists }}"
+      - "Kubernetes kubelet.conf exists: {{ k8s_config_exists.results[1].stat.exists }}"
+
 - name: Stop kubelet service
   ansible.builtin.systemd:
     name: kubelet
@@ -145,14 +166,79 @@
     enabled: true
   notify: restart containerd
 
+- name: Verify Kubernetes directories are removed
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: k8s_dirs_removed
+  failed_when: false
+  loop:
+    - /etc/kubernetes
+    - /var/lib/kubelet
+    - /var/lib/etcd
+
+- name: Verify Calico directories are removed
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: calico_dirs_removed
+  failed_when: false
+  loop:
+    - /var/lib/calico
+    - /run/calico
+
+- name: Verify CNI directories are removed
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: cni_dirs_removed
+  failed_when: false
+  loop:
+    - /etc/cni/net.d
+    - /opt/cni/bin
+    - /var/lib/cni
+
+- name: Assert Kubernetes directories are removed
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    success_msg: "{{ item.item }} removed successfully"
+    fail_msg: "{{ item.item }} still exists after reset"
+  loop: "{{ k8s_dirs_removed.results }}"
+
+- name: Assert Calico directories are removed
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    success_msg: "{{ item.item }} removed successfully"
+    fail_msg: "{{ item.item }} still exists after reset"
+  loop: "{{ calico_dirs_removed.results }}"
+
+- name: Assert CNI directories are removed
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    success_msg: "{{ item.item }} removed successfully"
+    fail_msg: "{{ item.item }} still exists after reset"
+  loop: "{{ cni_dirs_removed.results }}"
+
+- name: Verify kubelet is running
+  ansible.builtin.systemd:
+    name: kubelet
+  register: kubelet_running
+  failed_when: false
+
+- name: Verify containerd is running
+  ansible.builtin.systemd:
+    name: containerd
+  register: containerd_running
+  failed_when: false
+
 - name: Display reset completion message
   ansible.builtin.debug:
-    msg: |
-      Kubernetes worker node has been completely reset.
-      The node is now ready for a fresh 'kubeadm join' operation.
-      Containerd has been restarted.
-      {% if remove_container_images | default(false) %}
-      All container images have been removed.
-      {% else %}
-      Container images have been preserved.
-      {% endif %}
+    msg:
+      - "=== Kubernetes Reset Complete ==="
+      - "Kubernetes directories: Removed"
+      - "Calico directories: Removed"
+      - "CNI directories: Removed"
+      - "Kubelet status: {{ 'Running' if kubelet_running.status.ActiveState == 'active' else 'Not running' }}"
+      - "Containerd status: {{ 'Running' if containerd_running.status.ActiveState == 'active' else 'Not running' }}"
+      - "Container images: {{ 'Removed' if remove_container_images | default(false) else 'Preserved' }}"
+      - "Next step: Run kuber_plane_init.yaml or kuber_worker_join.yaml"

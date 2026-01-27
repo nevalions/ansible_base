@@ -1,4 +1,19 @@
 ---
+- name: Check if NFS client is installed
+  ansible.builtin.command: dpkg -l | grep nfs-common
+  register: nfs_client_installed_check
+  changed_when: false
+  failed_when: false
+
+- name: Display NFS client management start
+  ansible.builtin.debug:
+    msg:
+      - "=== NFS Client Management Start ==="
+      - "NFS client installed: {{ 'Yes' if nfs_client_installed_check.rc == 0 else 'No' }}"
+      - "Operation: {{ nfs_operation }}"
+      - "Mounts to add: {{ nfs_mounts | length }}"
+      - "Unmounts to remove: {{ nfs_unmounts | length }}"
+
 - name: Install NFS client packages
   ansible.builtin.apt:
     name: nfs-common

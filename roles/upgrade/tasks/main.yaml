@@ -3,3 +3,12 @@
   ansible.builtin.include_role:
     name: upgrade_deb
   when: upgrade_deb | default(false)
+
+- name: Display upgrade summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Upgrade Summary ==="
+      - "All upgrade tasks completed"
+      - "Check logs above for details"
+      - "{% if upgrade_deb | default(false) %}Review reboot requirements{% endif %}"
+  when: upgrade_deb | default(false)
