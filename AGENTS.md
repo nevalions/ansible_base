@@ -165,12 +165,14 @@ Always create an `ansible.cfg` file in project root with:
 - SSH pipelining enabled for faster execution
 
 ### group_vars and host_vars
-- Use `group_vars/` for group-level inventory variables
+- Use `group_vars/` for group-level inventory variables (non-sensitive only)
 - Use `host_vars/` for host-specific variables
-- Remove `:vars` sections from inventory files
+- **Security**: Store connection details (ansible_user, ansible_port, ansible_become) in inventory files' `:vars` sections, not in group_vars
+- **Security**: Create `group_vars/*.example.yml` templates and keep actual `group_vars/*.yml` files gitignored
 - Organize variables by function and purpose
 - Use `.yml` extension for variable files
-- Keep sensitive data separate (consider ansible-vault)
+- Keep sensitive data separate (consider ansible-vault for passwords, API keys)
+- See SECURITY.md for comprehensive security guidelines
 
 ### ansible-lint
 Always configure `.ansible-lint` with:

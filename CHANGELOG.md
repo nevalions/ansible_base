@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-28
+
+### Security
+- **Security Hardening**:
+  - Moved connection details (ansible_user, ansible_port, ansible_become) from `group_vars/` to inventory files (`hosts_*.ini`)
+  - Connection details now stored in gitignored inventory files instead of tracked group_vars
+  - Created `group_vars/*.example.yml` template files for local configuration
+  - Added `group_vars/*.yml` to `.gitignore` to prevent committing sensitive connection details
+- **Documentation**:
+  - New `SECURITY.md` with comprehensive security best practices and setup guide
+  - Updated `README.md` with Security section and security checklist
+  - Added security requirements to code quality checklist
+
+### Changed
+- **Inventory Management**:
+  - Connection parameters moved back to `:vars` sections in `hosts_bay.ini`, `hosts_haproxy.ini`, `hosts_restream.ini`
+  - Actual `group_vars/*.yml` files removed from git tracking (kept locally)
+  - Template files `group_vars/*.example.yml` added to git for user reference
+
+### Improved
+- Repository no longer exposes connection details in git history
+- Infrastructure topology protected by gitignoring inventory files
+- Better security posture while maintaining playbook usability
+
+### Security Posture
+- ✅ No connection details in git
+- ✅ No passwords or API keys in repository
+- ✅ Inventory files (*.ini) properly gitignored
+- ✅ Group variables gitignored (templates provided)
+- ✅ SSH keys and passphrases not in repository
+- ✅ Comprehensive security documentation provided
+
 ## [1.0.0] - 2026-01-27
 
 ### Added
