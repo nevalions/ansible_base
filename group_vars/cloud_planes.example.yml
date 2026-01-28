@@ -1,0 +1,9 @@
+---
+# Example connection variables for cloud_planes group
+# Copy this file to group_vars/cloud_planes.yml and customize for your environment
+
+ansible_port: [custom-ssh-port]
+ansible_user: [your-username]
+ansible_become: true
+ansible_become_method: sudo
+ansible_python_interpreter: /usr/bin/python3

@@ -2,3 +2,9 @@
 *.log
 *.ini
 env_*
+
+# Ignore group_vars/*.yml but keep example files
+group_vars/*.yml
+
+# Keep example files
+!group_vars/*.example.yml

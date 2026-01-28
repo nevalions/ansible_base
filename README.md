@@ -4,16 +4,17 @@ Automated system configuration using Ansible for deploying and managing infrastr
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Configuration](#configuration)
-- [Quick Start](#quick-start)
-- [Roles](#roles)
-- [Playbooks](#playbooks)
-- [Testing](#testing)
-- [Code Quality](#code-quality)
-- [Contributing](#contributing)
-- [Documentation](#documentation)
+ - [Overview](#overview)
+ - [Project Structure](#project-structure)
+ - [Configuration](#configuration)
+ - [Security](#security)
+ - [Quick Start](#quick-start)
+ - [Roles](#roles)
+ - [Playbooks](#playbooks)
+ - [Testing](#testing)
+ - [Code Quality](#code-quality)
+ - [Contributing](#contributing)
+ - [Documentation](#documentation)
 
 ## Overview
 
@@ -42,15 +43,10 @@ ansible/
 ├── ssh-agent-stop.sh           # SSH agent stop script
 ├── vars/
 │   └── packages.yaml            # Package definitions by OS
-├── group_vars/                  # Group-specific variables
-│   ├── bgp.yml                # BGP node variables
-│   ├── lb.yml                 # Load balancer variables
-│   ├── planes.yml              # Kubernetes planes variables
-│   ├── workers_super.yml       # Super workers variables
-│   ├── workers_vas.yml        # VAS workers variables
-│   ├── cloud_workers.yml       # Cloud workers variables
-│   ├── cloud_planes.yml        # Cloud planes variables
-│   └── bay_cluster_all.yml    # Bay cluster all variables
+├── group_vars/                  # Group-specific variables (templates and local config)
+│   ├── *.example.yml           # Example templates (committed to git)
+│   ├── *.yml                  # Actual configuration (gitignored, created locally)
+├── SECURITY.md                  # Security best practices and setup guide
 ├── common/
 │   └── tasks/                  # Common validation tasks
 ├── playbooks/
@@ -122,8 +118,13 @@ The `ansible.cfg` file provides project-wide configuration:
 
 ### group_vars
 
-Variables are organized in `group_vars/` directory:
+**Security Note:** Actual group_vars files with connection details are excluded from git. Example files are provided as templates.
 
+Variables are organized in `group_vars/` directory:
+- `*.example.yml` - Example templates (committed to git)
+- `*.yml` - Actual configuration files (gitignored, created locally)
+
+Available templates:
 - **bgp**: BGP node configuration
 - **lb**: Load balancer configuration
 - **planes**: Kubernetes control plane configuration
@@ -132,6 +133,14 @@ Variables are organized in `group_vars/` directory:
 - **cloud_workers**: Cloud worker configuration
 - **cloud_planes**: Cloud plane configuration
 - **bay_cluster_all**: Common cluster variables
+
+To use templates:
+```bash
+cd group_vars
+cp <template-name>.example.yml <template-name>.yml
+# Edit the file with your connection details
+cd ..
+```
 
 Each file contains connection parameters (port, user, become method, Python interpreter).
 
@@ -157,6 +166,8 @@ ansible-lint
 - Sudo privileges on target systems
 - SSH keys configured for target systems (use SSH agent for key-based authentication)
 
+**Security Note:** This repository follows security best practices. Connection details are not stored in git. See [Security](#security) section for details.
+
 ### Installation
 
 1. Clone the repository:
@@ -170,21 +181,88 @@ cd ansible
 ./run_tests.sh
 ```
 
-3. Configure inventory for your environment:
+3. Set up local configuration (required):
 ```bash
-cp hosts_bay.ini hosts.ini
-# Edit hosts.ini with your target hosts
+# Copy and customize group_vars templates
+cd group_vars
+cp bay_cluster_all.example.yml bay_cluster_all.yml
+cp bgp.example.yml bgp.yml
+cp lb.example.yml lb.yml
+# ... copy and customize other example files as needed
+cd ..
 ```
 
-4. Configure SSH agent for key-based authentication (recommended):
+4. Configure inventory files for your environment (these files are gitignored):
+```bash
+# Create or edit inventory files based on your infrastructure
+# Example: Edit hosts_bay.ini with your target hosts and connection details
+```
+
+5. Configure SSH agent for key-based authentication (required):
 ```bash
 ./ssh-agent-setup.sh
 ```
 See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for complete documentation.
 
-5. Run a playbook:
+6. Run a playbook:
 ```bash
-ansible-playbook -i hosts.ini workstation.yaml
+ansible-playbook -i hosts_bay.ini workstation.yaml
+```
+
+## Security
+
+This repository follows security best practices to protect sensitive infrastructure information.
+
+### Security Architecture
+
+**Connection Details:**
+- Stored in inventory files (`hosts_*.ini`) - **not in git**
+- Example templates provided in `group_vars/*.example.yml`
+- Actual `group_vars/*.yml` files are gitignored
+- Users create local configuration files based on templates
+
+**SSH Key Management:**
+- SSH key-based authentication with passphrases
+- Passphrases cached in SSH agent (memory only)
+- No passwords or API keys in repository
+- See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for usage
+
+### Security Checklist
+
+**Repository Security:**
+- ✅ No connection details in git
+- ✅ No passwords or API keys in repository
+- ✅ Inventory files gitignored
+- ✅ Group variables gitignored (templates provided)
+- ✅ SSH keys not in repository
+- ✅ SSH key passphrases not stored in files
+
+**Before Using:**
+- Create local `group_vars/*.yml` from templates
+- Configure inventory files with your infrastructure
+- Set up SSH agent with passphrase-protected keys
+- Add SSH public keys to target servers
+
+### Required Setup
+
+For complete security setup instructions, see [SECURITY.md](SECURITY.md).
+
+**Quick Security Setup:**
+```bash
+# 1. Create local group_vars
+cd group_vars
+cp *.example.yml *.yml
+# Edit each file with your connection details
+cd ..
+
+# 2. Configure inventory (not in git)
+# Edit hosts_bay.ini, hosts_haproxy.ini, hosts_restream.ini with your servers
+
+# 3. Start SSH agent
+./ssh-agent-setup.sh
+
+# 4. Run playbooks
+ansible-playbook -i hosts_bay.ini upgrade_deb.yaml
 ```
 
 ## Roles
@@ -444,6 +522,10 @@ yamllint .
 - [ ] All variables follow `lowercase_with_underscores` convention
 - [ ] All playbooks pass ansible-lint checks
 - [ ] All inventory variables are in `group_vars/`
+- [ ] No connection details in group_vars templates (use inventory files instead)
+- [ ] No passwords, API keys, or secrets in any YAML files
+- [ ] SSH private keys not committed to repository
+- [ ] Vault password files not committed to repository
 
 ### Rolling Updates
 
@@ -522,6 +604,12 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 
 4. Add tests for new features
 
+5. Follow security practices:
+   - Never commit connection details, passwords, or API keys
+   - Use SSH keys with passphrases
+   - Use inventory files for connection details (not group_vars)
+   - See [SECURITY.md](SECURITY.md) for complete guidelines
+
 ### Pull Request Process
 
 1. Fork the repository
@@ -534,6 +622,7 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 
 ### Project Documentation
 - [AGENTS.md](AGENTS.md) - Coding guidelines and conventions
+- [SECURITY.md](SECURITY.md) - Security best practices and setup guide
 - [tests/README.md](tests/README.md) - Testing documentation
 - [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Complete Kubernetes setup guide
 - [KUBERNETES_QUICKREF.md](KUBERNETES_QUICKREF.md) - Kubernetes quick reference
