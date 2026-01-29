@@ -58,11 +58,11 @@ kubectl delete pod test-pod
 
 | Group | Hosts |
 |-------|-------|
-| `[planes]` | [internal-ip] |
-| `[workers_all]` | [internal-ip], [internal-ip], [internal-ip] |
-| `[workers_main]` | [internal-ip] |
-| `[workers_office]` | [internal-ip] |
-| `[workers_super]` | [internal-ip] |
+| `[planes]` | [control-plane-ip] |
+| `[workers_all]` | [worker-ips] |
+| `[workers_main]` | [worker-main-ip] |
+| `[workers_office]` | [worker-office-ip] |
+| `[workers_super]` | [worker-super-ip] |
 
 ## Key Variables
 

@@ -355,7 +355,7 @@ Configures NFS server with export management.
 ```yaml
 nfs_exports:
   - path: /export/data
-    clients: ["[internal-ip]/24"]
+    clients: ["[client-network]/24"]
     options: "rw,sync,no_subtree_check"
 ```
 
@@ -363,7 +363,7 @@ nfs_exports:
 ```bash
 ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e add_nfs_server_exports_path=/export/data \
-  -e add_nfs_server_exports="[internal-ip]/24"
+  -e add_nfs_server_exports="[client-network]/24"
 ```
 
 ### NFS Client
@@ -376,7 +376,7 @@ Configures NFS client mounts.
 **Usage:**
 ```bash
 ansible-playbook -i hosts_bay.ini nfs_client_manage.yaml \
-  -e add_nfs_server="[internal-ip]" \
+  -e add_nfs_server="[nfs-server-ip]" \
   -e add_nfs_clients_path="/export/data" \
   -e add_nfs_clients_mount_point="/mnt/data"
 ```
@@ -662,14 +662,14 @@ server1 ansible_port=22 ansible_user=[your-username]
 server2 ansible_port=[custom-ssh-port] ansible_user=[your-username]
 
 [workers_super]
-worker1 ansible_host=[internal-ip]
-worker2 ansible_host=[internal-ip]
+worker1 ansible_host=[worker1-ip]
+worker2 ansible_host=[worker2-ip]
 
 [nfs_servers]
-nfs1 ansible_host=[internal-ip]
+nfs1 ansible_host=[nfs1-ip]
 
 [nfs_clients]
-client1 ansible_host=[internal-ip]
+client1 ansible_host=[client1-ip]
 ```
 
 **NFS Management Example:**
@@ -678,13 +678,13 @@ client1 ansible_host=[internal-ip]
 ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e nfs_operation=install \
   -e add_nfs_server_exports_path=/export/share \
-  -e add_nfs_server_exports="[internal-ip]/8"
+  -e add_nfs_server_exports="[client-network]"
 
 # Remove NFS export
 ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e nfs_operation=remove \
   -e remove_nfs_server_exports_path=/export/share \
-  -e remove_nfs_server_exports="[internal-ip]/8"
+  -e remove_nfs_server_exports="[client-network]"
 ```
 
 ## Troubleshooting

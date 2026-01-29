@@ -22,13 +22,13 @@ Define NFS exports in playbook variables:
 nfs_exports:
   - path: /export/data
     clients:
-      - "[internal-ip]/24"
-      - "[internal-ip]"
+      - "[client-network]"
+      - "[backup-server-ip]"
     options: "rw,sync,no_subtree_check"
 
 nfs_exports_to_remove:
   - path: /export/old_share
-    clients: ["[internal-ip]/8"]
+    clients: ["[backup-network]"]
     options: "rw,sync,no_subtree_check"
     remove_dir: false
 ```
@@ -80,7 +80,7 @@ roles/nfs_server/
   vars:
     nfs_exports:
       - path: /export/data
-        clients: ["[internal-ip]/24"]
+        clients: ["[client-network]"]
         options: "rw,sync,no_subtree_check"
   roles:
     - nfs_server
@@ -93,13 +93,13 @@ roles/nfs_server/
 ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e nfs_operation=install \
   -e add_nfs_server_exports_path=/export/new_share \
-  -e add_nfs_server_exports="[internal-ip]/24"
+  -e add_nfs_server_exports="[client-network]"
 
 # Remove export
 ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e nfs_operation=remove \
   -e remove_nfs_server_exports_path=/export/old_share \
-  -e remove_nfs_server_exports="[internal-ip]/24"
+  -e remove_nfs_server_exports="[client-network]"
 ```
 
 ## Dependencies
@@ -125,7 +125,7 @@ nfs_exports:
     options: "rw,sync,no_subtree_check"
   
   - path: /export/backup
-    clients: ["backup_server", "[internal-ip]/24"]
+    clients: ["backup_server", "[backup-network]"]
     options: "ro,sync,no_subtree_check"
   
   - path: /export/data
@@ -138,7 +138,7 @@ nfs_exports:
 ```yaml
 nfs_exports:
   - path: /export/special
-    clients: ["[internal-ip]/8"]
+    clients: ["[backup-network]"]
     options: "rw,sync,no_subtree_check"
 ```
 

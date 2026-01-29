@@ -62,8 +62,8 @@ The inventory files (`hosts_*.ini`) are gitignored. If this is a fresh clone, yo
 Example `hosts_bay.ini`:
 ```ini
 [bay_cluster_all]
-[internal-ip]
-[internal-ip]
+[control-plane-ip]
+[worker-main-ip]
 
 [bay_cluster_all:vars]
 ansible_port=[custom-ssh-port]

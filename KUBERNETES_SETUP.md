@@ -9,7 +9,7 @@ This Ansible project provides automated Kubernetes cluster setup with Calico CNI
 ### 1. kuber.yaml - Install Kubernetes Packages
 **Purpose:** Install Kubernetes components (kubelet, kubeadm, kubectl, containerd) and configure system prerequisites
 
-**Hosts:** `[workers_super]` (currently targets [internal-ip])
+**Hosts:** `[workers_super]` (currently targets [worker-super-ip])
 
 **Tags:** `kubernetes`, `k8s`, `install`, `cluster`
 
@@ -35,7 +35,7 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 ### 2. kuber_plane_init.yaml - Initialize Control Plane
 **Purpose:** Initialize Kubernetes control plane with kubeadm and install Calico CNI
 
-**Hosts:** `[planes]` ([internal-ip])
+**Hosts:** `[planes]` ([control-plane-ip])
 
 **Tags:** `kubernetes`, `k8s`, `init`, `plane`, `cni`
 
@@ -125,7 +125,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_office 
 ### 4. kuber_verify.yaml - Full Cluster Health Check
 **Purpose:** Comprehensive verification of Kubernetes cluster health, Calico networking, and worker connectivity
 
-**Hosts:** `[planes]` ([internal-ip])
+**Hosts:** `[planes]` ([control-plane-ip])
 
 **Tags:** `kubernetes`, `k8s`, `verify`, `test`
 
@@ -201,7 +201,7 @@ DNS: Functional/Issues detected
 ### 5. kuber_plane_reset.yaml - Reset Control Plane
 **Purpose:** Clean Kubernetes control plane for fresh setup
 
-**Hosts:** `[masters]` ([internal-ip])
+**Hosts:** `[masters]` ([control-plane-ip])
 
 **Tags:** `kubernetes`, `k8s`, `reset`, `cleanup`, `master`
 
@@ -234,7 +234,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --tags reset
 # 1. Install packages on all nodes
 ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 
-# 2. Initialize control plane ([internal-ip])
+# 2. Initialize control plane ([control-plane-ip])
 # Includes automatic verification of control plane and Calico
 ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
@@ -265,12 +265,12 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_main --
 
 ## Inventory Groups (hosts_bay.ini)
 
-- `[planes]` - Control plane nodes ([internal-ip])
-- `[workers_all]` - All worker nodes ([internal-ip], [internal-ip], [internal-ip])
-- `[workers_main]` - Main workers ([internal-ip])
-- `[workers_office]` - Office workers ([internal-ip])
-- `[workers_super]` - Super workers ([internal-ip])
-- `[workers_longhorn]` - Longhorn storage workers ([internal-ip])
+- `[planes]` - Control plane nodes ([control-plane-ip])
+- `[workers_all]` - All worker nodes ([worker-main-ip], [worker-office-ip], [worker-super-ip])
+- `[workers_main]` - Main workers ([worker-main-ip])
+- `[workers_office]` - Office workers ([worker-office-ip])
+- `[workers_super]` - Super workers ([worker-super-ip])
+- `[workers_longhorn]` - Longhorn storage workers ([worker-longhorn-ip])
 - `[masters]` - Master nodes (same as planes)
 
 ---
@@ -327,7 +327,7 @@ All playbooks include built-in verification steps:
 ✓ External connectivity
 
 ### Manual Verification Commands
-Run on control plane ([internal-ip]):
+Run on control plane ([control-plane-ip]):
 
 ```bash
 # Check cluster nodes

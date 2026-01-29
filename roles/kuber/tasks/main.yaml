@@ -123,7 +123,7 @@
     port: "{{ item.port }}"
     proto: "{{ item.proto | default('tcp') }}"
   loop:
-    - { port: "[custom-ssh-port]" }
+    - { port: "{{ ansible_port | default('22') }}" }
     - { port: "6443" }
     - { port: "80" }
     - { port: "443" }

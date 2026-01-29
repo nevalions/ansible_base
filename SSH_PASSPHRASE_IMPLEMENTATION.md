@@ -35,7 +35,7 @@ Updated configuration:
 All tests passed:
 - ✅ SSH connection without sudo
 - ✅ SSH connection with sudo (via vault)
-- ✅ All 3 hosts ([internal-ip], [internal-ip], [internal-ip])
+- ✅ All 3 hosts ([worker-main-ip], [worker-office-ip], [worker-super-ip])
 - ✅ Vault decryption working
 
 ## How to Use
@@ -55,7 +55,7 @@ All tests passed:
 
 **With limit:**
 ```bash
-./ansible_with_agent.sh playbook.yaml --limit [internal-ip]
+./ansible_with_agent.sh playbook.yaml --limit [worker-main-ip]
 ```
 
 ### What Happens
