@@ -115,6 +115,19 @@ This removes all keys from memory.
 - [ ] SSH agent is stopped (`./ssh-agent-stop.sh`)
 - [ ] No keys remain in memory
 
+### Logging Security
+- **Logging is disabled** in `ansible.cfg` to prevent secret leakage
+- Ansible logs contain sensitive data when enabled:
+  - Vault secrets in plaintext (passwords, passphrases)
+  - IP addresses and network topology
+  - SSH connection details and authentication patterns
+  - Hostnames and user accounts
+- If logging is required for debugging:
+  - Enable temporarily with specific log levels
+  - Filter sensitive data from logs
+  - Delete logs immediately after use
+  - Never commit log files to git
+
 ## What Should Never Be in Git
 
 ❌ **Never commit these:**
