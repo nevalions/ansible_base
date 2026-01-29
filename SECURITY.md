@@ -201,7 +201,7 @@ ansible-playbook upgrade_deb.yaml --vault-password-file ./vault_password_client.
 ### Vault File Structure
 
 Encrypted file: `vault_password.gpg`
-- Contains: Ansible vault password (plaintext of "zenit")
+- Contains: Ansible vault password (plaintext of [redacted])
 - Encrypted with: GPG key for nevalions@gmail.com
 - Format: ASCII-armored PGP message
 

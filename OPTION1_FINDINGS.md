@@ -46,9 +46,10 @@ File: `/home/[your-username]/ansible/ansible_with_agent.sh`
 # Start SSH agent
 eval "$(ssh-agent -s)"
 
-# Add SSH key with passphrase
-echo "Adding SSH key..."
-ssh-add ~/.ssh/id_rsa <<< "kicker"
+ # Add SSH key with passphrase
+ echo "Adding SSH key..."
+ # Note: Passphrase should be retrieved from vault, not hardcoded
+ ssh-add ~/.ssh/id_rsa <<< "your-passphrase-here"
 
 # Verify key added
 if ssh-add -l > /dev/null 2>&1; then

@@ -122,15 +122,15 @@ Cleaning up SSH agent...
 
 ### SSH Key
 - Path: `~/.ssh/id_rsa`
-- Passphrase: `kicker`
+- Passphrase: [redacted] (managed via GPG-encrypted vault)
 - Type: RSA 4096-bit
 
 ### Vault
 - File: `vault_secrets.yml` (encrypted)
-- Password file: `.vault_pass`
+- Password file: `vault_password.gpg` (GPG-encrypted)
 - Variables:
-  - `vault_ssh_key_passphrase`: "kicker" (not used with SSH agent)
-  - `vault_become_pass`: "kicker" (for sudo)
+  - `vault_ssh_key_passphrase`: [redacted] (not used with SSH agent)
+  - `vault_become_pass`: [redacted] (for sudo)
 
 ### Inventory Settings
 ```ini
