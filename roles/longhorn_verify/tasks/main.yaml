@@ -1,0 +1,120 @@
+---
+- name: Check if Longhorn data directory exists
+  ansible.builtin.stat:
+    path: "{{ longhorn_data_path }}"
+  register: longhorn_dir_check
+
+- name: Display Longhorn data directory status
+  ansible.builtin.debug:
+    msg: "Longhorn data directory {{ 'exists' if longhorn_dir_check.stat.exists else 'does not exist' }} at {{ longhorn_data_path }}"
+
+- name: Check if kubelet pods directory exists
+  ansible.builtin.stat:
+    path: "{{ kubelet_pods_path }}"
+  register: kubelet_pods_dir_check
+
+- name: Find Longhorn-related pod directories
+  ansible.builtin.find:
+    paths: "{{ kubelet_pods_path }}"
+    patterns: "*longhorn*"
+    file_type: directory
+  register: longhorn_pods_check
+  when: kubelet_pods_dir_check.stat.exists
+
+- name: Display found Longhorn pod directories
+  ansible.builtin.debug:
+    msg: "Found {{ longhorn_pods_check.matched }} Longhorn-related pod directories"
+  when:
+    - kubelet_pods_dir_check.stat.exists
+    - longhorn_pods_check.matched > 0
+
+- name: Check if this is a control plane node
+  ansible.builtin.set_fact:
+    is_control_plane: "{{ inventory_hostname in groups['planes'] | default([]) }}"
+
+- name: Display node type
+  ansible.builtin.debug:
+    msg: "This host is a {{ 'control plane' if is_control_plane else 'worker' }} node"
+
+- name: Set kubectl availability fact
+  ansible.builtin.set_fact:
+    kubectl_accessible: "{{ is_control_plane }}"
+
+- name: Display kubectl availability status
+  ansible.builtin.debug:
+    msg: "Skipping Kubernetes resource checks on worker node"
+  when: not kubectl_accessible
+
+- name: Check if Longhorn namespace exists
+  ansible.builtin.command: kubectl get namespace {{ longhorn_namespace }}
+  register: longhorn_namespace_check
+  changed_when: false
+  ignore_errors: true
+  when: kubectl_accessible
+
+- name: Display Longhorn namespace status
+  ansible.builtin.debug:
+    msg: "Longhorn namespace {{ 'exists' if longhorn_namespace_check.rc == 0 else 'does not exist' }}"
+  when: kubectl_accessible
+
+- name: Check for Longhorn CRDs
+  ansible.builtin.command: kubectl get crd -l app.kubernetes.io/instance=longhorn -o name
+  register: longhorn_crds_check
+  changed_when: false
+  ignore_errors: true
+  when: kubectl_accessible
+
+- name: Display Longhorn CRDs
+  ansible.builtin.debug:
+    msg: "Found {{ longhorn_crds_check.stdout_lines | length }} Longhorn CRDs"
+  when:
+    - kubectl_accessible
+    - longhorn_crds_check.rc == 0
+    - longhorn_crds_check.stdout_lines | length > 0
+
+- name: Check for Longhorn pods
+  ansible.builtin.command: kubectl get pods -n {{ longhorn_namespace }} -o jsonpath='{.items[*].metadata.name}'
+  register: longhorn_pods_k8s_check
+  changed_when: false
+  ignore_errors: true
+  when: kubectl_accessible
+
+- name: Display Longhorn pods count
+  ansible.builtin.debug:
+    msg: "Found {{ (longhorn_pods_k8s_check.stdout | default('') | split | length) }} Longhorn pods"
+  when:
+    - kubectl_accessible
+    - longhorn_pods_k8s_check.rc == 0
+
+- name: Set verification status variables
+  ansible.builtin.set_fact:
+    longhorn_data_clean: "{{ not longhorn_dir_check.stat.exists }}"
+    longhorn_pods_clean: "{{ longhorn_pods_check.matched == 0 if kubelet_pods_dir_check.stat.exists else true }}"
+    longhorn_namespace_exists: "{{ longhorn_namespace_check.rc == 0 if kubectl_accessible else false }}"
+    longhorn_crds_exist: "{{ (longhorn_crds_check.rc == 0 and longhorn_crds_check.stdout_lines | length > 0) if kubectl_accessible else false }}"
+    longhorn_pods_exist: "{{ longhorn_pods_k8s_check.rc == 0 if kubectl_accessible else false }}"
+
+- name: Generate verification summary report
+  ansible.builtin.debug:
+    msg:
+      - "============================================"
+      - "=== Longhorn Cleanup Verification Report ==="
+      - "Host: {{ inventory_hostname }}"
+      - "--------------------------------------------"
+      - "[{{ '✓' if longhorn_data_clean else '✗' }}] Longhorn data directory: {{ 'Removed' if longhorn_data_clean else 'Still exists' }}"
+      - "[{{ '✓' if longhorn_pods_clean else '✗' }}] Longhorn pod directories: {{ 'None found' if longhorn_pods_clean else (longhorn_pods_check.matched ~ ' found') }}"
+      - "{% if kubectl_accessible %}[{{ '⚠' if longhorn_namespace_exists else '✓' }}] Longhorn namespace: {{ 'Still exists' if longhorn_namespace_exists else 'Removed' }}{% endif %}"
+      - "{% if kubectl_accessible %}[{{ '⚠' if longhorn_crds_exist else '✓' }}] Longhorn CRDs: {{ (longhorn_crds_check.stdout_lines | length) if longhorn_crds_exist else 'None' }} found{% endif %}"
+      - "{% if kubectl_accessible %}[{{ '⚠' if longhorn_pods_exist else '✓' }}] Longhorn pods: {{ ((longhorn_pods_k8s_check.stdout | default('') | split | length)) if longhorn_pods_exist else 'None' }} running{% endif %}"
+      - "{% if not kubectl_accessible %}[i] Kubernetes checks: Skipped (kubectl not available){% endif %}"
+      - "--------------------------------------------"
+      - "{% if longhorn_data_clean and longhorn_pods_clean %}Overall Status: PASS (Filesystem clean{% if kubectl_accessible and (longhorn_namespace_exists or longhorn_crds_exist or longhorn_pods_exist) %}, Kubernetes artifacts remain{% endif %}){% else %}Overall Status: FAIL (Filesystem still contains Longhorn data){% endif %}"
+      - "============================================"
+
+- name: Assert filesystem is clean
+  ansible.builtin.assert:
+    that:
+      - longhorn_data_clean
+      - longhorn_pods_clean
+    success_msg: "Longhorn filesystem data successfully cleaned"
+    fail_msg: "Longhorn filesystem data still exists"

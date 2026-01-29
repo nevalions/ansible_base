@@ -1,0 +1,14 @@
+---
+- name: Verify Longhorn Data Cleanup
+  hosts: workers_all
+  become: true
+  gather_facts: false
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - longhorn
+    - verify
+    - cleanup
+  roles:
+    - longhorn_verify

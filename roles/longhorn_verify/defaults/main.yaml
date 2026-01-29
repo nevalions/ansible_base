@@ -1,0 +1,4 @@
+---
+longhorn_data_path: "/var/lib/longhorn"
+kubelet_pods_path: "/var/lib/kubelet/pods"
+longhorn_namespace: "longhorn-system"

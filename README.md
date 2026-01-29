@@ -399,6 +399,27 @@ Removes Longhorn storage folders and data from workers.
 ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml
 ```
 
+### Longhorn Verify
+Verifies Longhorn data has been completely removed from worker nodes.
+
+**Variables:**
+- `longhorn_data_path`: Longhorn data directory (default: `/var/lib/longhorn`)
+- `kubelet_pods_path`: Kubelet pods directory (default: `/var/lib/kubelet/pods`)
+- `longhorn_namespace`: Kubernetes namespace to check (default: `longhorn-system`)
+
+**Features:**
+- Verifies `/var/lib/longhorn/` directory does not exist
+- Checks for Longhorn-related pod directories in `/var/lib/kubelet/pods/`
+- Checks Kubernetes resources (namespace, CRDs, pods) on control plane
+- Skips Kubernetes checks on worker nodes (kubectl not accessible)
+- Generates verification summary report with pass/fail status
+- Supports check mode for read-only verification
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_bay.ini longhorn_verify_cleanup.yaml
+```
+
 ### Zsh
 Installs and configures Zsh shell with Oh My Zsh.
 
@@ -467,6 +488,8 @@ ansible-playbook -i hosts.ini common_install.yaml
 | `nfs_client_manage.yaml` | Manage NFS mounts | nfs_clients |
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
+| `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
+| `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | workers_all |
 
 ### Subdirectory Playbooks
 
@@ -504,6 +527,8 @@ ansible-playbook workstation.yaml --list-tags
 - **nfs_client_manage.yaml**: `nfs`, `client`, `storage`, `manage`
 - **upgrade_deb.yaml**: `upgrade`, `maintenance`, `debian`
 - **longhorn_remove_workers.yaml**: `longhorn`, `storage`, `cleanup`, `remove`
+- **longhorn_verify_cleanup.yaml**: `longhorn`, `verify`, `cleanup`
+- **longhorn_master_cleanup.yaml**: `longhorn`, `cleanup`, `verify`
 - **kuber_worker_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `worker`
 - **kuber_plane_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `master`
 - **playbooks/disk/create_config_mount_new_disk.yaml**: `disk`, `storage`, `partition`, `mount`
@@ -552,6 +577,8 @@ Cluster playbooks use rolling updates with `serial` parameter:
 
 - **kuber.yaml**: `serial: 1` - One node at a time for cluster safety
 - **longhorn_remove_workers.yaml**: `serial: "30%"` - 30% of workers at a time
+- **longhorn_verify_cleanup.yaml**: `serial: 1` - One worker at a time
+- **longhorn_master_cleanup.yaml**: `serial: "30%"` for cleanup, `1` for verify
 - **kuber_worker_reset.yaml**: `serial: 1` - One worker at a time
 - **kuber_plane_reset.yaml**: `serial: 1` - One control plane at a time
 - **nfs_server_manage.yaml**: `serial: 1` - Single NFS server at a time

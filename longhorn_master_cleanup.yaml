@@ -1,0 +1,26 @@
+---
+- name: Remove Longhorn Data from Workers
+  hosts: workers_all
+  become: true
+  gather_facts: false
+  serial: "30%"
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - longhorn
+    - cleanup
+  roles:
+    - longhorn_clean
+
+- name: Verify Longhorn Cleanup
+  hosts: workers_all
+  become: true
+  gather_facts: false
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - longhorn
+    - verify
+  roles:
+    - longhorn_verify
