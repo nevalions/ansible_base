@@ -3,6 +3,12 @@
 *.ini
 env_*
 
+# Ansible logs (contains sensitive connection data and IPs)
+ansible.log
+
+# Environment configuration files
+env_vars.json
+
 # Ignore group_vars/*.yml but keep example files
 group_vars/*.yml
 
