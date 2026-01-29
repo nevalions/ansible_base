@@ -41,7 +41,7 @@ ssh-keygen -t rsa -b 4096 -C "your-email@example.com"
 
 Add public keys to target servers:
 ```bash
-ssh-copy-id -p [custom-ssh-port] user@server-ip
+ssh-copy-id -p [custom-ssh-port] [your-username]@server-ip
 ```
 
 ### 3. Create Local Group Variables
