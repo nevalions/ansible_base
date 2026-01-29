@@ -489,7 +489,7 @@ ansible-playbook -i hosts.ini common_install.yaml
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
-| `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | workers_all |
+| `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | masters |
 
 ### Subdirectory Playbooks
 

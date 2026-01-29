@@ -1,6 +1,6 @@
 ---
 - name: Remove Longhorn Data from Workers
-  hosts: workers_all
+  hosts: masters
   become: true
   gather_facts: false
   serial: "30%"
@@ -13,7 +13,7 @@
     - longhorn_clean
 
 - name: Verify Longhorn Cleanup
-  hosts: workers_all
+  hosts: masters
   become: true
   gather_facts: false
   serial: 1

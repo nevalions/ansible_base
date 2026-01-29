@@ -2,8 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.2.0] - 2026-01-29
+
+### Changed
+- **Playbook Flexibility**:
+  - `kuber_plane_reset.yaml` now loads `vault_secrets.yml` via `vars_files` for vault variable access
+  - `longhorn_master_cleanup.yaml` now targets `masters` group instead of `workers_all`
+  - This enables flexible `--limit` patterns (planes, workers_all, etc.) without playbook modifications
+- **Documentation**:
+  - Updated `README.md` to reflect `longhorn_master_cleanup.yaml` targeting `masters` group
+  - Maintains consistency with `kuber_plane_reset.yaml` which also targets `masters`
 
 ## [1.1.0] - 2026-01-28
 
