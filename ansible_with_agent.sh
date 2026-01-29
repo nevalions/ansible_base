@@ -17,7 +17,8 @@ echo ""
 
 # Add SSH key with passphrase
 echo "Adding SSH key (~/.ssh/id_rsa)..."
-ssh-add ~/.ssh/id_rsa <<< "kicker"
+PASSPHRASE=$(ansible-vault view vault_secrets.yml --vault-password-file .vault_pass 2>/dev/null | grep -E '^vault_ssh_key_passphrase:' | cut -d' ' -f2 | tr -d '" ')
+ssh-add ~/.ssh/id_rsa <<< "$PASSPHRASE"
 
 # Verify key added
 if ssh-add -l > /dev/null 2>&1; then

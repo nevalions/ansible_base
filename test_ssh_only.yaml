@@ -1,0 +1,16 @@
+---
+- name: Test vault SSH only
+  hosts: workers_all
+  become: false
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  tasks:
+    - name: Test SSH connection without sudo
+      ansible.builtin.command: whoami
+      register: whoami_output
+      changed_when: false
+
+    - name: Display user
+      ansible.builtin.debug:
+        msg: "Running as: {{ whoami_output.stdout }}"

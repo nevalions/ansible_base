@@ -1,0 +1,14 @@
+---
+# Test vault variables are accessible
+- name: Test vault variables
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  tasks:
+    - name: Show vault variables
+      ansible.builtin.debug:
+        msg:
+          - "vault_ssh_key_passphrase: {{ vault_ssh_key_passphrase }}"
+          - "vault_become_pass: {{ vault_become_pass }}"
