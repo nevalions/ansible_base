@@ -16,3 +16,7 @@ vault_secrets.yml
 
 # Ignore vault password file
 .vault_pass
+
+# Ignore GPG-encrypted vault password and client script
+vault_password.gpg
+vault_password_client.sh

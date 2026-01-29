@@ -17,7 +17,7 @@ echo ""
 
 # Add SSH key with passphrase
 echo "Adding SSH key (~/.ssh/id_rsa)..."
-PASSPHRASE=$(ansible-vault view vault_secrets.yml --vault-password-file .vault_pass 2>/dev/null | grep -E '^vault_ssh_key_passphrase:' | cut -d' ' -f2 | tr -d '" ')
+PASSPHRASE=$(ansible-vault view vault_secrets.yml --vault-password-file ./vault_password_client.sh 2>/dev/null | grep -E '^vault_ssh_key_passphrase:' | cut -d' ' -f2 | tr -d '" ')
 
 ASKPASS_SCRIPT=$(mktemp)
 echo "#!/bin/bash" > "$ASKPASS_SCRIPT"
@@ -44,7 +44,7 @@ echo "Running Ansible playbook..."
 echo "------------------------------------------"
 
 # Run Ansible playbook with all passed arguments
-ansible-playbook "$@" --vault-password-file .vault_pass
+ansible-playbook "$@" --vault-password-file ./vault_password_client.sh
 
 PLAYBOOK_EXIT=$?
 

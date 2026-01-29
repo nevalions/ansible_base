@@ -134,6 +134,156 @@ This removes all keys from memory.
 - ansible.cfg
 - .ansible-lint
 
+## Recommended: GPG-Secured Vault Password
+
+This repository uses GPG encryption to secure the Ansible vault password.
+
+### Architecture
+- Vault password encrypted with GPG and stored in `vault_password.gpg`
+- Client script `vault_password_client.sh` decrypts on demand
+- Password only decrypted in memory during Ansible execution
+- Never stored in plaintext on disk
+
+### Initial Setup
+
+#### 1. Create GPG Key (first time only)
+```bash
+gpg --full-generate-key
+# RSA 4096-bit, no expiration
+# Name: [your-username]
+# Email: nevalions@gmail.com
+# Comment: Ansible Vault
+# Use a strong passphrase for the GPG key
+```
+
+#### 2. Encrypt Vault Password
+```bash
+# If migrating from plaintext .vault_pass:
+cat .vault_pass | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
+
+# For new passwords:
+echo "your-new-vault-password" | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
+```
+
+#### 3. Make Script Executable
+```bash
+chmod 700 vault_password_client.sh
+```
+
+### Usage
+
+When running Ansible:
+- First use in session: Prompts for GPG key passphrase
+- GPG caches passphrase (default 10 minutes)
+- Subsequent runs: No prompt if passphrase cached
+
+### Running Playbooks
+
+```bash
+# Direct ansible-playbook (uses ansible.cfg)
+ansible-playbook upgrade_deb.yaml
+
+# With vault script explicitly specified
+ansible-playbook upgrade_deb.yaml --vault-password-file ./vault_password_client.sh
+
+# Using the automated script with SSH agent
+./ansible_with_agent.sh playbook.yaml
+```
+
+### Security Benefits
+- ✅ Password encrypted at rest with strong cryptography (GPG AES256)
+- ✅ Only decrypted in memory during use
+- ✅ GPG passphrase required for each new session
+- ✅ No plaintext password stored on disk
+- ✅ Audit trail in GPG trust database
+- ✅ Integrates with existing GPG key management
+
+### Vault File Structure
+
+Encrypted file: `vault_password.gpg`
+- Contains: Ansible vault password (plaintext of "zenit")
+- Encrypted with: GPG key for nevalions@gmail.com
+- Format: ASCII-armored PGP message
+
+Client script: `vault_password_client.sh`
+- Purpose: Decrypt vault_password.gpg on demand
+- Called by: ansible-playbook via ansible.cfg
+- Output: Plaintext vault password to stdout
+
+### Rotation
+
+To rotate Ansible vault password:
+```bash
+# 1. Generate new vault password
+NEW_PASS=$(openssl rand -base64 32)
+
+# 2. Encrypt new password with GPG
+echo "$NEW_PASS" | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
+
+# 3. Re-encrypt all vault files with new password
+ansible-vault rekey vault_secrets.yml --vault-password-file ./vault_password_client.sh
+# Enter old password when prompted, then new password
+
+# 4. Update ansible.cfg to point to new encrypted file (if needed)
+```
+
+To rotate GPG key:
+```bash
+# 1. Generate new GPG key
+gpg --full-generate-key
+
+# 2. Re-encrypt vault password with new key
+gpg --decrypt --recipient nevalions@gmail.com vault_password.gpg | \
+  gpg --encrypt --recipient NEW_EMAIL@gmail.com --armor --output vault_password.gpg.new
+mv vault_password.gpg.new vault_password.gpg
+
+# 3. Update vault_password_client.sh with new recipient
+
+# 4. Revoke old GPG key if needed
+gpg --edit-key OLD_KEY_ID
+# Type "revkey" and follow prompts
+```
+
+### Troubleshooting
+
+#### Script permission denied
+```bash
+chmod 700 vault_password_client.sh
+```
+
+#### GPG passphrase prompt not appearing
+```bash
+# Ensure GPG agent is running
+gpg-agent --daemon
+
+# Check GPG TTY
+export GPG_TTY=$(tty)
+```
+
+#### Cannot decrypt vault password
+```bash
+# Verify you have the GPG secret key
+gpg --list-secret-keys
+
+# Test decryption manually
+gpg --decrypt vault_password.gpg
+
+# Check file permissions
+ls -la vault_password.gpg  # Should be 600
+```
+
+#### Ansible cannot read vault password
+```bash
+# Test script manually
+./vault_password_client.sh
+
+# Check ansible.cfg
+grep vault_password_file ansible.cfg
+
+# Check script path
+ls -la ./vault_password_client.sh
+```
+
 ## Optional: Using ansible-vault
 
 If you need to commit connection details to git (not recommended), use ansible-vault:
