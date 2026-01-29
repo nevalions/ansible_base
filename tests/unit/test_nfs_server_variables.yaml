@@ -7,7 +7,7 @@
     skip_folder_check: true
     test_nfs_exports:
       - path: /export/test
-        clients: ["[internal-ip]/24"]
+        clients: ["[client-network]/24"]
         options: "rw,sync,no_subtree_check"
   tasks:
     - name: Verify skip_folder_check variable
