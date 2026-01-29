@@ -207,6 +207,38 @@ Always configure `.ansible-lint` with:
 - Ensures service availability during updates
 - Important for Kubernetes, NFS, and multi-node deployments
 
+## Security Guidelines
+
+### Never Commit Secrets
+- **CRITICAL**: Never commit plaintext passwords, API keys, tokens, or any sensitive data
+- **CRITICAL**: Never put logins or passwords in documentation files (even in examples)
+- **CRITICAL**: Never include SSH private keys, certificates, or encrypted secrets in git
+- Use `[redacted]`, `[REDACTED]`, or placeholder text in documentation examples
+- Reference SECURITY.md for comprehensive security practices
+
+### Secret Management
+- Use `ansible-vault` for encrypting sensitive variables in playbooks
+- Use GPG or password managers for vault password storage (see SECURITY.md)
+- Store secrets in environment variables only when absolutely necessary
+- Consider using external secret management systems (HashiCorp Vault, AWS Secrets Manager)
+
+### Documentation Security
+- Documentation files must use placeholders for all credentials:
+  - Good: `password: [redacted]` or `password: your-password-here`
+  - Good: `api_key: [your-api-key-here]`
+  - Bad: `password: "myActualPassword123"`
+  - Bad: `api_key: "sk-1234567890abcdef"`
+- Review all documentation files before committing
+- Use git hooks to prevent accidental secret commits if possible
+
+### Pre-Commit Security Checklist
+Before any commit, verify:
+- [ ] No plaintext passwords in any files (use `git diff` to review)
+- [ ] No API keys, tokens, or credentials in code or documentation
+- [ ] All secrets properly encrypted with ansible-vault or GPG
+- [ ] Sensitive files added to .gitignore
+- [ ] Documentation uses placeholders instead of real credentials
+
 ## Role Metadata
 
 ### meta/main.yaml
