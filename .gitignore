@@ -13,3 +13,6 @@ group_vars/*.yml
 *.vault
 group_vars/*.vault.yml
 vault_secrets.yml
+
+# Ignore vault password file
+.vault_pass

@@ -4,6 +4,8 @@
   become: true
   gather_facts: false
   serial: "30%"
+  vars_files:
+    - vault_secrets.yml
   tags:
     - longhorn
     - storage

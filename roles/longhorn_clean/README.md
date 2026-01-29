@@ -42,6 +42,8 @@ roles/longhorn_clean/
 
 ### Using the Management Playbook
 
+The playbook loads vault secrets from `vault_secrets.yml` for any sensitive credentials.
+
 ```bash
 # Dry-run to see what will be removed
 ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml --check

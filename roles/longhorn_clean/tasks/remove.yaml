@@ -18,33 +18,33 @@
 - name: Show Longhorn removal result
   ansible.builtin.debug:
     msg: "Removed {{ longhorn_data_path }}"
-  when: longhorn_dir.stat.exists and longhorn_removed.changed
+    when: longhorn_dir.stat.exists and longhorn_removed.changed
 
 - name: Check if kubelet pods directory exists
   ansible.builtin.stat:
     path: "{{ kubelet_pods_path }}"
-  register: kubelet_pods_dir
+    register: kubelet_pods_dir
 
 - name: Find Longhorn-related pod directories
   ansible.builtin.find:
     paths: "{{ kubelet_pods_path }}"
     patterns: "*longhorn*"
     file_type: directory
-  register: longhorn_pods
+    register: longhorn_pods
   when: kubelet_pods_dir.stat.exists
 
 - name: Display found Longhorn pod directories
   ansible.builtin.debug:
     msg: "Found {{ longhorn_pods.matched }} Longhorn-related pod directories"
-  when:
-    - kubelet_pods_dir.stat.exists
-    - longhorn_pods.matched > 0
+    when:
+      - kubelet_pods_dir.stat.exists
+      - longhorn_pods.matched > 0
 
 - name: Remove Longhorn-related pod directories
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent
-  loop: "{{ longhorn_pods.files }}"
+    loop: "{{ longhorn_pods.files }}"
   register: pods_removed
   when:
     - kubelet_pods_dir.stat.exists
@@ -53,16 +53,19 @@
 - name: Show pod removal results
   ansible.builtin.debug:
     msg: "Removed {{ item.item.path }}"
-  loop: "{{ pods_removed.results }}"
-  loop_control:
-    label: "{{ item.item.path | basename }}"
+    loop: "{{ pods_removed.results }}"
+    loop_control:
+      label: "{{ item.item.path | basename }}"
+    when:
+      - kubelet_pods_dir.stat.exists
+      - longhorn_pods.matched > 0
 
 - name: Verify Longhorn data directory is removed
   ansible.builtin.stat:
     path: "{{ longhorn_data_path }}"
-  register: longhorn_final_check
-  failed_when: longhorn_final_check.stat.exists
-  ignore_errors: true
+    register: longhorn_final_check
+    failed_when: longhorn_final_check.stat.exists
+    ignore_errors: true
 
 - name: Assert Longhorn data directory removal
   ansible.builtin.assert:
@@ -70,15 +73,15 @@
       - not longhorn_final_check.stat.exists
     success_msg: "Longhorn data directory successfully removed"
     fail_msg: "Longhorn data directory still exists after removal attempt"
-  when: longhorn_dir.stat.exists
+    when: longhorn_dir.stat.exists
 
 - name: Verify Longhorn pod directories are removed
   ansible.builtin.find:
     paths: "{{ kubelet_pods_path }}"
     patterns: "*longhorn*"
     file_type: directory
-  register: longhorn_pods_final
-  when: kubelet_pods_dir.stat.exists
+    register: longhorn_pods_final
+    when: kubelet_pods_dir.stat.exists
 
 - name: Assert Longhorn pod directories removal
   ansible.builtin.assert:
@@ -86,6 +89,6 @@
       - longhorn_pods_final.matched == 0
     success_msg: "All Longhorn pod directories successfully removed"
     fail_msg: "Longhorn pod directories still exist after removal attempt"
-  when:
-    - kubelet_pods_dir.stat.exists
-    - longhorn_pods.matched > 0
+    when:
+      - kubelet_pods_dir.stat.exists
+      - longhorn_pods.matched > 0
