@@ -36,12 +36,14 @@ ansible/
 ├── hosts_bay.ini                # Main inventory (Bay cluster)
 ├── hosts_haproxy.ini            # HAProxy inventory
 ├── hosts_restream.ini           # Restream inventory
-├── KUBERNETES_SETUP.md         # Kubernetes setup guide
-├── KUBERNETES_QUICKREF.md      # Kubernetes quick reference
-├── SSH_AGENT_QUICKREF.md       # SSH agent usage guide
-├── ssh-agent-setup.sh          # SSH agent setup script
-├── ssh-agent-stop.sh           # SSH agent stop script
-├── vars/
+ ├── KUBERNETES_SETUP.md         # Kubernetes setup guide
+ ├── KUBERNETES_QUICKREF.md      # Kubernetes quick reference
+ ├── SSH_AGENT_QUICKREF.md       # SSH agent usage guide
+ ├── SSH_PASSPHRASE_IMPLEMENTATION.md  # SSH key passphrase implementation
+ ├── ansible_with_agent.sh       # Automated SSH agent with preflight/postflight
+ ├── ssh-agent-setup.sh          # SSH agent setup script (manual)
+ ├── ssh-agent-stop.sh           # SSH agent stop script (manual)
+ ├── vars/
 │   └── packages.yaml            # Package definitions by OS
 ├── group_vars/                  # Group-specific variables (templates and local config)
 │   ├── *.example.yml           # Example templates (committed to git)
@@ -199,10 +201,20 @@ cd ..
 ```
 
 5. Configure SSH agent for key-based authentication (required):
+
+**Option A: Automated (Recommended)**
+```bash
+./ansible_with_agent.sh playbook.yaml
+```
+Automatically manages SSH agent lifecycle (start, add key, cleanup).
+
+**Option B: Manual**
 ```bash
 ./ssh-agent-setup.sh
+./ssh-agent-stop.sh
 ```
-See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for complete documentation.
+See [SSH_PASSPHRASE_IMPLEMENTATION.md](SSH_PASSPHRASE_IMPLEMENTATION.md) for complete implementation details.
+See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for manual SSH agent commands.
 
 6. Run a playbook:
 ```bash
@@ -225,7 +237,9 @@ This repository follows security best practices to protect sensitive infrastruct
 - SSH key-based authentication with passphrases
 - Passphrases cached in SSH agent (memory only)
 - No passwords or API keys in repository
-- See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for usage
+- Automated lifecycle management with preflight/postflight
+- See [SSH_PASSPHRASE_IMPLEMENTATION.md](SSH_PASSPHRASE_IMPLEMENTATION.md) for implementation details
+- See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for manual SSH agent commands
 
 ### Security Checklist
 
@@ -240,8 +254,13 @@ This repository follows security best practices to protect sensitive infrastruct
 **Before Using:**
 - Create local `group_vars/*.yml` from templates
 - Configure inventory files with your infrastructure
-- Set up SSH agent with passphrase-protected keys
+- Set up SSH agent with passphrase-protected keys (automated or manual)
 - Add SSH public keys to target servers
+
+**Automated SSH Agent (Recommended):**
+```bash
+./ansible_with_agent.sh playbook.yaml
+```
 
 ### Required Setup
 

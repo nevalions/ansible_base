@@ -8,3 +8,8 @@ group_vars/*.yml
 
 # Keep example files
 !group_vars/*.example.yml
+
+# Ignore ansible-vault encrypted files
+*.vault
+group_vars/*.vault.yml
+vault_secrets.yml
