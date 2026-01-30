@@ -5,3 +5,4 @@ kuber_join_api_port: "6443"
 kuber_join_token_ttl: "0"
 kuber_join_kubelet_extra_args:
   node-ip: "{{ ansible_default_ipv4.address }}"
+kubeadm_api_version: "v1beta4"

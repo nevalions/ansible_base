@@ -10,17 +10,17 @@
 
 - name: Install Oh My Zsh
   ansible.builtin.git:
-    repo: "https://github.com/ohmyzsh/ohmyzsh.git"
+    repo: "{{ zsh_oh_my_zsh_repo }}"
     dest: "{{ user_home }}/.oh-my-zsh"
-    version: master
+    version: "{{ zsh_oh_my_zsh_version }}"
   become: true
   become_user: "{{ ansible_user }}"
 
 - name: Install Powerlevel10k theme
   ansible.builtin.git:
-    repo: "https://github.com/romkatv/powerlevel10k.git"
+    repo: "{{ zsh_powerlevel10k_repo }}"
     dest: "{{ user_home }}/.oh-my-zsh/custom/themes/powerlevel10k"
-    version: master
+    version: "{{ zsh_powerlevel10k_version }}"
   become: true
   become_user: "{{ ansible_user }}"
 
@@ -28,19 +28,22 @@
   ansible.builtin.git:
     repo: "{{ item.repo }}"
     dest: "{{ user_home }}/.oh-my-zsh/custom/plugins/{{ item.name }}"
-    version: master
+    version: "{{ item.version }}"
   become: true
   become_user: "{{ ansible_user }}"
   loop:
     - {
-      name: "zsh-autosuggestions",
-      repo: "https://github.com/zsh-users/zsh-autosuggestions.git",
-    }
+        name: "zsh-autosuggestions",
+        repo: "{{ zsh_autosuggestions_repo }}",
+        version: "{{ zsh_autosuggestions_version }}",
+      }
     - {
-      name: "zsh-syntax-highlighting",
-      repo: "https://github.com/zsh-users/zsh-syntax-highlighting.git",
-    }
+        name: "zsh-syntax-highlighting",
+        repo: "{{ zsh_syntax_highlighting_repo }}",
+        version: "{{ zsh_syntax_highlighting_version }}",
+      }
     - {
-      name: "fast-syntax-highlighting",
-      repo: "https://github.com/zdharma-continuum/fast-syntax-highlighting.git",
-    }
+        name: "fast-syntax-highlighting",
+        repo: "{{ zsh_fast_syntax_highlighting_repo }}",
+        version: "{{ zsh_fast_syntax_highlighting_version }}",
+      }

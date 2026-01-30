@@ -1,2 +1,4 @@
 ---
 install_dotfiles: true
+dotfiles_repo: "https://github.com/nevalions/dotfiles.git"
+dotfiles_version: "main"

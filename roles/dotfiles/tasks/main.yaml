@@ -10,9 +10,9 @@
 
 - name: Clone dotfiles repository
   ansible.builtin.git:
-    repo: "https://github.com/nevalions/dotfiles.git"
+    repo: "{{ dotfiles_repo }}"
     dest: "{{ user_home }}/dotfiles"
-    version: main
+    version: "{{ dotfiles_version }}"
   become: true
   become_user: "{{ ansible_user }}"
 

@@ -366,7 +366,7 @@ sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sud
     - kuber
 
   vars:
-    kubernetes_version: "1.30.0"
+    kubernetes_version: "1.35"
 ```
 
 Initialize first control plane:

@@ -64,7 +64,7 @@
 
     - name: Download Caddy GPG key to temporary file
       ansible.builtin.get_url:
-        url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+        url: "{{ caddy_gpg_key_url }}"
         dest: /tmp/caddy-gpg.key
         mode: '0644'
       when: caddy_repo.stat.exists

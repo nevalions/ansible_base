@@ -59,7 +59,11 @@ kubeadm_pod_subnet: "[internal-ip]/16"
 kubeadm_service_subnet: "[internal-ip]/16"
 kubeadm_control_plane_endpoint: "{{ ansible_default_ipv4.address }}:6443"
 kubeadm_api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
-calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.1/manifests/tigera-operator.yaml"
+kubeadm_kubelet_extra_args:
+  node-ip: "{{ ansible_default_ipv4.address }}"
+kubeadm_api_version: "v1beta4"
+calico_version: "v3.31.3"
+calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
 calico_custom_resources_src: "/home/[your-username]/kuber-bay/kube/calico/2-custom-resources.yaml"
 ```
 
@@ -445,9 +449,9 @@ All playbooks support the following tags for selective execution:
 
 ## Additional Information
 
-- Kubernetes version: v1.30 (from pkgs.k8s.io)
+- Kubernetes version: v1.35 (from pkgs.k8s.io)
 - Container runtime: containerd with systemd cgroup driver
-- CNI: Calico v3.28.1 (Tigera Operator)
+- CNI: Calico v3.31.3 (Tigera Operator)
 - Pod CIDR: [internal-ip]/16
 - Service CIDR: [internal-ip]/16
 - Ansible version: 2.16+

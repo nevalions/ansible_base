@@ -32,14 +32,14 @@
 
 - name: Add Kubernetes GPG key
   ansible.builtin.get_url:
-    url: https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key
+    url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
     dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
     mode: "0644"
   when: ansible_facts['os_family'] == "Debian"
 
 - name: Add Kubernetes repository
   ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /"
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
     state: present
     filename: kubernetes
   when: ansible_facts['os_family'] == "Debian"

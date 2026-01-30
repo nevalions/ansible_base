@@ -33,4 +33,4 @@
         success_msg: "calico_tigera_operator_url is valid"
         fail_msg: "calico_tigera_operator_url is invalid or missing"
       vars:
-        calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.1/manifests/tigera-operator.yaml"
+        calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/tigera-operator.yaml"

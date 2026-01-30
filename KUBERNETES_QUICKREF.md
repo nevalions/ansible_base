@@ -70,7 +70,8 @@ kubectl delete pod test-pod
 ```yaml
 kubeadm_pod_subnet: "[internal-ip]/16"
 kubeadm_service_subnet: "[internal-ip]/16"
-calico_version: "v3.28.1"
+kubeadm_api_version: "v1beta4"
+calico_version: "v3.31.3"
 ```
 
 ### kuber_verify
