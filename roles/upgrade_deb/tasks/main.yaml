@@ -12,7 +12,7 @@
       - "Internet connectivity: Verified"
 
 - name: Get current package count before upgrade
-  ansible.builtin.command: dpkg -l | grep -c '^ii'
+  ansible.builtin.shell: dpkg -l | grep -c '^ii'
   register: packages_before
   changed_when: false
 
@@ -29,7 +29,7 @@
   register: reboot_required
 
 - name: Get current package count after upgrade
-  ansible.builtin.command: dpkg -l | grep -c '^ii'
+  ansible.builtin.shell: dpkg -l | grep -c '^ii'
   register: packages_after
   changed_when: false
 
