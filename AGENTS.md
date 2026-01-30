@@ -124,6 +124,8 @@ ansible-playbook -i inventory <playbook>.yaml -v
 ### Variable Management
 - Define default variables in `roles/<role_name>/defaults/main.yaml`
 - Load external vars with `vars_files:` in playbooks
+- Load vault secrets with `vars_files: - vault_secrets.yml` in all playbooks that use become/sudo
+- For playbooks in subdirectories, use relative path: `vars_files: - ../../vault_secrets.yml`
 - Use variable interpolation: `{{ variable_name }}`
 - Provide defaults with filters: `{{ item.mode | default('0777') }}`
 

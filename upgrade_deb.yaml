@@ -10,5 +10,7 @@
     - debian
   vars:
     upgrade_deb: true
+  vars_files:
+    - vault_secrets.yml
   roles:
     - upgrade

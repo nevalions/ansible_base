@@ -10,6 +10,7 @@
     - install
     - cluster
   vars_files:
+    - vault_secrets.yml
     - vars/packages.yaml
   vars:
     common: false

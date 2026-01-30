@@ -3,6 +3,8 @@
   hosts: nfs_server
   become: true
   gather_facts: false
+  vars_files:
+    - ../../vault_secrets.yml
   tags:
     - disk
     - storage

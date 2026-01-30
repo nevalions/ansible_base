@@ -4,6 +4,8 @@
   become: true
   gather_facts: true
   serial: "50%"
+  vars_files:
+    - vault_secrets.yml
   tags:
     - nfs
     - client
