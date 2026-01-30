@@ -1,0 +1,34 @@
+---
+- name: Verify DNS records are defined
+  ansible.builtin.assert:
+    that:
+      - dns_records is defined
+      - dns_records | length > 0
+    success_msg: "DNS records defined ({{ dns_records | length }} records)"
+    fail_msg: "No DNS records defined in vault"
+  when: dns_operation == "install"
+
+- name: Display configured DNS records
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Records ==="
+      - "Zone: {{ dns_zone }}"
+      - "{% for record in dns_records %}"
+      - "{{ record.type }} {{ record.name }}.{{ dns_zone }} -> {{ record.ip }}"
+      - "{% endfor %}"
+  when:
+    - dns_operation == "install"
+    - dns_records is defined
+
+- name: Verify each DNS record has required fields
+  ansible.builtin.assert:
+    that:
+      - record.type is defined
+      - record.name is defined
+      - record.ip is defined
+    success_msg: "Record {{ record.name }} is valid"
+    fail_msg: "Record {{ record.name }} is missing required fields (type, name, ip)"
+  loop: "{{ dns_records }}"
+  loop_control:
+    loop_var: record
+  when: dns_operation == "install"

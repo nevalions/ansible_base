@@ -12,6 +12,7 @@ profile: production
 skip_list:
   - yaml[line-length]  # Allow longer lines for readability
   - jinja[spacing]     # Skip Jinja spacing rules
+  - syntax-check[specific]  # Skip meta.yaml platforms validation (Ansible 2.16 compatibility)
 
 warn_list:
   - experimental  # Allow experimental rules but warn

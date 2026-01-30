@@ -366,6 +366,44 @@ ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
   -e add_nfs_server_exports="[client-network]/24"
 ```
 
+### DNS Server
+Configures Unbound DNS server for Kubernetes cluster with encrypted vault variables.
+
+**Variables (from vault_secrets.yml):**
+- `vault_dns_zone`: DNS zone name (e.g., "cluster.local")
+- `vault_dns_servers`: List of DNS server IPs
+- `vault_dns_records`: List of DNS records (type, name, ip)
+- `vault_dns_allowed_networks`: Allowed networks for DNS queries
+
+**Structure:**
+```yaml
+vault_dns_records:
+  - type: "A"
+    name: "[node-hostname]"
+    ip: "[node-ip]"
+  - type: "A"
+    name: "[service-hostname]"
+    ip: "[service-ip]"
+```
+
+**Features:**
+- Unbound DNS server installation and configuration
+- DNS zone management with encrypted records
+- High availability across multiple servers (serial: 1)
+- Firewall rules for DNS (UDP/TCP 53)
+- Supports both node hostnames and Kubernetes services
+- All IPs encrypted in Ansible Vault
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_dns.ini dns_server_manage.yaml
+```
+
+**Security:**
+- All IPs, hostnames, and ports encrypted in `vault_secrets.yml`
+- No hardcoded values in playbooks
+- See `vault_secrets.example.yml` for template structure
+
 ### NFS Client
 Configures NFS client mounts.
 

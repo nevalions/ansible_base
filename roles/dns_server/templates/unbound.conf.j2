@@ -1,0 +1,13 @@
+---
+server:
+    interface: {{ dns_listen_interface }}
+    access-control: {{ vault_dns_allowed_networks | default(["0.0.0.0/0 allow"]) }}
+    do-ip6: {{ "yes" if dns_do_ipv6 else "no" }}
+    cache-size: {{ dns_cache_size }}m
+{% for upstream in dns_upstream_dns %}
+    forward-zone:
+        name: "."
+        forward-addr: {{ upstream }}
+{% endfor %}
+
+include: /etc/unbound/unbound.conf.d/zone.conf

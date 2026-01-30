@@ -1,0 +1,10 @@
+---
+skip_folder_check: true
+
+dns_listen_interface: "0.0.0.0"
+dns_operation: "install"
+dns_upstream_dns:
+  - "[dns-server]"
+  - "8.8.4.4"
+dns_cache_size: 256
+dns_do_ipv6: false

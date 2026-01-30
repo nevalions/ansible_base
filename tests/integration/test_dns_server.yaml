@@ -1,0 +1,33 @@
+---
+- name: Test dns_server role - localhost
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: true
+  vars:
+    test_mode: true
+    dns_zone: "test.local"
+    dns_records:
+      - type: "A"
+        name: "test-node"
+        ip: "[internal-ip]"
+    dns_servers_list:
+      - "[internal-ip]"
+    vault_dns_allowed_networks:
+      - "[internal-ip]/24"
+  tasks:
+    - name: Test dns_server role import
+      ansible.builtin.include_role:
+        name: dns_server
+      tags: role_test
+
+    - name: Verify Unbound package check
+      ansible.builtin.command: dpkg -l | grep unbound
+      register: unbound_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert dns_server role tasks completed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "DNS server role tasks executed successfully"

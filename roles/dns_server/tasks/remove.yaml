@@ -1,0 +1,46 @@
+---
+- name: Stop and remove Unbound
+  ansible.builtin.systemd:
+    name: unbound
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Remove Unbound package
+  ansible.builtin.apt:
+    name: unbound
+    state: absent
+    purge: yes
+
+- name: Remove Unbound configuration directory
+  ansible.builtin.file:
+    path: /etc/unbound
+    state: absent
+
+- name: Remove DNS firewall rules
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "53"
+    delete: yes
+  failed_when: false
+  loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Remove DNS firewall rules (TCP)
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "53"
+    delete: yes
+  failed_when: false
+  loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Display DNS server removal completion
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Server Removal Complete ==="
+      - "Unbound package removed"
+      - "Configuration removed"
+      - "Firewall rules removed"

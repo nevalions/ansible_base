@@ -1,0 +1,96 @@
+---
+- name: Check if Unbound is installed
+  ansible.builtin.command: dpkg -l | grep unbound
+  register: unbound_installed_check
+  changed_when: false
+  failed_when: false
+
+- name: Display DNS server installation start
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Server Management Start ==="
+      - "Unbound installed: {{ 'Yes' if unbound_installed_check.rc == 0 else 'No' }}"
+      - "Operation: {{ dns_operation }}"
+      - "DNS zone: {{ dns_zone }}"
+      - "DNS records: {{ dns_records | length }}"
+      - "DNS servers: {{ dns_servers_list | length }}"
+
+- name: Install Unbound package
+  ansible.builtin.apt:
+    name: unbound
+    state: present
+
+- name: Import configuration tasks
+  ansible.builtin.import_tasks: configure.yaml
+
+- name: Import DNS records tasks
+  ansible.builtin.import_tasks: records.yaml
+
+- name: Import firewall tasks
+  ansible.builtin.import_tasks: firewall.yaml
+
+- name: Verify Unbound service is running
+  ansible.builtin.systemd:
+    name: unbound
+  register: unbound_running
+  failed_when: false
+  when: dns_operation == "install"
+
+- name: Assert Unbound is running
+  ansible.builtin.assert:
+    that:
+      - unbound_running.status.ActiveState == 'active'
+    success_msg: "Unbound service is running"
+    fail_msg: "Unbound service is not running"
+  when:
+    - dns_operation == "install"
+    - unbound_running.status is defined
+
+- name: Validate Unbound configuration
+  ansible.builtin.command: unbound-checkconf /etc/unbound/unbound.conf
+  register: unbound_config_check
+  changed_when: false
+  when: dns_operation == "install"
+
+- name: Assert configuration is valid
+  ansible.builtin.assert:
+    that:
+      - unbound_config_check.rc == 0
+    success_msg: "Unbound configuration is valid"
+    fail_msg: "Unbound configuration has errors"
+  when: dns_operation == "install"
+
+- name: Test DNS resolution
+  ansible.builtin.debug:
+    msg: "Testing DNS resolution for {{ dns_records[0].name }}.{{ dns_zone }}"
+  when:
+    - dns_operation == "install"
+    - dns_records | length > 0
+
+- name: Verify DNS resolution
+  ansible.builtin.command: "dig @127.0.0.1 {{ dns_records[0].name }}.{{ dns_zone }} +short"
+  register: dns_test
+  changed_when: false
+  failed_when: false
+  when:
+    - dns_operation == "install"
+    - dns_records | length > 0
+
+- name: Display DNS test result
+  ansible.builtin.debug:
+    msg:
+      - "DNS resolution test for {{ dns_records[0].name }}.{{ dns_zone }}"
+      - "Result: {{ dns_test.stdout | default('Not resolved') }}"
+  when:
+    - dns_operation == "install"
+    - dns_records | length > 0
+
+- name: Display DNS server management completion
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Server Management Complete ==="
+      - "Operation: {{ dns_operation }}"
+      - "Unbound service: {{ 'Running' if dns_operation == 'install' and unbound_running.status.ActiveState == 'active' else 'N/A' }}"
+      - "Records configured: {{ dns_records | length }}"
+      - "DNS zone: {{ dns_zone }}"
+  when: dns_operation == "install"

@@ -1,0 +1,27 @@
+---
+- name: Manage DNS server
+  hosts: dns_servers
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - dns
+    - server
+    - manage
+  vars:
+    dns_operation: "install"
+    dns_records: "{{ vault_dns_records }}"
+    dns_zone: "{{ vault_dns_zone }}"
+    dns_servers_list: "{{ vault_dns_servers }}"
+
+  tasks:
+    - name: Apply DNS server role
+      ansible.builtin.include_role:
+        name: dns_server
+      when: dns_operation == "install"
+
+    - name: Run DNS removal tasks
+      ansible.builtin.include_tasks: roles/dns_server/tasks/remove.yaml
+      when: dns_operation == "remove"

@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Configure Unbound DNS server for Kubernetes cluster with encrypted vault variables
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+platforms:
+  - name: Debian
+    versions:
+      - bullseye
+      - bookworm
+  - name: Ubuntu
+    versions:
+      - focal
+      - jammy
+
+galaxy_tags:
+  - dns
+  - unbound
+  - kubernetes
+  - networking
+
+dependencies: []

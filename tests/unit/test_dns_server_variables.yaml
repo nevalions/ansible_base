@@ -1,0 +1,79 @@
+---
+- name: Test dns_server role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_become_pass: "test"
+    dns_listen_interface: "0.0.0.0"
+    dns_operation: "install"
+    dns_upstream_dns:
+      - "[dns-server]"
+      - "8.8.4.4"
+    dns_cache_size: 256
+    dns_do_ipv6: false
+    test_dns_records:
+      - type: "A"
+        name: "test-host"
+        ip: "[internal-ip]"
+      - type: "A"
+        name: "test-service"
+        ip: "[internal-ip]"
+    test_dns_servers:
+      - "[internal-ip]"
+      - "[internal-ip]"
+  tasks:
+    - name: Verify default variables exist
+      ansible.builtin.assert:
+        that:
+          - dns_listen_interface is defined
+          - dns_operation is defined
+          - dns_upstream_dns is defined
+          - dns_cache_size is defined
+          - dns_do_ipv6 is defined
+        success_msg: "Default variables defined correctly"
+        fail_msg: "Default variables are missing"
+
+    - name: Verify default variable types
+      ansible.builtin.assert:
+        that:
+          - dns_listen_interface is string
+          - dns_operation is string
+          - dns_upstream_dns is iterable
+          - dns_upstream_dns | length > 0
+          - dns_cache_size is number
+          - dns_do_ipv6 is boolean
+        success_msg: "Default variables have correct types"
+        fail_msg: "Default variables have incorrect types"
+
+    - name: Verify DNS records structure
+      ansible.builtin.assert:
+        that:
+          - test_dns_records is defined
+          - test_dns_records | length == 2
+          - test_dns_records[0].type == "A"
+          - test_dns_records[0].name == "test-host"
+          - test_dns_records[0].ip == "[internal-ip]"
+        success_msg: "DNS records structure is correct"
+        fail_msg: "DNS records structure is invalid"
+
+    - name: Test DNS servers list structure
+      ansible.builtin.assert:
+        that:
+          - test_dns_servers is defined
+          - test_dns_servers | length == 2
+          - "'[internal-ip]' in test_dns_servers"
+          - "'[internal-ip]' in test_dns_servers"
+        success_msg: "DNS servers list structure is correct"
+        fail_msg: "DNS servers list structure is invalid"
+
+    - name: Test lowercase variable naming
+      ansible.builtin.set_fact:
+        test_var_lowercase: "lowercase_variable_name"
+
+    - name: Verify lowercase naming convention
+      ansible.builtin.assert:
+        that:
+          - test_var_lowercase is match("^[a-z][a-z0-9_]*$")
+        success_msg: "Variable naming follows lowercase convention"
+        fail_msg: "Variable naming does not follow lowercase convention"

@@ -74,7 +74,7 @@ echo "------------------------------------------"
 for test_file in tests/unit/*.yaml; do
     if [ -f "$test_file" ]; then
         echo -n "Running $test_file... "
-        if ansible-playbook "$test_file" &>/dev/null; then
+        if ansible-playbook "$test_file" -e 'ansible_become_pass=test' &>/dev/null; then
             echo -e "${GREEN}PASS${NC}"
             ((PASSED++))
         else
