@@ -5,21 +5,20 @@ galaxy_info:
   company: null
   license: MIT
   min_ansible_version: 2.16
-
-platforms:
-  - name: Debian
-    versions:
-      - bullseye
-      - bookworm
-  - name: Ubuntu
-    versions:
-      - focal
-      - jammy
-
-galaxy_tags:
-  - dns
-  - unbound
-  - kubernetes
-  - networking
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+        - noble
+  galaxy_tags:
+    - dns
+    - unbound
+    - kubernetes
+    - networking
 
 dependencies: []

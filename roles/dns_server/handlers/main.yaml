@@ -3,8 +3,10 @@
   ansible.builtin.systemd:
     name: unbound
     state: restarted
+  when: not ansible_check_mode
 
 - name: Reload unbound
   ansible.builtin.systemd:
     name: unbound
     state: reloaded
+  when: not ansible_check_mode

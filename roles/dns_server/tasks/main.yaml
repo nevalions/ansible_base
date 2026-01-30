@@ -34,7 +34,9 @@
     name: unbound
   register: unbound_running
   failed_when: false
-  when: dns_operation == "install"
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
 
 - name: Assert Unbound is running
   ansible.builtin.assert:
@@ -44,6 +46,7 @@
     fail_msg: "Unbound service is not running"
   when:
     - dns_operation == "install"
+    - not ansible_check_mode
     - unbound_running.status is defined
 
 - name: Validate Unbound configuration
@@ -65,6 +68,7 @@
     msg: "Testing DNS resolution for {{ dns_records[0].name }}.{{ dns_zone }}"
   when:
     - dns_operation == "install"
+    - not ansible_check_mode
     - dns_records | length > 0
 
 - name: Verify DNS resolution
@@ -74,6 +78,7 @@
   failed_when: false
   when:
     - dns_operation == "install"
+    - not ansible_check_mode
     - dns_records | length > 0
 
 - name: Display DNS test result
@@ -83,6 +88,7 @@
       - "Result: {{ dns_test.stdout | default('Not resolved') }}"
   when:
     - dns_operation == "install"
+    - not ansible_check_mode
     - dns_records | length > 0
 
 - name: Display DNS server management completion
@@ -90,7 +96,7 @@
     msg:
       - "=== DNS Server Management Complete ==="
       - "Operation: {{ dns_operation }}"
-      - "Unbound service: {{ 'Running' if dns_operation == 'install' and unbound_running.status.ActiveState == 'active' else 'N/A' }}"
+      - "Unbound service: {{ 'Running' if dns_operation == 'install' and not ansible_check_mode and unbound_running.status.ActiveState == 'active' else 'N/A' }}"
       - "Records configured: {{ dns_records | length }}"
       - "DNS zone: {{ dns_zone }}"
   when: dns_operation == "install"

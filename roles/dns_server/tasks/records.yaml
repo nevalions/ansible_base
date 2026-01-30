@@ -8,14 +8,19 @@
     fail_msg: "No DNS records defined in vault"
   when: dns_operation == "install"
 
+- name: Display DNS zone information
+  ansible.builtin.debug:
+    msg: "DNS Zone: {{ dns_zone }}"
+  when:
+    - dns_operation == "install"
+    - dns_records is defined
+
 - name: Display configured DNS records
   ansible.builtin.debug:
-    msg:
-      - "=== DNS Records ==="
-      - "Zone: {{ dns_zone }}"
-      - "{% for record in dns_records %}"
-      - "{{ record.type }} {{ record.name }}.{{ dns_zone }} -> {{ record.ip }}"
-      - "{% endfor %}"
+    msg: "{{ record.type }} {{ record.name }}.{{ dns_zone }} -> {{ record.ip }}"
+  loop: "{{ dns_records }}"
+  loop_control:
+    loop_var: record
   when:
     - dns_operation == "install"
     - dns_records is defined

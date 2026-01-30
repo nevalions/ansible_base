@@ -373,7 +373,7 @@ Configures Unbound DNS server for Kubernetes cluster with encrypted vault variab
 - `vault_dns_zone`: DNS zone name (e.g., "cluster.local")
 - `vault_dns_servers`: List of DNS server IPs
 - `vault_dns_records`: List of DNS records (type, name, ip)
-- `vault_dns_allowed_networks`: Allowed networks for DNS queries
+- `vault_dns_allowed_networks`: Allowed networks for DNS queries (supports multiple networks)
 
 **Structure:**
 ```yaml
@@ -390,7 +390,10 @@ vault_dns_records:
 - Unbound DNS server installation and configuration
 - DNS zone management with encrypted records
 - High availability across multiple servers (serial: 1)
-- Firewall rules for DNS (UDP/TCP 53)
+- Firewall rules for DNS (UDP/TCP 53) with UFW enablement
+- SSH access preservation when enabling UFW (prevents lockout)
+- Supports multiple networks for DNS queries (physical, VPN, cloud)
+- Check mode support for safe dry-run testing
 - Supports both node hostnames and Kubernetes services
 - All IPs encrypted in Ansible Vault
 

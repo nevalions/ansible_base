@@ -11,7 +11,10 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - Unbound DNS server installation and configuration
 - DNS zone management with encrypted records
 - High availability across multiple servers (rolling updates with `serial: 1`)
-- Firewall rules for DNS (UDP/TCP port 53)
+- Firewall rules for DNS (UDP/TCP port 53) with UFW enablement
+- SSH access preservation when enabling UFW (prevents lockout)
+- Supports multiple networks for DNS queries (physical, VPN, cloud)
+- Check mode support for safe dry-run testing
 - Supports both node hostname resolution and Kubernetes service DNS
 - All IPs encrypted in Ansible Vault (zero hardcoded values)
 - Configuration validation with `unbound-checkconf`
@@ -20,7 +23,7 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 ## Requirements
 
 - Debian 11 (bullseye) or 12 (bookworm)
-- Ubuntu 20.04 (focal) or 22.04 (jammy)
+- Ubuntu 20.04 (focal), 22.04 (jammy), or 24.04 (noble)
 - Sudo privileges
 - Vault secrets configured in `vault_secrets.yml`
 
@@ -71,8 +74,16 @@ vault_dns_records:
     ip: "[nfs-ip]"
 
 vault_dns_allowed_networks:
-  - "[allowed-network-1]"
-  - "[allowed-network-2]"
+  # Add all networks that should be able to query DNS
+  # This list supports multiple networks for flexible deployment:
+  # - Physical networks (e.g., [internal-ip]/24)
+  # - VPN networks (e.g., [internal-ip]/8, 9.11.0.0/24)
+  # - Cloud networks (e.g., [internal-ip]/16)
+  # - Always include localhost for local queries
+  - "[physical-network-cidr]"
+  - "[vpn-network-cidr]"
+  - "[cloud-network-cidr]"
+  - "127.0.0.0/8"
 ```
 
 ## Dependencies
@@ -140,16 +151,14 @@ Example inventory file (`hosts_dns.ini`):
 
 ```ini
 [dns_servers]
-{{ vault_dns_server_primary }}
-{{ vault_dns_server_secondary }}
+[[dns-server-ip]]
+[[dns-server-ip]]
 
 [dns_servers:vars]
-ansible_user={{ vault_ansible_user }}
-ansible_port={{ vault_ansible_port }}
+ansible_user=[username]
+ansible_port=[ssh-port]
 ansible_become=true
 ansible_become_method=sudo
-ansible_become_pass={{ vault_become_pass }}
-ansible_private_key_file={{ vault_ssh_key_path }}
 ```
 
 ## Verification
@@ -175,8 +184,16 @@ dig @127.0.0.1 [cluster-hostname]
 - ✅ All IPs, hostnames, and ports encrypted in `vault_secrets.yml`
 - ✅ No hardcoded values in playbooks or templates
 - ✅ Vault password protected with GPG
-- ✅ Access control lists restrict DNS queries
+- ✅ Access control lists restrict DNS queries to allowed networks
+- ✅ SSH access automatically configured when enabling UFW (prevents lockout)
 - ✅ Example file uses `[placeholder]` format
+
+### Firewall Behavior
+
+- UFW is automatically enabled with logging during installation
+- DNS port 53 (UDP/TCP) is opened for configured networks only
+- SSH access is preserved from current connecting IP when UFW is enabled
+- Existing UFW configurations are respected (no SSH rules added if UFW active)
 
 See `vault_secrets.example.yml` for template structure.
 
