@@ -468,6 +468,36 @@ Orchestrates multiple roles based on configuration flags.
 ansible-playbook -i hosts.ini common_install.yaml
 ```
 
+### Upgrade
+System upgrade role with automatic error recovery and diagnostics.
+
+**Variables:**
+- `upgrade_all_packages`: Enable all package upgrades (default: true)
+
+**Features:**
+- Cleans stale apt lock files automatically (0-byte lock cleanup)
+- Validates disk space before upgrade (requires 500MB minimum)
+- Refreshes expired GPG keys for third-party repositories (e.g., Caddy)
+- Implements retry logic for transient network errors (3 retries, 10s delay)
+- Provides detailed diagnostics on upgrade failures
+- Reports package count changes and reboot requirements
+
+**Automatic Error Recovery:**
+- Stale lock files from crashed processes
+- Insufficient disk space detection
+- Expired repository GPG key refresh
+- Network connectivity issues with retry
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_bay.ini upgrade_deb.yaml
+```
+
+**Run on specific hosts:**
+```bash
+ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [internal-ip]
+```
+
 ## Playbooks
 
 ### Root Playbooks

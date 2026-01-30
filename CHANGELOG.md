@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-30
+
+### Fixed
+- **upgrade_deb Role**:
+  - Added automatic cleanup of stale apt lock files (0-byte locks from crashed processes)
+  - Implemented expired GPG key refresh for third-party repositories (e.g., Caddy)
+  - Added disk space validation before upgrade (requires 500MB minimum)
+  - Implemented retry logic for transient network errors (3 retries, 10s delay)
+  - Added comprehensive error diagnostics on upgrade failures
+  - Fixes "Failed to update apt cache: unknown reason" errors caused by stale locks or expired keys
+
+### Changed
+- **upgrade_deb Role**:
+  - Wrapped apt operations in block/rescue for better error handling
+  - Added pre-check tasks: lock file detection, disk space, GPG key refresh
+  - Improved troubleshooting output with detailed diagnostic information
+
+### Documentation
+- **README.md**:
+  - Added detailed Upgrade role section with features and usage
+  - Documented automatic error recovery capabilities
+  - Included specific examples for targeted upgrades
+
 ## [1.2.0] - 2026-01-29
 
 ### Changed

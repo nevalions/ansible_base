@@ -11,6 +11,87 @@
       - "=== Debian Package Upgrade Start ==="
       - "Internet connectivity: Verified"
 
+- name: Check for stale lock files
+  become: true
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /var/lib/dpkg/lock
+    - /var/lib/dpkg/lock-frontend
+    - /var/cache/apt/archives/lock
+  register: lock_files
+
+- name: Remove stale lock files
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    state: absent
+  loop: "{{ lock_files.results }}"
+  when: item.stat.exists and item.stat.size == 0
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check disk space for apt cache
+  become: true
+  ansible.builtin.shell: df --output=avail /var/cache/apt | tail -1
+  register: cache_space
+  changed_when: false
+  failed_when: cache_space.stdout | int < 500
+
+- name: Refresh Caddy GPG key if expired
+  become: true
+  block:
+    - name: Check if Caddy repo exists
+      ansible.builtin.stat:
+        path: /etc/apt/sources.list.d/caddy-stable.list
+      register: caddy_repo
+
+    - name: Ensure GNUPG directory exists
+      ansible.builtin.file:
+        path: /root/.gnupg
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+      when: caddy_repo.stat.exists
+
+    - name: Remove old Caddy GPG keyring
+      ansible.builtin.file:
+        path: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        state: absent
+      when: caddy_repo.stat.exists
+      ignore_errors: true
+
+    - name: Download Caddy GPG key to temporary file
+      ansible.builtin.get_url:
+        url: https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+        dest: /tmp/caddy-gpg.key
+        mode: '0644'
+      when: caddy_repo.stat.exists
+
+    - name: Dearmor Caddy GPG key
+      ansible.builtin.shell: |
+        gpg --batch --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /tmp/caddy-gpg.key
+      environment:
+        GNUPGHOME: /root/.gnupg
+      when: caddy_repo.stat.exists
+      changed_when: true
+
+    - name: Verify Caddy GPG keyring exists
+      ansible.builtin.stat:
+        path: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      register: caddy_keyring
+
+    - name: Clean up temporary GPG key file
+      ansible.builtin.file:
+        path: /tmp/caddy-gpg.key
+        state: absent
+      when: caddy_repo.stat.exists
+  rescue:
+    - name: Display Caddy key update warning
+      ansible.builtin.debug:
+        msg: "Warning: Failed to update Caddy GPG key, continuing with upgrade..."
+
 - name: Get current package count before upgrade
   ansible.builtin.shell: dpkg -l | grep -c '^ii'
   register: packages_before
@@ -18,9 +99,51 @@
 
 - name: Upgrade Debian packages
   become: true
-  ansible.builtin.apt:
-    upgrade: true
-    update_cache: true
+  block:
+    - name: Run apt update and upgrade
+      ansible.builtin.apt:
+        upgrade: true
+        update_cache: true
+      register: apt_result
+      until: apt_result is succeeded
+      retries: 3
+      delay: 10
+  rescue:
+    - name: Display apt error diagnostics
+      ansible.builtin.debug:
+        msg: "APT update/upgrade failed, collecting diagnostic information..."
+
+    - name: Check for lock files after failure
+      ansible.builtin.shell: ls -l /var/lib/dpkg/lock* /var/cache/apt/archives/lock 2>&1 || true
+      register: lock_files_failed
+
+    - name: Check disk space after failure
+      ansible.builtin.shell: df -h /var/cache/apt /var/lib/dpkg
+      register: disk_space_failed
+
+    - name: Run manual apt update to see full error
+      ansible.builtin.shell: apt update 2>&1 || true
+      register: apt_update_failed
+
+    - name: Display diagnostic information
+      ansible.builtin.debug:
+        msg:
+          - "=== APT Error Diagnostics ==="
+          - "Lock files: {{ lock_files_failed.stdout }}"
+          - "Disk space: {{ disk_space_failed.stdout }}"
+          - "APT update output: {{ apt_update_failed.stdout }}"
+          - "APT update errors: {{ apt_update_failed.stderr }}"
+
+    - name: Fail with diagnostic information
+      ansible.builtin.fail:
+        msg: |
+          APT update/upgrade failed on host {{ inventory_hostname }}.
+          Check diagnostic output above for details.
+          Common issues:
+          - Lock files present (need to clean /var/lib/dpkg/lock*)
+          - Disk space insufficient (need to clean /var/cache/apt)
+          - Expired GPG keys (need to update repository keys)
+          - Network connectivity issues
 
 - name: Check if reboot is required
   become: true
