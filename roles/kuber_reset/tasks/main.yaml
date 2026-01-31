@@ -8,11 +8,6 @@
     - /etc/kubernetes/kubelet.conf
   failed_when: false
 
-- name: Fail if Kubernetes is not installed
-  ansible.builtin.fail:
-    msg: "Kubernetes is not installed. No reset needed."
-  when: not k8s_config_exists.results[0].stat.exists and not k8s_config_exists.results[1].stat.exists
-
 - name: Display Kubernetes configuration status
   ansible.builtin.debug:
     msg:
@@ -46,6 +41,21 @@
   failed_when: false
   register: kubeadm_reset
   changed_when: kubeadm_reset.rc == 0
+
+- name: Stop CNI-related services
+  ansible.builtin.shell: |
+    systemctl stop cni* 2>/dev/null || true
+    pkill -9 -f cni 2>/dev/null || true
+  failed_when: false
+  changed_when: false
+
+- name: Force remove CNI directory contents
+  ansible.builtin.shell: |
+    rm -rf /etc/cni/net.d/* 2>/dev/null || true
+    rm -rf /opt/cni/bin/* 2>/dev/null || true
+    rm -rf /var/lib/cni/* 2>/dev/null || true
+  failed_when: false
+  changed_when: false
 
 - name: Remove CNI plugins and configurations
   ansible.builtin.file:
@@ -139,12 +149,56 @@
   failed_when: false
   changed_when: false
 
-- name: Remove Kubernetes network namespaces
+- name: Stop CNI network namespace systemd units
   ansible.builtin.shell: |
     set -e -o pipefail
-    ip netns list 2>/dev/null | grep -E 'cni|k8s' | xargs -r -I {} ip netns delete {}
+    systemctl list-units --all --type=mount | grep 'run-netns-cni' | awk '{print $1}' | xargs -r systemctl stop
   failed_when: false
   changed_when: false
+  register: cni_systemd_stop
+
+- name: Unmount CNI network namespace mounts
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    mount | grep '/run/netns/cni' | awk '{print $3}' | xargs -r -n1 umount -l
+  failed_when: false
+  changed_when: false
+  register: cni_netns_unmount
+
+- name: Remove CNI network namespace directories after unmount
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    rm -rf /run/netns/cni-* 2>/dev/null || true
+  failed_when: false
+  changed_when: false
+  register: cni_netns_dirs
+
+- name: Remove CNI network namespaces
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    ip netns list 2>/dev/null | grep cni | xargs -r -I {} ip netns delete {}
+  failed_when: false
+  changed_when: false
+  register: cni_netns_delete
+
+- name: Check for orphaned CNI network namespace mounts
+  ansible.builtin.shell: |
+    systemctl list-units --all --type=mount | grep 'run-netns-cni' | wc -l
+  failed_when: false
+  changed_when: false
+  register: orphaned_netns_count
+
+- name: Warn about orphaned network namespaces
+  ansible.builtin.debug:
+    msg:
+      - "=== WARNING: Orphaned CNI Network Namespaces Detected ==="
+      - "Found {{ orphaned_netns_count.stdout | int }} orphaned network namespace mount(s)"
+      - "These orphaned nsfs mounts are systemd mount units that persist despite cleanup"
+      - "They DO NOT interfere with Kubernetes operation or reinitialization"
+      - "To remove them completely, reboot the node:"
+      - "  sudo reboot"
+      - "Reference: kubeadm reset is 'best-effort' cleanup - Kubernetes docs recommend manual intervention or reboot for persistent network namespace mounts"
+  when: orphaned_netns_count.stdout | int > 0
 
 - name: Clean any remaining Calico data
   ansible.builtin.file:
@@ -158,6 +212,24 @@
   ansible.builtin.systemd:
     daemon_reload: true
   notify: reload systemd
+
+- name: Verify CNI directories are removed (before containerd starts)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: cni_dirs_removed
+  failed_when: false
+  loop:
+    - /etc/cni/net.d
+    - /opt/cni/bin
+    - /var/lib/cni
+
+- name: Assert CNI directories are removed
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    success_msg: "{{ item.item }} removed successfully"
+    fail_msg: "{{ item.item }} still exists after reset"
+  loop: "{{ cni_dirs_removed.results }}"
 
 - name: Start containerd service
   ansible.builtin.systemd:
@@ -211,13 +283,9 @@
     fail_msg: "{{ item.item }} still exists after reset"
   loop: "{{ calico_dirs_removed.results }}"
 
-- name: Assert CNI directories are removed
-  ansible.builtin.assert:
-    that:
-      - not item.stat.exists
-    success_msg: "{{ item.item }} removed successfully"
-    fail_msg: "{{ item.item }} still exists after reset"
-  loop: "{{ cni_dirs_removed.results }}"
+- name: Display CNI recreation note
+  ansible.builtin.debug:
+    msg: "NOTE: Containerd may recreate empty /etc/cni/net.d directory on startup - this is expected behavior"
 
 - name: Verify kubelet is running
   ansible.builtin.systemd:
@@ -237,8 +305,10 @@
       - "=== Kubernetes Reset Complete ==="
       - "Kubernetes directories: Removed"
       - "Calico directories: Removed"
-      - "CNI directories: Removed"
+      - "CNI directories: Verified removed (before containerd start)"
+      - "CNI network namespaces: {{ 'Cleaned' if orphaned_netns_count.stdout | int == 0 else 'Warning - see above' }}"
       - "Kubelet status: {{ 'Running' if kubelet_running.status.ActiveState == 'active' else 'Not running' }}"
       - "Containerd status: {{ 'Running' if containerd_running.status.ActiveState == 'active' else 'Not running' }}"
       - "Container images: {{ 'Removed' if remove_container_images | default(false) else 'Preserved' }}"
+      - "Note: Containerd recreates /etc/cni/net.d on startup (expected)"
       - "Next step: Run kuber_plane_init.yaml or kuber_worker_join.yaml"

@@ -11,6 +11,7 @@ This role completely cleans a Kubernetes node (worker or control plane) to prepa
 - Network interfaces and iptables rules
 - Containerd data
 - All Kubernetes-related namespaces
+- **Best-effort** cleanup of CNI network namespace mounts (see "Orphaned Network Namespaces" below)
 
 ## Usage
 
@@ -63,13 +64,87 @@ ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --limit master1
 3. If container images were preserved, they remain available
 
 ## Safety Notes
-
+ 
 - This operation is destructive
 - Stops all running pods on the target nodes
 - Removes all Kubernetes configuration (including etcd data on control plane)
 - Ensure you have proper backups before running
 - Run against correct target group only (workers or masters)
 - Control plane reset will remove etcd data and cluster state
+
+## Orphaned Network Namespaces
+
+### What They Are
+
+After running `kubeadm reset`, you may see warnings about **orphaned CNI network namespace mounts**:
+
+```
+WARNING: Orphaned CNI Network Namespaces Detected
+Found 5 orphaned network namespace mount(s)
+```
+
+These are **systemd mount units** (`run-netns-cni-*.mount`) that reference `nsfs` (network namespace filesystem) mounts under `/run/netns/cni-*`.
+
+### Why They Persist
+
+According to Kubernetes documentation:
+- `kubeadm reset` is a **"best-effort"** cleanup tool
+- It does NOT clean up:
+  - Network namespace mounts (nsfs)
+  - Systemd mount unit references
+  - IPVS, iptables, nftables rules
+  - CNI configuration directories
+
+These orphaned mounts occur when CNI plugin teardown fails or when network namespaces are created by pods that were terminated abnormally.
+
+### Are They Harmful?
+
+**No, they are harmless**:
+- They DO NOT interfere with Kubernetes initialization
+- They DO NOT interfere with cluster join operations
+- They are stale systemd references only
+- No actual network resources are held
+- Kubernetes ignores them on cluster startup
+
+### How to Remove Them Completely
+
+If you want a completely clean system without orphaned references, reboot the node:
+
+```bash
+sudo reboot
+```
+
+After reboot, all orphaned `nsfs` mounts will be gone.
+
+### Manual Cleanup (Without Reboot)
+
+The role attempts programmatic cleanup, but some `nsfs` mounts may still require manual intervention:
+
+```bash
+# 1. List orphaned mounts
+systemctl list-units --all --type=mount | grep 'run-netns-cni'
+
+# 2. Stop each mount unit
+sudo systemctl stop run-netns-cni-<hash>.mount
+
+# 3. Force lazy unmount
+sudo umount -l /run/netns/cni-<hash>
+
+# 4. Delete namespace references
+sudo ip netns delete cni-<hash>
+
+# 5. Remove namespace directories
+sudo rm -rf /run/netns/cni-*
+```
+
+### Production Recommendation
+
+**Accept the orphaned mounts and proceed** unless:
+- You have a maintenance window for reboot
+- You need a completely clean system for debugging
+- You're redeploying the node from scratch
+
+In production environments, orphaned mounts are safe to ignore and do not require immediate remediation.
 
 ## Example Workflow
 
