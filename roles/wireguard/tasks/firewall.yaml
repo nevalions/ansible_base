@@ -1,0 +1,83 @@
+---
+- name: Ensure UFW is installed
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Allow WireGuard server port from allowed networks
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ vault_wg_server_port }}"
+    src: "{{ item }}"
+  loop: "{{ vault_wg_allowed_networks }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Allow NAT-forwarded WireGuard ports from peer endpoints
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ item.client_listen_port | default(vault_wg_client_default_port) }}"
+    src: "{{ item.endpoint | regex_replace(':\\d+$', '') }}"
+  loop: "{{ vault_wg_peers }}"
+  when:
+    - ansible_os_family == 'Debian'
+    - item.endpoint is defined
+
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  when: ansible_os_family == 'Debian'
+
+- name: Check if UFW is currently active
+  ansible.builtin.set_fact:
+    ufw_active: "{{ 'active' in ufw_status.stdout }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Allow SSH port from current connecting IP
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ ansible_ssh_port | default('22') }}"
+    src: "{{ ansible_default_ipv4.address }}"
+  when:
+    - ansible_os_family == 'Debian'
+    - not ufw_active | default(false)
+
+- name: Enable UFW with logging
+  community.general.ufw:
+    state: enabled
+    logging: "on"
+  when:
+    - ansible_os_family == 'Debian'
+    - wg_operation == "install"
+
+- name: Refresh UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status_enabled
+  changed_when: false
+  when:
+    - ansible_os_family == 'Debian'
+    - wg_operation == "install"
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    var: ufw_status_enabled.stdout_lines
+  when:
+    - ansible_os_family == 'Debian'
+    - ufw_status_enabled.stdout_lines is defined
+    - wg_operation == "install"
+    - not ansible_check_mode
+
+- name: Verify WireGuard firewall rules are present
+  ansible.builtin.assert:
+    that:
+      - vault_wg_server_port in ufw_status_enabled.stdout
+    success_msg: "WireGuard firewall rules are present and UFW is active"
+    fail_msg: "WireGuard firewall rules not found in UFW"
+  when:
+    - ansible_os_family == 'Debian'
+    - wg_operation == "install"
+    - not ansible_check_mode

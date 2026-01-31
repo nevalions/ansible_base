@@ -1,0 +1,30 @@
+---
+- name: Rotate WireGuard keys
+  hosts: wireguard_servers
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - rotate
+  vars:
+    vault_wg_server_private_key: null
+    vault_wg_server_public_key: null
+    vault_wg_peer_private_keys: {}
+    vault_wg_peer_public_keys: {}
+    wg_operation: "install"
+  
+  tasks:
+    - name: Rotate WireGuard keys
+      ansible.builtin.include_role:
+        name: wireguard
+
+    - name: Display key rotation summary
+      ansible.builtin.debug:
+        msg:
+          - "WireGuard keys rotated successfully"
+          - "Server keys regenerated"
+          - "{{ vault_wg_peers | length }} peer keys regenerated"
+      run_once: yes

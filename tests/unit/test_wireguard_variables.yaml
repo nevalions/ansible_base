@@ -1,0 +1,135 @@
+---
+- name: Test wireguard role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_become_pass: "test"
+    wg_operation: "install"
+    test_wg_interface: "wg0"
+    test_wg_server_port: "51820"
+    test_wg_client_default_port: "51821"
+    test_wg_client_port_start: "51900"
+    test_wg_client_port_end: "52000"
+    test_wg_network_cidr: "[internal-ip]/24"
+    test_wg_server_ip: "[internal-ip]"
+    test_wg_dns_primary: "[dns-server]"
+    test_wg_peers:
+      - name: "test_peer1"
+        host_group: "test_group1"
+        allowed_ips: "[internal-ip]/32"
+        endpoint: "203.0.113.11:51820"
+        client_listen_port: "51820"
+      - name: "test_peer2"
+        host_group: "test_group2"
+        allowed_ips: "[internal-ip]/32"
+        endpoint: "203.0.113.21:51941"
+        client_listen_port: "51941"
+    test_wg_peer_private_keys:
+      test_peer1: "test_private_key_1"
+      test_peer2: "test_private_key_2"
+    test_wg_peer_public_keys:
+      test_peer1: "test_public_key_1"
+      test_peer2: "test_public_key_2"
+    test_wg_allowed_networks:
+      - "203.0.113.0/24"
+      - "[internal-ip]/24"
+      - "127.0.0.0/8"
+  tasks:
+    - name: Verify default variables exist
+      ansible.builtin.assert:
+        that:
+          - test_wg_interface is defined
+          - test_wg_server_port is defined
+          - test_wg_client_default_port is defined
+          - test_wg_client_port_start is defined
+          - test_wg_client_port_end is defined
+          - test_wg_network_cidr is defined
+          - test_wg_server_ip is defined
+          - test_wg_dns_primary is defined
+        success_msg: "Default variables defined correctly"
+        fail_msg: "Default variables are missing"
+
+    - name: Verify default variable types
+      ansible.builtin.assert:
+        that:
+          - test_wg_interface is string
+          - test_wg_server_port is string
+          - test_wg_client_default_port is string
+          - test_wg_client_port_start is string
+          - test_wg_client_port_end is string
+          - test_wg_network_cidr is string
+          - test_wg_server_ip is string
+          - test_wg_dns_primary is string
+        success_msg: "Default variables have correct types"
+        fail_msg: "Default variables have incorrect types"
+
+    - name: Verify peer configuration structure
+      ansible.builtin.assert:
+        that:
+          - test_wg_peers is defined
+          - test_wg_peers | length == 2
+          - test_wg_peers[0].name == "test_peer1"
+          - test_wg_peers[0].host_group == "test_group1"
+          - test_wg_peers[0].allowed_ips == "[internal-ip]/32"
+          - test_wg_peers[0].endpoint == "203.0.113.11:51820"
+          - test_wg_peers[0].client_listen_port == "51820"
+        success_msg: "Peer configuration structure is correct"
+        fail_msg: "Peer configuration structure is invalid"
+
+    - name: Verify peer key dictionaries
+      ansible.builtin.assert:
+        that:
+          - test_wg_peer_private_keys is defined
+          - test_wg_peer_public_keys is defined
+          - test_wg_peer_private_keys | length == 2
+          - test_wg_peer_public_keys | length == 2
+          - "'test_peer1' in test_wg_peer_private_keys"
+          - "'test_peer2' in test_wg_peer_private_keys"
+          - "'test_peer1' in test_wg_peer_public_keys"
+          - "'test_peer2' in test_wg_peer_public_keys"
+        success_msg: "Peer key dictionaries are correct"
+        fail_msg: "Peer key dictionaries are invalid"
+
+    - name: Verify allowed networks structure
+      ansible.builtin.assert:
+        that:
+          - test_wg_allowed_networks is defined
+          - test_wg_allowed_networks | length == 3
+          - "'203.0.113.0/24' in test_wg_allowed_networks"
+          - "'[internal-ip]/24' in test_wg_allowed_networks"
+          - "'127.0.0.0/8' in test_wg_allowed_networks"
+        success_msg: "Allowed networks structure is correct"
+        fail_msg: "Allowed networks structure is invalid"
+
+    - name: Test CIDR format validation
+      ansible.builtin.assert:
+        that:
+          - test_wg_network_cidr is match("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}/\\d{1,2}$")
+        success_msg: "Network CIDR format is valid"
+        fail_msg: "Network CIDR format is invalid"
+
+    - name: Test port number validation
+      ansible.builtin.assert:
+        that:
+          - test_wg_server_port | int > 0
+          - test_wg_server_port | int < 65536
+          - test_wg_client_default_port | int > 0
+          - test_wg_client_default_port | int < 65536
+          - test_wg_client_port_start | int > 0
+          - test_wg_client_port_start | int < 65536
+          - test_wg_client_port_end | int > 0
+          - test_wg_client_port_end | int < 65536
+        success_msg: "Port numbers are valid"
+        fail_msg: "Port numbers are invalid"
+
+    - name: Test lowercase variable naming
+      ansible.builtin.set_fact:
+        test_var_lowercase: "vault_wg_interface"
+
+    - name: Verify lowercase naming convention
+      ansible.builtin.assert:
+        that:
+          - test_var_lowercase is match("^[a-z][a-z0-9_]*$")
+        success_msg: "Variable naming follows lowercase convention"
+        fail_msg: "Variable naming does not follow lowercase convention"

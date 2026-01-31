@@ -1,0 +1,52 @@
+---
+- name: Stop WireGuard service
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+  when: inventory_hostname in groups.get('wireguard_servers', [])
+
+- name: Backup WireGuard configuration before removal
+  ansible.builtin.copy:
+    src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_date_time.iso8601 }}"
+    remote_src: yes
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+  ignore_errors: yes
+
+- name: Remove WireGuard configuration
+  ansible.builtin.file:
+    path: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    state: absent
+  when: inventory_hostname in groups.get('wireguard_servers', [])
+
+- name: Remove UFW WireGuard server port rules
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ vault_wg_server_port }}"
+    delete: yes
+  loop: "{{ vault_wg_allowed_networks }}"
+  ignore_errors: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Remove UFW WireGuard NAT port rules
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ item.client_listen_port | default(vault_wg_client_default_port) }}"
+    src: "{{ item.endpoint | regex_replace(':\\d+$', '') }}"
+    delete: yes
+  loop: "{{ vault_wg_peers }}"
+  ignore_errors: yes
+  when:
+    - ansible_os_family == 'Debian'
+    - item.endpoint is defined
+
+- name: Display removal completion
+  ansible.builtin.debug:
+    msg:
+      - "WireGuard {{ vault_wg_interface }} configuration removed"
+      - "Backups available in /etc/wireguard/backups/"

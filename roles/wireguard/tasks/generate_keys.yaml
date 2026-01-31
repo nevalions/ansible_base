@@ -1,0 +1,50 @@
+---
+- name: Check if server private key exists in vault
+  ansible.builtin.set_fact:
+    server_key_exists: >-
+      {{ vault_wg_server_private_key is not none and vault_wg_server_private_key != '' }}
+
+- name: Generate server private key (if not in vault)
+  ansible.builtin.shell: wg genkey
+  register: wg_server_private_key_gen
+  changed_when: false
+  run_once: yes
+  delegate_to: localhost
+  when: not server_key_exists
+
+- name: Generate server public key
+  ansible.builtin.shell: echo "{{ wg_server_private_key_gen.stdout }}" | wg pubkey
+  register: wg_server_public_key_gen
+  changed_when: false
+  run_once: yes
+  delegate_to: localhost
+  when: not server_key_exists
+
+- name: Store generated server keys in facts
+  ansible.builtin.set_fact:
+    vault_wg_server_private_key: "{{ wg_server_private_key_gen.stdout | default(vault_wg_server_private_key) }}"
+    vault_wg_server_public_key: "{{ wg_server_public_key_gen.stdout | default(vault_wg_server_public_key) }}"
+  run_once: yes
+  delegate_to: localhost
+
+- name: Initialize peer key dictionaries
+  ansible.builtin.set_fact:
+    vault_wg_peer_private_keys: >-
+      {{ vault_wg_peer_private_keys | default({}) }}
+    vault_wg_peer_public_keys: >-
+      {{ vault_wg_peer_public_keys | default({}) }}
+
+- name: Generate keys for each peer
+  ansible.builtin.include_tasks: _generate_peer_keys.yaml
+  loop: "{{ vault_wg_peers }}"
+  loop_control:
+    loop_var: peer_item
+
+- name: Display generated keys summary
+  ansible.builtin.debug:
+    msg:
+      - "Server private key: {{ vault_wg_server_private_key[:16] }}..."
+      - "Server public key: {{ vault_wg_server_public_key[:16] }}..."
+      - "Peers configured: {{ vault_wg_peers | length }}"
+  run_once: yes
+  when: not ansible_check_mode

@@ -23,6 +23,7 @@ This repository contains Ansible playbooks and roles for:
 - Docker installation and configuration
 - Kubernetes cluster deployment
 - NFS server and client configuration
+- WireGuard VPN network management
 - System upgrades and maintenance
 - HAProxy load balancer setup
 
@@ -59,6 +60,8 @@ ansible/
 ├── kuber_verify.yaml            # Cluster health verification
 ├── kuber_plane_reset.yaml       # Control plane cleanup
 ├── kuber_worker_reset.yaml      # Worker node cleanup
+├── wireguard_manage.yaml        # WireGuard VPN management
+├── wireguard_rotate_keys.yaml   # WireGuard key rotation
 ├── roles/
 │   ├── common/                 # System package installation
 │   │   └── meta/              # Role metadata
@@ -97,6 +100,11 @@ ansible/
 │   │   └── meta/              # Role metadata
 │   ├── upgrade_deb/            # Debian-specific upgrade
 │   │   └── meta/              # Role metadata
+│   │   ├── wireguard/              # WireGuard VPN configuration
+│   │   │   ├── tasks/             # WireGuard setup, key management, UFW
+│   │   │   ├── handlers/          # Service restart handlers
+│   │   │   ├── defaults/          # Network configuration variables
+│   │   │   └── templates/         # WireGuard config templates
 │   └── zsh/                    # Zsh shell setup
 └── tests/
     ├── integration/             # Integration tests
@@ -536,7 +544,7 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml
 
 **Run on specific hosts:**
 ```bash
-ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [internal-ip]
+ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [host-or-group-name]
 ```
 
 ## Playbooks
@@ -561,6 +569,8 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [internal-ip]
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
 | `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | masters |
+| `wireguard_manage.yaml` | Manage WireGuard VPN network | wireguard_servers |
+| `wireguard_rotate_keys.yaml` | Rotate WireGuard keys | wireguard_servers |
 
 ### Subdirectory Playbooks
 
@@ -602,6 +612,8 @@ ansible-playbook workstation.yaml --list-tags
 - **longhorn_master_cleanup.yaml**: `longhorn`, `cleanup`, `verify`
 - **kuber_worker_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `worker`
 - **kuber_plane_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `master`
+- **wireguard_manage.yaml**: `wireguard`, `vpn`
+- **wireguard_rotate_keys.yaml**: `wireguard`, `rotate`
 - **playbooks/disk/create_config_mount_new_disk.yaml**: `disk`, `storage`, `partition`, `mount`
 
 ## Code Quality

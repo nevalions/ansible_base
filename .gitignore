@@ -26,3 +26,6 @@ vault_secrets.yml
 # Ignore GPG-encrypted vault password and client script
 vault_password.gpg
 vault_password_client.sh
+
+# Ignore implementation guides (contains network details)
+WIREGUARD_IMPLEMENTATION.md

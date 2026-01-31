@@ -1,0 +1,33 @@
+---
+- name: Assign client listen ports to peers
+  ansible.builtin.set_fact:
+    vault_wg_peers_with_ports: []
+
+- name: Assign ports to peers
+  ansible.builtin.set_fact:
+    vault_wg_peers_with_ports: >-
+      {{ vault_wg_peers_with_ports +
+         [{
+           'name': item.name,
+           'host_group': item.host_group,
+           'allowed_ips': item.allowed_ips,
+           'endpoint': item.endpoint,
+           'client_listen_port': item.client_listen_port | default((vault_wg_client_port_start | int + port_counter) | string)
+         }] }}
+  loop: "{{ vault_wg_peers }}"
+  loop_control:
+    loop_var: item
+  vars:
+    port_counter: "{{ ansible_loop.index0 }}"
+
+- name: Update vault_wg_peers with assigned ports
+  ansible.builtin.set_fact:
+    vault_wg_peers: "{{ vault_wg_peers_with_ports }}"
+
+- name: Display peer port assignments
+  ansible.builtin.debug:
+    msg:
+      - "{{ peer.name }}: {{ peer.client_listen_port }}"
+  loop: "{{ vault_wg_peers }}"
+  loop_control:
+    loop_var: peer

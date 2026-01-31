@@ -1,0 +1,37 @@
+---
+- name: Check if peer private key exists in vault
+  ansible.builtin.set_fact:
+    peer_key_exists: >-
+      {{ vault_wg_peer_private_keys[peer_item.name] is defined and vault_wg_peer_private_keys[peer_item.name] != '' }}
+
+- name: Generate peer private key for {{ peer_item.name }}
+  ansible.builtin.shell: wg genkey
+  register: peer_private_key_gen
+  changed_when: false
+  run_once: yes
+  delegate_to: localhost
+  when: not peer_key_exists
+
+- name: Generate peer public key for {{ peer_item.name }}
+  ansible.builtin.shell: echo "{{ peer_private_key_gen.stdout }}" | wg pubkey
+  register: peer_public_key_gen
+  changed_when: false
+  run_once: yes
+  delegate_to: localhost
+  when: not peer_key_exists
+
+- name: Store peer {{ peer_item.name }} private key
+  ansible.builtin.set_fact:
+    vault_wg_peer_private_keys: >-
+      {{ vault_wg_peer_private_keys |
+         combine({peer_item.name: peer_private_key_gen.stdout | default(vault_wg_peer_private_keys[peer_item.name])}) }}
+  run_once: yes
+  delegate_to: localhost
+
+- name: Store peer {{ peer_item.name }} public key
+  ansible.builtin.set_fact:
+    vault_wg_peer_public_keys: >-
+      {{ vault_wg_peer_public_keys |
+         combine({peer_item.name: peer_public_key_gen.stdout | default(vault_wg_peer_public_keys[peer_item.name])}) }}
+  run_once: yes
+  delegate_to: localhost

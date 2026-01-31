@@ -1,0 +1,59 @@
+---
+- name: Ensure UFW is installed
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Allow WireGuard client listen port
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ peer_config.client_listen_port | default(vault_wg_client_default_port) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Allow persistent keepalive traffic to server
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "{{ vault_wg_server_port }}"
+    src: "{{ server_public_ip | default(ansible_default_ipv4.address) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  when: ansible_os_family == 'Debian'
+
+- name: Check if UFW is currently active
+  ansible.builtin.set_fact:
+    ufw_active: "{{ 'active' in ufw_status.stdout }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Allow SSH port from current connecting IP
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ ansible_ssh_port | default('22') }}"
+    src: "{{ ansible_default_ipv4.address }}"
+  when:
+    - ansible_os_family == 'Debian'
+    - not ufw_active | default(false)
+
+- name: Enable UFW with logging
+  community.general.ufw:
+    state: enabled
+    logging: "on"
+  when:
+    - ansible_os_family == 'Debian'
+    - operation == "install"
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    var: ufw_status.stdout_lines
+  when:
+    - ansible_os_family == 'Debian'
+    - ufw_status.stdout_lines is defined
+    - operation == "install"
+    - not ansible_check_mode

@@ -1,0 +1,43 @@
+---
+- name: Deploy WireGuard client configurations to peers
+  ansible.builtin.include_role:
+    name: wireguard
+    tasks_from: configure_client
+  vars:
+    peer_config: "{{ peer_item }}"
+    server_public_key: "{{ vault_wg_server_public_key }}"
+    peer_private_key: "{{ vault_wg_peer_private_keys[peer_item.name] }}"
+    peer_public_key: "{{ vault_wg_peer_public_keys[peer_item.name] }}"
+    server_public_ip: "{{ ansible_default_ipv4.address }}"
+    operation: "{{ wg_operation }}"
+  loop: "{{ vault_wg_peers }}"
+  loop_control:
+    loop_var: peer_item
+  when:
+    - peer_item.host_group is defined
+    - operation == "install"
+
+- name: Deploy WireGuard firewall configurations to peers
+  ansible.builtin.include_role:
+    name: wireguard
+    tasks_from: firewall_client
+  vars:
+    peer_config: "{{ peer_item }}"
+    server_public_key: "{{ vault_wg_server_public_key }}"
+    server_public_ip: "{{ ansible_default_ipv4.address }}"
+    operation: "{{ wg_operation }}"
+  loop: "{{ vault_wg_peers }}"
+  loop_control:
+    loop_var: peer_item
+  when:
+    - peer_item.host_group is defined
+    - operation == "install"
+
+- name: Display peer deployment summary
+  ansible.builtin.debug:
+    msg:
+      - "Peer configurations deployed to:"
+      - "{{ vault_wg_peers | selectattr('host_group', 'defined') | map(attribute='host_group') | list }}"
+      - "Use 'ansible-playbook wireguard_manage.yaml --tags wireguard' to redeploy"
+  run_once: yes
+  when: operation == "install"

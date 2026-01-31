@@ -1,0 +1,68 @@
+---
+- name: Check if existing WireGuard config exists
+  ansible.builtin.stat:
+    path: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+  register: wg_config_exists
+
+- name: Backup existing WireGuard config
+  ansible.builtin.copy:
+    src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_date_time.iso8601 }}"
+    remote_src: yes
+    mode: '0600'
+  when:
+    - wg_config_exists.stat.exists
+    - wg_operation == "install"
+  register: wg_backup
+
+- name: Display backup location
+  ansible.builtin.debug:
+    msg: "Existing config backed up to: {{ wg_backup.dest }}"
+  when:
+    - wg_backup is defined
+    - wg_backup.changed
+
+- name: Deploy WireGuard server configuration
+  ansible.builtin.template:
+    src: server.conf.j2
+    dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    mode: '0600'
+    backup: yes
+  notify: restart wireguard
+
+- name: Enable WireGuard service on boot
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    enabled: yes
+    daemon_reload: yes
+  when: wg_operation == "install"
+
+- name: Start WireGuard service
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: started
+  register: wg_service_start
+  when: wg_operation == "install"
+
+- name: Wait for WireGuard interface to come up
+  ansible.builtin.shell: ip link show {{ vault_wg_interface }}
+  register: wg_interface_check
+  changed_when: false
+  until: wg_interface_check.rc == 0
+  retries: 5
+  delay: 2
+  when: wg_operation == "install"
+
+- name: Get WireGuard interface status
+  ansible.builtin.shell: wg show {{ vault_wg_interface }}
+  register: wg_status
+  changed_when: false
+  when: wg_operation == "install" and not ansible_check_mode
+
+- name: Display WireGuard interface status
+  ansible.builtin.debug:
+    var: wg_status.stdout_lines
+  when:
+    - wg_operation == "install"
+    - not ansible_check_mode
+    - wg_status.stdout_lines is defined

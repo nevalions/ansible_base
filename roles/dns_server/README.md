@@ -75,10 +75,7 @@ vault_dns_records:
 
 vault_dns_allowed_networks:
   # Add all networks that should be able to query DNS
-  # This list supports multiple networks for flexible deployment:
-  # - Physical networks (e.g., [internal-ip]/24)
-  # - VPN networks (e.g., [internal-ip]/8, 9.11.0.0/24)
-  # - Cloud networks (e.g., [internal-ip]/16)
+  # This list supports multiple networks for flexible deployment
   # - Always include localhost for local queries
   - "[physical-network-cidr]"
   - "[vpn-network-cidr]"

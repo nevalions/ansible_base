@@ -1,0 +1,22 @@
+---
+- name: Manage WireGuard network
+  hosts: wireguard_servers
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - vpn
+  vars:
+    wg_operation: "install"
+  
+  tasks:
+    - name: Display operation
+      ansible.builtin.debug:
+        msg: "WireGuard operation: {{ wg_operation }}"
+
+    - name: Apply WireGuard role
+      ansible.builtin.include_role:
+        name: wireguard

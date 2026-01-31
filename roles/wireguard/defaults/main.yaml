@@ -1,0 +1,21 @@
+---
+skip_folder_check: true
+
+wg_operation: "install"
+vault_wg_interface: "[interface-name]"
+vault_wg_network_cidr: "[vpn-network-cidr]"
+vault_wg_server_ip: "[server-vpn-ip]"
+vault_wg_server_port: "[server-port]"
+vault_wg_client_default_port: "[client-default-port]"
+vault_wg_client_port_start: "[port-range-start]"
+vault_wg_client_port_end: "[port-range-end]"
+vault_wg_dns_primary: "[dns-server-ip]"
+vault_wg_server_private_key: null
+vault_wg_server_public_key: null
+vault_wg_peer_private_keys: {}
+vault_wg_peer_public_keys: {}
+vault_wg_peers: []
+vault_wg_allowed_networks:
+  - "[physical-network-cidr]"
+  - "[vpn-network-cidr]"
+  - "127.0.0.0/8"

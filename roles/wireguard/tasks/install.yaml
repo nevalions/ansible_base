@@ -1,0 +1,27 @@
+---
+- name: Install WireGuard package
+  ansible.builtin.apt:
+    name:
+      - wireguard
+      - wireguard-tools
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Install UFW package
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure WireGuard config directory exists
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    mode: '0700'
+
+- name: Ensure WireGuard backup directory exists
+  ansible.builtin.file:
+    path: /etc/wireguard/backups
+    state: directory
+    mode: '0700'

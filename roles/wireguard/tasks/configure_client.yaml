@@ -1,0 +1,75 @@
+---
+- name: Display peer deployment info
+  ansible.builtin.debug:
+    msg:
+      - "Configuring WireGuard client for {{ peer_config.name }}"
+      - "Interface: {{ vault_wg_interface }}"
+      - "Allowed IPs: {{ peer_config.allowed_ips }}"
+      - "Listen port: {{ peer_config.client_listen_port | default(vault_wg_client_default_port) }}"
+
+- name: Check if peer WireGuard config exists
+  ansible.builtin.stat:
+    path: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+  register: peer_wg_config_exists
+
+- name: Backup existing peer WireGuard config
+  ansible.builtin.copy:
+    src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_date_time.iso8601 }}"
+    remote_src: yes
+    mode: '0600'
+  when:
+    - peer_wg_config_exists.stat.exists
+    - operation == "install"
+
+- name: Deploy WireGuard client configuration
+  ansible.builtin.template:
+    src: client.conf.j2
+    dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    mode: '0600'
+    backup: yes
+  notify: restart wireguard
+  when: operation == "install"
+
+- name: Remove WireGuard client configuration
+  ansible.builtin.file:
+    path: "/etc/wireguard/{{ vault_wg_interface }}.conf"
+    state: absent
+  notify: stop wireguard
+  when: operation == "remove"
+
+- name: Enable WireGuard service on boot (peer)
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    enabled: yes
+    daemon_reload: yes
+  when: operation == "install"
+
+- name: Start WireGuard service (peer)
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: started
+  when: operation == "install"
+
+- name: Wait for WireGuard interface to come up (peer)
+  ansible.builtin.shell: ip link show {{ vault_wg_interface }}
+  register: peer_wg_interface_check
+  changed_when: false
+  until: peer_wg_interface_check.rc == 0
+  retries: 5
+  delay: 2
+  when: operation == "install"
+
+- name: Get peer WireGuard status
+  ansible.builtin.shell: wg show {{ vault_wg_interface }}
+  register: peer_wg_status
+  changed_when: false
+  when: operation == "install" and not ansible_check_mode
+
+- name: Display peer WireGuard status
+  ansible.builtin.debug:
+    var: peer_wg_status.stdout_lines
+  when:
+    - operation == "install"
+    - not ansible_check_mode
+    - peer_wg_status.stdout_lines is defined
