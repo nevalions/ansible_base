@@ -4,6 +4,31 @@
 
 This Ansible project provides automated Kubernetes cluster setup with Calico CNI networking.
 
+## Architecture
+
+The Kubernetes cluster uses a Virtual IP (VIP) for high availability:
+
+```
+Workers → VIP:[k8s-api-port]
+           ↓
+Keepalived on [haproxy-hostname] (VIP management + DNAT)
+           ↓ DNAT: [vip-address]:[k8s-api-port] → [control-plane-wg-ip]:[haproxy-frontend-port]
+HAProxy on [plane-hostname] (WireGuard IP: [control-plane-wg-ip]:[haproxy-frontend-port])
+           → localhost:[haproxy-backend-port]
+Kubernetes API server (port [haproxy-backend-port])
+```
+
+**Components:**
+- **Keepalived**: Manages VIP failover and performs health checks on control planes
+- **HAProxy**: Load balances Kubernetes API requests on each control plane
+- **WireGuard**: Provides secure mesh network for inter-plane communication
+- **VIP**: Virtual IP ([vip-address]) that workers connect to
+
+**Scalability:**
+- Start with single control plane ([plane-hostname])
+- Add additional control planes by updating `vault_k8s_control_planes`
+- Keepalived automatically detects healthy planes and routes traffic accordingly
+
 ## Playbooks
 
 ### 1. kuber.yaml - Install Kubernetes Packages
@@ -55,16 +80,16 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 
 **Variables** (roles/kuber_init/defaults/main.yaml):
 ```yaml
-kubeadm_pod_subnet: "[internal-ip]/16"
-kubeadm_service_subnet: "[internal-ip]/16"
-kubeadm_control_plane_endpoint: "{{ ansible_default_ipv4.address }}:6443"
+kubeadm_pod_subnet: "[pod-network-cidr]"
+kubeadm_service_subnet: "[service-network-cidr]"
+kubeadm_control_plane_endpoint: "{{ ansible_default_ipv4.address }}:{{ vault_haproxy_k8s_backend_port | default('[haproxy-backend-port]') }}"
 kubeadm_api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
 kubeadm_kubelet_extra_args:
   node-ip: "{{ ansible_default_ipv4.address }}"
 kubeadm_api_version: "v1beta4"
 calico_version: "v3.31.3"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
- calico_custom_resources_src: "/path/to/calico/2-custom-resources.yaml"
+calico_custom_resources_src: "/path/to/calico/custom-resources.yaml"
 ```
 
 **Usage:**
@@ -102,20 +127,9 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
 **Variables** (roles/kuber_join/defaults/main.yaml):
 ```yaml
-kuber_join_control_plane_host: "{{ groups['planes'][0] }}"
-kuber_join_control_plane_ip: "{{ hostvars[kuber_join_control_plane_host]['ansible_default_ipv4']['address'] }}"
-kuber_join_api_port: "6443"
-kuber_join_token_ttl: "0"
-```
-
-**Usage:**
-```bash
-# Join all workers
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
-
-# Join specific worker groups
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_main --tags join
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_office --tags join
+kuber_join_control_plane_host: "VIP"
+kuber_join_control_plane_ip: "[vip-address]"  # VIP address
+kuber_join_api_port: "[k8s-api-port]"
 ```
 
 **Verification included:**

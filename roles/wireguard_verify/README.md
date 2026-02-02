@@ -74,7 +74,7 @@ See [filter_plugins/README.md](filter_plugins/README.md) for detailed usage.
 All sensitive configuration is loaded from `vault_secrets.yml`:
 
 - `vault_wg_interface` - WireGuard interface name (e.g., wg99)
-- `vault_wg_network_cidr` - VPN network CIDR (e.g., 9.11.0.0/24)
+- `vault_wg_network_cidr` - VPN network CIDR (e.g., [vpn-network-cidr])
 - `vault_wg_server_ip` - Server VPN IP address
 - `vault_wg_server_port` - WireGuard listen port
 - `vault_wg_peers` - List of peer configurations

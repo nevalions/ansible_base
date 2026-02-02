@@ -28,6 +28,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    - Documented automatic error recovery capabilities
    - Included specific examples for targeted upgrades
 
+## [1.5.0] - 2026-02-02
+
+### Added
+- **keepalived Role**:
+  - New role for managing Kubernetes API VIP with health checks
+  - Configures iptables DNAT for VIP:[k8s-api-port] → plane:[haproxy-frontend-port]
+  - Health checks for both HAProxy and Kubernetes API on control planes
+  - Multi-plane support with automatic failover
+  - **Vault Variables**:
+  - `vault_keepalived_vip`: Virtual IP address ([vip-address])
+  - `vault_keepalived_vip_cidr`: VIP CIDR (32)
+  - `vault_keepalived_vip_interface`: Network interface (wg99)
+  - `vault_keepalived_password`: VRRP authentication password
+  - `vault_keepalived_router_id`: VRRP router ID
+  - `vault_k8s_api_vip`: Kubernetes API VIP for workers
+  - `vault_k8s_api_port`: Kubernetes API port ([k8s-api-port])
+  - `vault_k8s_control_planes`: List of control planes with WireGuard IPs
+- **Playbook**:
+  - `keepalived_manage.yaml`: Deploy and manage keepalived on haproxy_spb
+
+### Changed
+- **haproxy_k8s Role**:
+  - Updated to support multi-plane configuration from vault
+  - Changed backend hosts to use WireGuard IPs from `vault_k8s_control_planes`
+  - Added firewall rules to allow WireGuard network access to HAProxy:[haproxy-frontend-port]
+- **kuber_join Role**:
+  - Changed to use VIP (`vault_k8s_api_vip`) instead of direct plane IP
+  - Workers now connect to VIP:[k8s-api-port] for high availability
+- **kuber_init Role**:
+  - Changed control plane endpoint to use VIP:[k8s-api-port]
+  - Workers join through VIP for consistent access
+- **Inventory**:
+  - Added `[keepalived_hosts]` group for haproxy_spb
+  - Added `[keepalived_vip_servers]` group for planes_all
+- **haproxy_k8s.yaml Playbook**:
+  - Changed hosts from `planes` to `planes_all` for consistency
+
+### Fixed
+- Port mismatch between worker join ([k8s-api-port]) and control plane endpoint ([haproxy-frontend-port])
+- Resolved with iptables DNAT: VIP:[k8s-api-port] → plane:[haproxy-frontend-port]
+
+### Documentation
+- Updated `KUBERNETES_SETUP.md` with VIP architecture
+- Updated `roles/haproxy_k8s/README.md` with multi-plane support
+- Added detailed testing procedures for VIP failover
+
 ## [1.4.0] - 2026-02-02
 
 ### Fixed
@@ -53,10 +99,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `roles/kuber_init/defaults/main.yaml`:
     - Replaced placeholder `[internal-ip]/16` with vault variable `{{ vault_k8s_pod_subnet | default('10.244.0.0/16') }}`
     - Replaced placeholder `[internal-ip]/16` with vault variable `{{ vault_k8s_service_subnet | default('10.96.0.0/12') }}`
-    - Changed control plane endpoint to use `{{ vault_haproxy_k8s_frontend_port | default('7443') }}`
+    - Changed control plane endpoint to use `{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}`
     - Uses Kubernetes standard pod and service network defaults when vault variables not defined
   - `roles/kuber/tasks/main.yaml`:
-    - Added port 7443 to firewall rules (standard alternative Kubernetes API port)
+    - Added port `[haproxy-frontend-port]` to firewall rules (standard alternative Kubernetes API port)
 
 - **Vault Configuration**:
   - `vault_secrets.example.yml`:
