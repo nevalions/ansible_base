@@ -68,9 +68,9 @@ Add/update these variables in `vault_secrets.yml`:
  vault_wg_client_port_end: "[port-range-end]"          # NAT port range end
  vault_wg_dns_primary: "[dns-server-ip]"               # DNS server for VPN
  
- # WireGuard Server Keys (leave null for auto-generation)
- vault_wg_server_private_key: null
- vault_wg_server_public_key: null
+ # WireGuard Server Keys (deprecated - use peer keys instead)
+  vault_wg_server_private_key: null
+  vault_wg_server_public_key: null
  
  # WireGuard Peers Configuration
  vault_wg_peers:
@@ -484,12 +484,9 @@ After first deployment, keys are displayed in output. Copy them to `vault_secret
 ansible-vault edit vault_secrets.yml
 ```
 
- Update with generated keys:
- ```yaml
- vault_wg_server_private_key: "[server-private-key]"
- vault_wg_server_public_key: "[server-public-key]"
-
- vault_wg_peer_private_keys:
+  Update with generated keys:
+  ```yaml
+  vault_wg_peer_private_keys:
    [peer-1-name]: "[peer-1-private-key]"
    [peer-2-name]: "[peer-2-private-key]"
    [peer-3-name]: "[peer-3-private-key]"
@@ -507,11 +504,11 @@ ansible-vault edit vault_secrets.yml
 ### 7.2 Verify Vault
 
 ```bash
-# Verify server keys are saved
-ansible-vault view vault_secrets.yml | grep -A 2 vault_wg_server_private_key
-
-# Verify peer keys are saved
+# Verify peer private keys are saved
 ansible-vault view vault_secrets.yml | grep -A 5 vault_wg_peer_private_keys
+
+# Verify peer public keys are saved
+ansible-vault view vault_secrets.yml | grep -A 5 vault_wg_peer_public_keys
 ```
 
 ### 7.3 Re-run Deployment
@@ -915,12 +912,10 @@ After rotation, copy new keys to `vault_secrets.yml` (see Step 7).
      - vault_wg_client_port_start
      - vault_wg_client_port_end
      - vault_wg_dns_primary
-     - vault_wg_server_private_key
-     - vault_wg_server_public_key
-     - vault_wg_peers
-     - vault_wg_peer_private_keys
-     - vault_wg_peer_public_keys
-     - vault_wg_allowed_networks
+      - vault_wg_peers
+      - vault_wg_peer_private_keys
+      - vault_wg_peer_public_keys
+      - vault_wg_allowed_networks
  ```
 
 ### Contact and Support

@@ -17,30 +17,22 @@
       ansible.builtin.debug:
         msg: "WireGuard operation: {{ wg_operation }}"
 
-    - name: Ensure WireGuard keys are defined in vault
+    - name: Ensure WireGuard peer keys are defined in vault
       ansible.builtin.assert:
         that:
-          - vault_wg_server_private_key is defined
-          - vault_wg_server_private_key is not none
-          - vault_wg_server_private_key | length > 0
           - vault_wg_peer_private_keys is defined
           - vault_wg_peer_private_keys is not none
           - vault_wg_peer_private_keys | length > 0
+          - vault_wg_peer_public_keys is defined
+          - vault_wg_peer_public_keys is not none
+          - vault_wg_peer_public_keys | length > 0
         fail_msg: |
-          WireGuard keys are not defined in vault_secrets.yml. Please generate keys:
-          
+          WireGuard peer keys are not defined in vault_secrets.yml. Please generate keys:
+
           Option 1: Use the key generation script
           bash generate_wg_keys.sh > wg_keys.yaml
-          
+
           Option 2: Generate keys manually
-          # Generate server keys
-          wg genkey > server_private.txt
-          cat server_private.txt | wg pubkey > server_public.txt
-          
-          # Add to vault_secrets.yml:
-          vault_wg_server_private_key: "<server_private.txt content>"
-          vault_wg_server_public_key: "<server_public.txt content>"
-          
           # Generate peer keys for each peer and add to vault:
           vault_wg_peer_private_keys:
             [PEER_NAME]: "<private key for [PEER_NAME]>"
@@ -48,9 +40,9 @@
           vault_wg_peer_public_keys:
             [PEER_NAME]: "<public key for [PEER_NAME]>"
             # ... add other peers
-          
+
           For complete setup instructions, see WIREGUARD_SETUP.md
-        success_msg: "WireGuard keys found in vault"
+        success_msg: "WireGuard peer keys found in vault"
 
     - name: Apply WireGuard role
       ansible.builtin.include_role:

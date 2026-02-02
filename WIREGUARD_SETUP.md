@@ -128,8 +128,8 @@ ansible -i hosts_bay.ini [CLIENT_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
 ### Keys are empty in config
 Verify vault keys are properly set:
 ```bash
-ansible-vault view vault_secrets.yml | grep -A 5 "vault_wg_server_private_key"
 ansible-vault view vault_secrets.yml | grep -A 5 "vault_wg_peer_private_keys"
+ansible-vault view vault_secrets.yml | grep -A 5 "vault_wg_peer_public_keys"
 ```
 
 ### Config has wrong endpoint IP

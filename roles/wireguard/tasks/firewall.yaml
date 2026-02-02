@@ -15,8 +15,6 @@
   register: existing_wg_rules
   changed_when: false
   failed_when: false
-  async: 15
-  poll: 2
   when:
     - ansible_os_family == 'Debian'
     - vault_wg_allowed_networks is defined
@@ -90,8 +88,6 @@
   ansible.builtin.command: ufw status
   register: ufw_status
   changed_when: false
-  async: 15
-  poll: 2
   when: ansible_os_family == 'Debian'
 
 - name: Check if UFW is currently active
@@ -145,8 +141,6 @@
   ansible.builtin.command: ufw status
   register: ufw_status_enabled
   changed_when: false
-  async: 15
-  poll: 2
   when:
     - ansible_os_family == 'Debian'
     - wg_operation == "install"

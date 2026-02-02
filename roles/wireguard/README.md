@@ -58,10 +58,8 @@ Clients (Multi-Server):
 
 | Variable | Description |
 |----------|-------------|
-| `vault_wg_server_private_key` | Server private key (auto-generated) |
-| `vault_wg_server_public_key` | Server public key (auto-generated) |
-| `vault_wg_peer_private_keys` | Dictionary of peer private keys |
-| `vault_wg_peer_public_keys` | Dictionary of peer public keys |
+| `vault_wg_peer_private_keys` | Dictionary of peer private keys (all nodes) |
+| `vault_wg_peer_public_keys` | Dictionary of peer public keys (all nodes) |
 
 ### Peer Configuration
 
