@@ -1,5 +1,31 @@
 # Ansible Repository Guidelines for Agentic Coding
 
+## ⚠️ SECURITY WARNING - READ BEFORE EDITING
+
+### 🚨 CRITICAL: NEVER COMMIT SENSITIVE DATA
+
+**STRICTLY PROHIBITED in ALL files (docs, playbooks, examples):**
+
+❌ **NEVER** include real usernames
+❌ **NEVER** include real IP addresses (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
+❌ **NEVER** include real SSH ports (e.g., `22`, custom SSH ports)
+❌ **NEVER** include real hostnames or domain names
+❌ **NEVER** include real passwords or API keys
+❌ **NEVER** include SSH private keys or certificates
+❌ **NEVER** include network CIDRs or network identifiers
+
+**✅ ALWAYS use placeholders instead:**
+- Usernames: `[your-username]`
+- IP addresses: `[internal-ip]`, `[server-ip]`, `[client-ip]`
+- Ports: `[custom-ssh-port]`, `[server-port]`
+- Hostnames: `[cluster-hostname]`, `[server-hostname]`
+- Passwords: `[your-password-here]`
+- API keys: `[your-api-key-here]`
+
+**Violation of this policy will immediately fail code review.**
+
+---
+
 ## Build, Lint, and Test Commands
 
 ### Syntax Validation
@@ -223,6 +249,49 @@ Always configure `.ansible-lint` with:
 
 ## Security Guidelines
 
+### ⚠️ CRITICAL: NEVER COMMIT SENSITIVE DATA
+
+**STRICTLY PROHIBITED in ALL commits (code, docs, examples):**
+
+❌ **Real usernames** (use placeholders instead)
+❌ **Real IP addresses** (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
+❌ **Real SSH ports** (e.g., `22`, custom SSH ports)
+❌ **Real hostnames or domain names**
+❌ **Real passwords** (e.g., `myPassword123`, `secret456`)
+❌ **API keys/tokens** (e.g., `sk-1234567890abcdef`, `ghp_xxxxxxxxx`)
+❌ **SSH private keys** (e.g., `-----BEGIN RSA PRIVATE KEY-----`)
+❌ **Certificates** (e.g., `-----BEGIN CERTIFICATE-----`)
+❌ **Network CIDRs** (e.g., `192.168.1.0/24`, `10.0.0.0/8`)
+❌ **Real domain names** (e.g., `mycompany.com`, `internal.domain.org`)
+
+**✅ MANDATORY: Use placeholders ONLY:**
+- Usernames: `[your-username]`, `[admin-username]`
+- IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
+- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`
+- Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
+- Passwords: `[your-password-here]`, `[sudo-password]`
+- API keys: `[your-api-key-here]`
+- Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
+
+**Examples of CORRECT placeholder usage:**
+```yaml
+# ✅ CORRECT - Uses placeholders
+ansible_user: [your-username]
+ansible_port: [custom-ssh-port]
+ansible_host: [server-ip]
+vault_become_pass: [your-password-here]
+dns_server: [dns-server-ip]
+```
+
+**❌ WRONG - Never use real data in examples (even "wrong" examples):**
+```yaml
+# ❌ DO NOT use real values even in examples
+ansible_user: some-real-username
+ansible_port: 12345
+ansible_host: 192.168.1.100
+vault_become_pass: some-real-password
+```
+
 ### Never Commit Secrets
 - **CRITICAL**: Never commit plaintext passwords, API keys, tokens, or any sensitive data
 - **CRITICAL**: Never put logins or passwords in documentation files (even in examples)
@@ -242,12 +311,36 @@ Always configure `.ansible-lint` with:
 - Consider using external secret management systems (HashiCorp Vault, AWS Secrets Manager)
 
 ### Documentation Security
-- Documentation files must use placeholders for all credentials:
-  - Good: `password: [redacted]` or `password: your-password-here`
-  - Good: `api_key: [your-api-key-here]`
-  - Bad: `password: "myActualPassword123"`
-  - Bad: `api_key: "sk-1234567890abcdef"`
-- Review all documentation files before committing
+
+**⚠️ CRITICAL: DOCUMENTATION MUST USE PLACEHOLDERS**
+
+**NEVER include in ANY documentation files (README.md, guides, examples):**
+❌ Real usernames, IPs, ports, hostnames, passwords, API keys, tokens, SSH keys, certificates, or network CIDRs
+
+**ALWAYS use placeholders:**
+```yaml
+# ✅ CORRECT - Uses placeholders
+username: [your-username]
+password: [your-password-here]
+api_key: [your-api-key-here]
+ip_address: [internal-ip]
+port: [custom-ssh-port]
+hostname: [cluster-hostname]
+```
+
+**❌ WRONG - Never use real data even in examples (even "wrong" examples):**
+```yaml
+# ❌ DO NOT use real values even in examples
+username: some-real-username
+password: "some-real-password"
+api_key: "some-real-api-key"
+ip_address: 192.168.1.100
+```
+
+- Documentation files must use placeholders for all credentials
+- Use `[redacted]`, `[REDACTED]`, `[your-username]`, `[your-password-here]`, `[your-api-key-here]` patterns
+- NEVER use real values even in examples or comments
+- Review ALL documentation files before committing with `git diff`
 - Use git hooks to prevent accidental secret commits if possible
 
 ### Pre-Commit Security Checklist
