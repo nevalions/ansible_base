@@ -1,6 +1,6 @@
 ---
 - name: Rotate WireGuard keys
-  hosts: wireguard_servers
+  hosts: wireguard_cluster
   become: true
   gather_facts: true
   serial: 1
