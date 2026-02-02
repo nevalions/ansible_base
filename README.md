@@ -33,7 +33,7 @@ ansible_host: [server-ip]
 ```yaml
 ansible_user: some-real-username
 ansible_port: 12345
-ansible_host: 192.168.1.100
+ansible_host: [example-ip]
 ```
 
 **Violation of this policy will immediately fail code review.**

@@ -288,7 +288,7 @@ dns_server: [dns-server-ip]
 # ❌ DO NOT use real values even in examples
 ansible_user: some-real-username
 ansible_port: 12345
-ansible_host: 192.168.1.100
+ansible_host: [example-ip]
 vault_become_pass: some-real-password
 ```
 
@@ -334,7 +334,7 @@ hostname: [cluster-hostname]
 username: some-real-username
 password: "some-real-password"
 api_key: "some-real-api-key"
-ip_address: 192.168.1.100
+ip_address: [example-ip]
 ```
 
 - Documentation files must use placeholders for all credentials
