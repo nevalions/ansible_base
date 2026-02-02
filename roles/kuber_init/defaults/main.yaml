@@ -1,7 +1,11 @@
 ---
-kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet | default('10.244.0.0/16') }}"
-kubeadm_service_subnet: "{{ vault_k8s_service_subnet | default('10.96.0.0/12') }}"
-kubeadm_control_plane_endpoint: "{{ ansible_default_ipv4.address }}:{{ vault_haproxy_k8s_frontend_port | default('7443') }}"
+kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet | default('[pod-network-cidr]') }}"
+kubeadm_service_subnet: "{{ vault_k8s_service_subnet | default('[service-network-cidr]') }}"
+
+# Use VIP as control plane endpoint for worker joins
+kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip | default('[vip-address]') }}:{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
+
+# Advertise local IP for internal communication
 kubeadm_api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
 kubeadm_kubelet_extra_args:
   node-ip: "{{ ansible_default_ipv4.address }}"

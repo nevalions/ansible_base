@@ -1,0 +1,20 @@
+---
+haproxy_k8s_frontend_port: "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}"
+haproxy_k8s_backend_port: "{{ vault_haproxy_k8s_backend_port | default('[haproxy-backend-port]') }}"
+
+haproxy_k8s_backend_hosts:
+  - name: "control-plane-1"
+    ip: "{{ vault_haproxy_k8s_backend_ip | default('127.0.0.1') }}"
+    port: "{{ haproxy_k8s_backend_port }}"
+
+haproxy_k8s_allowed_networks:
+  - "{{ vault_wg_network_cidr | default('[vpn-network-cidr]') }}"
+  - "127.0.0.1"
+
+haproxy_k8s_maxconn: 1000
+haproxy_k8s_timeout_connect: 5000
+haproxy_k8s_timeout_client: 30000
+haproxy_k8s_timeout_server: 30000
+haproxy_k8s_check_interval: 2000
+haproxy_k8s_check_rise: 2
+haproxy_k8s_check_fall: 3

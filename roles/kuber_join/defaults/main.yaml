@@ -1,7 +1,7 @@
 ---
-kuber_join_control_plane_host: "{{ groups['planes'][0] }}"
-kuber_join_control_plane_ip: "{{ hostvars[kuber_join_control_plane_host]['ansible_default_ipv4']['address'] }}"
-kuber_join_api_port: "6443"
+kuber_join_control_plane_host: "VIP"
+kuber_join_control_plane_ip: "{{ vault_k8s_api_vip | default('[vip-address]') }}"
+kuber_join_api_port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
 kuber_join_token_ttl: "0"
 kuber_join_kubelet_extra_args:
   node-ip: "{{ ansible_default_ipv4.address }}"
