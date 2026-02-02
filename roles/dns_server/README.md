@@ -19,6 +19,8 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - All IPs encrypted in Ansible Vault (zero hardcoded values)
 - Configuration validation with `unbound-checkconf`
 - DNS resolution testing with `dig`
+- Automatic systemd-resolved disable (prevents port 53 conflict)
+- Custom resolv.conf with fallback to public DNS (8.8.8.8)
 
 ## Requirements
 
@@ -122,6 +124,8 @@ None.
 2. Create inventory file with `dns_servers` group
 3. Run playbook:
 
+**Note:** The role automatically disables `systemd-resolved` and creates a custom `/etc/resolv.conf` pointing to Unbound (127.0.0.1) with Google DNS (8.8.8.8) as a fallback for upstream queries.
+
 ```bash
 ansible-playbook -i hosts_dns.ini dns_server_manage.yaml
 ```
@@ -184,6 +188,9 @@ dig @127.0.0.1 [cluster-hostname]
 - ✅ Access control lists restrict DNS queries to allowed networks
 - ✅ SSH access automatically configured when enabling UFW (prevents lockout)
 - ✅ Example file uses `[placeholder]` format
+- ✅ systemd-resolved is disabled to prevent port 53 conflicts
+- ✅ Custom resolv.conf ensures DNS queries use Unbound
+- ✅ Fallback to public DNS (8.8.8.8) for upstream queries
 
 ### Firewall Behavior
 

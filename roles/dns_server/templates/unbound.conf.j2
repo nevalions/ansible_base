@@ -1,10 +1,12 @@
----
 server:
     interface: {{ dns_listen_interface }}
-    access-control: {{ vault_dns_allowed_networks | default(["0.0.0.0/0 allow"]) }}
+{% for network in vault_dns_allowed_networks | default(["0.0.0.0/0"]) %}
+    access-control: {{ network }} allow
+{% endfor %}
     do-ip6: {{ "yes" if dns_do_ipv6 else "no" }}
-    cache-size: {{ dns_cache_size }}m
-{% for upstream in dns_upstream_dns %}
+    rrset-cache-size: {{ dns_cache_size }}m
+    msg-cache-size: {{ dns_cache_size }}m
+{% for upstream in dns_upstream_dns if not (upstream.startswith('[') or upstream == '[dns-server]') %}
     forward-zone:
         name: "."
         forward-addr: {{ upstream }}

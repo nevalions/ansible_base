@@ -1,14 +1,6 @@
 # BEGIN ANSIBLE MANAGED DNS ZONE
-$TTL 3600
-@       IN SOA  {{ dns_zone }}. admin.{{ dns_zone }}. (
-                {{ ansible_date_time.epoch }}
-                3600
-                600
-                86400
-                3600 )
-        IN NS   {{ dns_servers_list[0] }}.
-
+server:
 {% for record in dns_records %}
-{{ record.name }}.{{ dns_zone }}.  IN  {{ record.type }}  {{ record.ip }}
+    local-data: "{{ record.name }}.{{ dns_zone }}. {{ record.type }} {{ record.ip }}"
 {% endfor %}
 # END ANSIBLE MANAGED DNS ZONE
