@@ -16,7 +16,7 @@
 
     - name: Check if running on server or client
       ansible.builtin.set_fact:
-        is_wireguard_server: "{{ inventory_hostname in groups.get('wireguard_servers', []) }}"
+        is_wireguard_server: "{{ inventory_hostname in (groups.wireguard_servers | default([])) }}"
 
     - ansible.builtin.import_tasks: assign_ports.yaml
       when: is_wireguard_server | default(false)
@@ -30,8 +30,10 @@
     - ansible.builtin.import_tasks: firewall.yaml
       when: is_wireguard_server | default(false)
 
-    - ansible.builtin.import_tasks: deploy_peers.yaml
+    - ansible.builtin.import_tasks: firewall_interface.yaml
       when: is_wireguard_server | default(false)
+
+    - ansible.builtin.import_tasks: deploy_peers.yaml
 
     - name: Verify WireGuard service is running
       ansible.builtin.systemd:
@@ -60,9 +62,7 @@
 
     - name: Check if running on server or client
       ansible.builtin.set_fact:
-        is_wireguard_server: "{{ inventory_hostname in groups.get('wireguard_servers', []) }}"
-
-    - ansible.builtin.import_tasks: deploy_peers.yaml
+        is_wireguard_server: "{{ inventory_hostname in (groups.wireguard_servers | default([])) }}"
   when: wg_operation == "remove"
 
 - name: Display WireGuard management completion

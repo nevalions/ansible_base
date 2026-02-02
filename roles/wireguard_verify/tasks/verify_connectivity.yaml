@@ -1,0 +1,99 @@
+---
+- name: Initialize connectivity tests failed counter
+  ansible.builtin.set_fact:
+    connectivity_tests_failed: 0
+
+- name: Check if current host is a WireGuard server
+  ansible.builtin.set_fact:
+    is_wireguard_server: "{{ inventory_hostname in groups.get('wireguard_servers', []) }}"
+
+- name: Test connectivity from server to peers
+  block:
+    - name: Ping to server's own WireGuard IP
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ vault_wg_server_ip }}
+      register: ping_server_self
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display server self-ping result
+      ansible.builtin.debug:
+        msg: "{{ (('PING SUCCESS' if ping_server_self.rc == 0 else 'PING FAILED') ~ ': ' ~ vault_wg_server_ip ~ ' (self)') | sanitize_security }}"
+    - name: Increment counter if server self-ping failed
+      ansible.builtin.set_fact:
+        connectivity_tests_failed: "{{ connectivity_tests_failed | int + 1 }}"
+      when: ping_server_self.rc != 0
+
+    - name: Ping to each peer's VPN IP
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ item.allowed_ips.split('/')[0] }}
+      register: ping_peer_result
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ vault_wg_peers | default([]) }}"
+      when: item.allowed_ips is defined
+
+    - name: Display peer ping results
+      ansible.builtin.debug:
+        msg: "{{ (('PING SUCCESS' if item.rc == 0 else 'PING FAILED') ~ ': ' ~ item.item.allowed_ips.split('/')[0]) | sanitize_security }}"
+      loop: "{{ ping_peer_result.results | selectattr('rc', 'defined') | list }}"
+      when:
+        - ping_peer_result is defined
+        - ping_peer_result.results is defined
+
+    - name: Count failed peer pings
+      ansible.builtin.set_fact:
+        connectivity_tests_failed: "{{ connectivity_tests_failed | int + 1 }}"
+      loop: "{{ ping_peer_result.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list }}"
+  when: is_wireguard_server
+
+- name: Test connectivity from clients to server
+  block:
+    - name: Ping to server's WireGuard IP
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ vault_wg_server_ip }}
+      register: ping_from_client
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display client ping result
+      ansible.builtin.debug:
+        msg: "{{ (('PING SUCCESS' if ping_from_client.rc == 0 else 'PING FAILED') ~ ': ' ~ vault_wg_server_ip ~ ' (server)') | sanitize_security }}"
+
+    - name: Increment counter if client ping failed
+      ansible.builtin.set_fact:
+        connectivity_tests_failed: "{{ connectivity_tests_failed | int + 1 }}"
+      when: ping_from_client.rc != 0
+  when: not is_wireguard_server
+- name: Test bidirectional connectivity between peers
+  block:
+    - name: Ping to other peers
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ item.allowed_ips.split('/')[0] }}
+      register: ping_peer_to_peer
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ vault_wg_peers | default([]) }}"
+      when:
+        - item.host_group is defined
+        - inventory_hostname in groups.get(item.host_group, [])
+        - item.allowed_ips is defined
+        - inventory_hostname != groups.get('wireguard_servers', [])[0]
+
+    - name: Display peer-to-peer ping results
+      ansible.builtin.debug:
+        msg: "{{ (('PING SUCCESS' if item.rc == 0 else 'PING FAILED') ~ ': ' ~ item.item.allowed_ips.split('/')[0]) | sanitize_security }}"
+      loop: "{{ ping_peer_to_peer.results | selectattr('rc', 'defined') | list }}"
+      when:
+        - ping_peer_to_peer is defined
+        - ping_peer_to_peer.results is defined
+
+- name: Calculate individual test counts
+  ansible.builtin.set_fact:
+    server_tests: "{{ 1 if is_wireguard_server else 0 }}"
+    peer_ping_tests: "{{ ping_peer_result.results | selectattr('rc', 'defined') | length if (ping_peer_result.results is defined) else 0 }}"
+    peer_peer_tests: "{{ ping_peer_to_peer.results | selectattr('rc', 'defined') | length if (ping_peer_to_peer.results is defined) else 0 }}"
+
+- name: Calculate total connectivity tests
+  ansible.builtin.set_fact:
+    total_connectivity_tests: "{{ server_tests + peer_ping_tests + peer_peer_tests }}"
+
+- name: Display total connectivity test results
+  ansible.builtin.debug:
+    msg: "Connectivity tests: {{ total_connectivity_tests }} total, {{ connectivity_tests_failed }} failed"

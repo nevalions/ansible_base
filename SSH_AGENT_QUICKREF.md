@@ -3,10 +3,10 @@
 ## Quick Start
 
 ### Start Working Session
-```bash
-cd /home/[your-username]/ansible
-./ssh-agent-setup.sh
-```
+ ```bash
+ cd /path/to/ansible
+ ./ssh-agent-setup.sh
+ ```
 This will:
 1. Start SSH agent
 2. Prompt for passphrase for `~/.ssh/id_rsa`
@@ -57,21 +57,21 @@ eval "$(ssh-agent -k)"
 
 ## Testing Connectivity
 
-### Test Bay Cluster ([your-username] user)
-```bash
-ansible -i hosts_bay.ini planes -m ping
-ansible -i hosts_bay.ini workers_all -m ping
-```
+ ### Test Bay Cluster ([your-username] user)
+ ```bash
+ ansible -i hosts_bay.ini planes -m ping
+ ansible -i hosts_bay.ini workers_all -m ping
+ ```
 
-### Test HAProxy Servers ([your-username] user)
-```bash
-ansible -i hosts_haproxy.ini haproxy_all -m ping
-```
+ ### Test HAProxy Servers ([proxy-username] user)
+ ```bash
+ ansible -i hosts_haproxy.ini haproxy_all -m ping
+ ```
 
-### Test Restream Servers (main/[your-username] users)
-```bash
-ansible -i hosts_restream.ini restream_all -m ping
-```
+ ### Test Restream Servers ([main-user]/[proxy-user] users)
+ ```bash
+ ansible -i hosts_restream.ini restream_all -m ping
+ ```
 
 ## Security Notes
 

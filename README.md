@@ -140,8 +140,8 @@ Available templates:
 - **planes**: Kubernetes control plane configuration
 - **workers_super**: Super worker configuration
 - **workers_vas**: VAS worker configuration
-- **cloud_workers**: Cloud worker configuration
-- **cloud_planes**: Cloud plane configuration
+ - **remote_workers**: Remote worker configuration
+ - **remote_planes**: Remote plane configuration
 - **bay_cluster_all**: Common cluster variables
 
 To use templates:

@@ -1,0 +1,14 @@
+---
+- name: Verify WireGuard Network Health
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - verify
+    - test
+  roles:
+    - wireguard_verify

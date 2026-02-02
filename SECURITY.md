@@ -160,23 +160,23 @@ This repository uses GPG encryption to secure the Ansible vault password.
 ### Initial Setup
 
 #### 1. Create GPG Key (first time only)
-```bash
-gpg --full-generate-key
-# RSA 4096-bit, no expiration
-# Name: [your-username]
-# Email: nevalions@gmail.com
-# Comment: Ansible Vault
-# Use a strong passphrase for the GPG key
-```
+ ```bash
+ gpg --full-generate-key
+ # RSA 4096-bit, no expiration
+ # Name: [your-name]
+ # Email: [your-email@example.com]
+ # Comment: Ansible Vault
+ # Use a strong passphrase for GPG key
+ ```
 
 #### 2. Encrypt Vault Password
-```bash
-# If migrating from plaintext .vault_pass:
-cat .vault_pass | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
+ ```bash
+ # If migrating from plaintext .vault_pass:
+ cat .vault_pass | gpg --encrypt --recipient [your-email@example.com] --armor --output vault_password.gpg
 
-# For new passwords:
-echo "your-new-vault-password" | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
-```
+ # For new passwords:
+ echo "your-new-vault-password" | gpg --encrypt --recipient [your-email@example.com] --armor --output vault_password.gpg
+ ```
 
 #### 3. Make Script Executable
 ```bash
@@ -213,10 +213,10 @@ ansible-playbook upgrade_deb.yaml --vault-password-file ./vault_password_client.
 
 ### Vault File Structure
 
-Encrypted file: `vault_password.gpg`
-- Contains: Ansible vault password (plaintext of [redacted])
-- Encrypted with: GPG key for nevalions@gmail.com
-- Format: ASCII-armored PGP message
+ Encrypted file: `vault_password.gpg`
+ - Contains: Ansible vault password (plaintext of [redacted])
+ - Encrypted with: GPG key for [your-email@example.com]
+ - Format: ASCII-armored PGP message
 
 Client script: `vault_password_client.sh`
 - Purpose: Decrypt vault_password.gpg on demand
@@ -226,29 +226,12 @@ Client script: `vault_password_client.sh`
 ### Rotation
 
 To rotate Ansible vault password:
-```bash
-# 1. Generate new vault password
-NEW_PASS=$(openssl rand -base64 32)
-
-# 2. Encrypt new password with GPG
-echo "$NEW_PASS" | gpg --encrypt --recipient nevalions@gmail.com --armor --output vault_password.gpg
-
-# 3. Re-encrypt all vault files with new password
-ansible-vault rekey vault_secrets.yml --vault-password-file ./vault_password_client.sh
-# Enter old password when prompted, then new password
-
-# 4. Update ansible.cfg to point to new encrypted file (if needed)
-```
-
-To rotate GPG key:
-```bash
-# 1. Generate new GPG key
-gpg --full-generate-key
-
-# 2. Re-encrypt vault password with new key
-gpg --decrypt --recipient nevalions@gmail.com vault_password.gpg | \
-  gpg --encrypt --recipient NEW_EMAIL@gmail.com --armor --output vault_password.gpg.new
-mv vault_password.gpg.new vault_password.gpg
+ ```bash
+ # 2. Re-encrypt vault password with new key
+ gpg --decrypt --recipient [your-email@example.com] vault_password.gpg | \
+   gpg --encrypt --recipient [new-email@example.com] --armor --output vault_password.gpg.new
+ mv vault_password.gpg.new vault_password.gpg
+ ```
 
 # 3. Update vault_password_client.sh with new recipient
 

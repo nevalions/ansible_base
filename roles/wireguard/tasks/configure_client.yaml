@@ -21,6 +21,7 @@
   when:
     - peer_wg_config_exists.stat.exists
     - operation == "install"
+    - not ansible_check_mode
 
 - name: Deploy WireGuard client configuration
   ansible.builtin.template:
@@ -28,8 +29,18 @@
     dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     mode: '0600'
     backup: yes
-  notify: restart wireguard
+  register: peer_config_deployed
   when: operation == "install"
+
+- name: Stop WireGuard service before configuration change (peer)
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: stopped
+  when:
+    - operation == "install"
+    - peer_config_deployed.changed
+    - not ansible_check_mode
+  ignore_errors: true
 
 - name: Remove WireGuard client configuration
   ansible.builtin.file:
@@ -45,26 +56,26 @@
     daemon_reload: yes
   when: operation == "install"
 
-- name: Start WireGuard service (peer)
+- name: Start or restart WireGuard service (peer)
   ansible.builtin.systemd:
     name: "wg-quick@{{ vault_wg_interface }}"
-    state: started
+    state: "{{ 'restarted' if peer_config_deployed.changed else 'started' }}"
   when: operation == "install"
+  register: peer_service_start
+  ignore_errors: true
 
-- name: Wait for WireGuard interface to come up (peer)
-  ansible.builtin.shell: ip link show {{ vault_wg_interface }}
-  register: peer_wg_interface_check
-  changed_when: false
-  until: peer_wg_interface_check.rc == 0
-  retries: 5
-  delay: 2
-  when: operation == "install"
+- name: Display service result
+  ansible.builtin.debug:
+    msg: "Service start {{ 'succeeded' if peer_service_start is succeeded else 'failed' }}: {{ peer_service_start.msg | default('OK') }}"
 
 - name: Get peer WireGuard status
   ansible.builtin.shell: wg show {{ vault_wg_interface }}
   register: peer_wg_status
   changed_when: false
-  when: operation == "install" and not ansible_check_mode
+  when:
+    - operation == "install"
+    - not ansible_check_mode
+    - peer_service_start is succeeded
 
 - name: Display peer WireGuard status
   ansible.builtin.debug:
@@ -73,3 +84,4 @@
     - operation == "install"
     - not ansible_check_mode
     - peer_wg_status.stdout_lines is defined
+    - peer_service_start is succeeded

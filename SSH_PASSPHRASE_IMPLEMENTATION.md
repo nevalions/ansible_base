@@ -228,7 +228,6 @@ ssh-add ~/.ssh/id_rsa
 
 ## Documentation References
 
-- Detailed findings: `OPTION1_FINDINGS.md`
 - Vault setup: `VAULT_SETUP.md`
 - SSH agent quickref: `SSH_AGENT_QUICKREF.md`
 - Security guidelines: `SECURITY.md`

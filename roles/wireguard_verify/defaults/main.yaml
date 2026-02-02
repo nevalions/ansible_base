@@ -1,0 +1,12 @@
+---
+skip_folder_check: true
+
+# Verification settings
+verify_ping_count: 3
+verify_ping_timeout: 2
+verify_retry_count: 5
+verify_sleep_seconds: 5
+verify_timeout_seconds: 30
+
+# Test namespace for verification (not used in WireGuard but following pattern)
+verify_test_namespace: "wg-verify"

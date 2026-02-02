@@ -1,7 +1,7 @@
 ---
 galaxy_info:
   author: [your-username]
-  description: Manage WireGuard VPN network with automatic peer configuration, NAT support, and UFW firewall integration
+  description: Verify WireGuard VPN network health, connectivity, and configuration
   company: null
   license: MIT
   min_ansible_version: 2.16
@@ -20,7 +20,8 @@ galaxy_info:
     - vpn
     - wireguard
     - networking
-    - firewall
-    - security
+    - verification
+    - testing
+    - health-check
 
 dependencies: []

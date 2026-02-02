@@ -3,7 +3,14 @@
   ansible.builtin.stat:
     path: "/etc/wireguard/{{ vault_wg_interface }}.conf"
   register: wg_config_exists
-
+ 
+- name: Ensure backup directory exists before backup
+  ansible.builtin.file:
+    path: /etc/wireguard/backups
+    state: directory
+    mode: '0700'
+  when: not ansible_check_mode
+ 
 - name: Backup existing WireGuard config
   ansible.builtin.copy:
     src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
@@ -13,52 +20,79 @@
   when:
     - wg_config_exists.stat.exists
     - wg_operation == "install"
+    - not ansible_check_mode
   register: wg_backup
-
+ 
 - name: Display backup location
   ansible.builtin.debug:
     msg: "Existing config backed up to: {{ wg_backup.dest }}"
   when:
     - wg_backup is defined
     - wg_backup.changed
-
+ 
 - name: Deploy WireGuard server configuration
   ansible.builtin.template:
     src: server.conf.j2
     dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     mode: '0600'
     backup: yes
-  notify: restart wireguard
-
+  register: wg_config_deployed
+ 
+- name: Stop WireGuard service before configuration change
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: stopped
+  when:
+    - wg_operation == "install"
+    - wg_config_deployed.changed
+    - not ansible_check_mode
+  ignore_errors: true
+ 
 - name: Enable WireGuard service on boot
   ansible.builtin.systemd:
     name: "wg-quick@{{ vault_wg_interface }}"
     enabled: yes
     daemon_reload: yes
   when: wg_operation == "install"
-
-- name: Start WireGuard service
+ 
+- name: Start or restart WireGuard service
   ansible.builtin.systemd:
     name: "wg-quick@{{ vault_wg_interface }}"
-    state: started
-  register: wg_service_start
+    state: "{{ 'restarted' if wg_config_deployed.changed else 'started' }}"
+  register: wg_service_action
   when: wg_operation == "install"
-
+ 
 - name: Wait for WireGuard interface to come up
   ansible.builtin.shell: ip link show {{ vault_wg_interface }}
   register: wg_interface_check
   changed_when: false
+  async: 15
+  poll: 2
   until: wg_interface_check.rc == 0
   retries: 5
   delay: 2
-  when: wg_operation == "install"
-
+  when:
+    - wg_operation == "install"
+    - not ansible_check_mode
+ 
+- name: Check WireGuard interface status timeout
+  ansible.builtin.fail:
+    msg: "WireGuard interface {{ vault_wg_interface }} did not come up after 10 seconds (5 retries x 2s delay)"
+  when:
+    - wg_operation == "install"
+    - not ansible_check_mode
+    - wg_interface_check.rc != 0
+ 
 - name: Get WireGuard interface status
   ansible.builtin.shell: wg show {{ vault_wg_interface }}
   register: wg_status
   changed_when: false
-  when: wg_operation == "install" and not ansible_check_mode
-
+  async: 30
+  poll: 2
+  when:
+    - wg_operation == "install"
+    - not ansible_check_mode
+ 
 - name: Display WireGuard interface status
   ansible.builtin.debug:
     var: wg_status.stdout_lines

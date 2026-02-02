@@ -12,13 +12,12 @@
            'host_group': item.host_group,
            'allowed_ips': item.allowed_ips,
            'endpoint': item.endpoint,
-           'client_listen_port': item.client_listen_port | default((vault_wg_client_port_start | int + port_counter) | string)
+           'client_listen_port': item.client_listen_port | default((vault_wg_client_port_start | int + ansible_loop.index0) | string)
          }] }}
-  loop: "{{ vault_wg_peers }}"
+  loop: "{{ vault_wg_peers | default([]) }}"
   loop_control:
-    loop_var: item
-  vars:
-    port_counter: "{{ ansible_loop.index0 }}"
+    extended: yes
+  when: vault_wg_peers is defined and vault_wg_peers | length > 0
 
 - name: Update vault_wg_peers with assigned ports
   ansible.builtin.set_fact:

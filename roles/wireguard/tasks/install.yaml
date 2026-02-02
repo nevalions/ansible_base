@@ -1,17 +1,19 @@
 ---
+- name: Set debconf for non-interactive APT
+  ansible.builtin.shell: echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+  changed_when: false
+  when: ansible_os_family == 'Debian'
+
 - name: Install WireGuard package
-  ansible.builtin.apt:
-    name:
-      - wireguard
-      - wireguard-tools
-    state: present
-    update_cache: yes
+  ansible.builtin.shell: DEBIAN_FRONTEND=noninteractive apt-get install -y wireguard wireguard-tools
+  register: wg_install
+  changed_when: "'0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.' not in wg_install.stdout"
   when: ansible_os_family == 'Debian'
 
 - name: Install UFW package
-  ansible.builtin.apt:
-    name: ufw
-    state: present
+  ansible.builtin.shell: DEBIAN_FRONTEND=noninteractive apt-get install -y ufw
+  register: ufw_install
+  changed_when: "'0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.' not in ufw_install.stdout"
   when: ansible_os_family == 'Debian'
 
 - name: Ensure WireGuard config directory exists

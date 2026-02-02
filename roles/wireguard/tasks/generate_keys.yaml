@@ -1,31 +1,37 @@
 ---
+- name: Identify first WireGuard server for key generation
+  ansible.builtin.set_fact:
+    wg_first_server: "{{ groups.wireguard_servers | sort() | list | first }}"
+
+- name: Check if current host should generate keys
+  ansible.builtin.set_fact:
+    wg_should_generate: "{{ inventory_hostname == wg_first_server }}"
+
 - name: Check if server private key exists in vault
   ansible.builtin.set_fact:
     server_key_exists: >-
-      {{ vault_wg_server_private_key is not none and vault_wg_server_private_key != '' }}
+      {{ vault_wg_server_private_key is defined and
+         vault_wg_server_private_key is not none and
+         vault_wg_server_private_key != '' and
+         vault_wg_server_private_key != 'null' }}
 
 - name: Generate server private key (if not in vault)
   ansible.builtin.shell: wg genkey
   register: wg_server_private_key_gen
   changed_when: false
-  run_once: yes
-  delegate_to: localhost
-  when: not server_key_exists
+  when: not server_key_exists and wg_should_generate
 
 - name: Generate server public key
   ansible.builtin.shell: echo "{{ wg_server_private_key_gen.stdout }}" | wg pubkey
   register: wg_server_public_key_gen
   changed_when: false
-  run_once: yes
-  delegate_to: localhost
-  when: not server_key_exists
+  when: not server_key_exists and wg_should_generate
 
 - name: Store generated server keys in facts
   ansible.builtin.set_fact:
     vault_wg_server_private_key: "{{ wg_server_private_key_gen.stdout | default(vault_wg_server_private_key) }}"
     vault_wg_server_public_key: "{{ wg_server_public_key_gen.stdout | default(vault_wg_server_public_key) }}"
-  run_once: yes
-  delegate_to: localhost
+  when: not server_key_exists and wg_should_generate
 
 - name: Initialize peer key dictionaries
   ansible.builtin.set_fact:
@@ -39,12 +45,34 @@
   loop: "{{ vault_wg_peers }}"
   loop_control:
     loop_var: peer_item
-
-- name: Display generated keys summary
+  when: wg_should_generate
+ 
+- name: Display generated keys summary (first server)
   ansible.builtin.debug:
     msg:
+      - "Server: {{ inventory_hostname }}"
       - "Server private key: {{ vault_wg_server_private_key[:16] }}..."
       - "Server public key: {{ vault_wg_server_public_key[:16] }}..."
       - "Peers configured: {{ vault_wg_peers | length }}"
-  run_once: yes
+  when:
+    - wg_should_generate
+    - not ansible_check_mode
+ 
+- name: Distribute keys from first server to other servers
+  ansible.builtin.set_fact:
+    vault_wg_server_private_key: "{{ hostvars[wg_first_server]['vault_wg_server_private_key'] }}"
+    vault_wg_server_public_key: "{{ hostvars[wg_first_server]['vault_wg_server_public_key'] }}"
+    vault_wg_peer_private_keys: "{{ hostvars[wg_first_server]['vault_wg_peer_private_keys'] }}"
+    vault_wg_peer_public_keys: "{{ hostvars[wg_first_server]['vault_wg_peer_public_keys'] }}"
+  when:
+    - not wg_should_generate
+    - wg_first_server is defined
+    - hostvars[wg_first_server]['vault_wg_server_private_key'] is defined
+ 
+- name: Verify keys are available on all servers
+  ansible.builtin.debug:
+    msg:
+      - "Server: {{ inventory_hostname }}"
+      - "Server private key: {{ vault_wg_server_private_key[:16] if vault_wg_server_private_key else 'NOT SET' }}..."
+      - "Peers configured: {{ vault_wg_peer_private_keys | default({}) | length }}"
   when: not ansible_check_mode

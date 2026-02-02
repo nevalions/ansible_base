@@ -27,5 +27,36 @@ vault_secrets.yml
 vault_password.gpg
 vault_password_client.sh
 
-# Ignore implementation guides (contains network details)
-WIREGUARD_IMPLEMENTATION.md
+# Ignore WireGuard key files (contains private keys)
+wg_keys.yaml
+*_wg_keys.yaml
+
+# Ignore WireGuard configuration files (may contain endpoints and IPs)
+wg*.conf
+
+ # Ignore implementation guides (contains network details)
+ WIREGUARD_IMPLEMENTATION.md
+ WIREGUARD_SETUP.md
+
+# SSH keys for Ansible connections
+ansible_id_*
+!ansible_id_*.pub.example
+
+# Backup files (may contain sensitive data)
+*.bak
+*.backup
+*~
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Ansible lint cache
+.ansible-lint
+.ansible-lint*
+
+# Ansible retry files
+*.retry

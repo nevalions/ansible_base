@@ -20,12 +20,70 @@ tests/
 
 ## Running Tests
 
-### Run All Tests
+### Run All Tests (Recommended)
+
+**Using Makefile:**
 ```bash
-./run_tests.sh
+make test
+# or
+make all
 ```
 
-### Run Specific Tests
+This runs:
+1. ansible-lint (entire repository)
+2. Syntax checks (all playbooks)
+3. Security filter tests (Python)
+4. Unit tests (all roles)
+5. Integration tests (check mode)
+
+### Run Individual Test Categories
+
+**Lint repository:**
+```bash
+make lint
+```
+
+**Syntax checks:**
+```bash
+make syntax
+```
+
+**Security filter tests:**
+```bash
+make security-tests
+```
+
+**Unit tests:**
+```bash
+make unit-tests
+```
+
+**Integration tests:**
+```bash
+make integration-tests
+# or
+make check
+```
+
+### Test Specific Playbook
+
+**Lint specific playbook:**
+```bash
+make lint-playbook PLAYBOOK=wireguard_manage.yaml
+```
+
+**Check syntax of specific playbook:**
+```bash
+make syntax-playbook PLAYBOOK=wireguard_manage.yaml
+```
+
+### List Available Targets
+
+```bash
+make help
+```
+
+### Run Specific Tests (Manual)
 
 **Syntax check only:**
 ```bash

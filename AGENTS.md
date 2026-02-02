@@ -184,6 +184,18 @@ Always configure `.ansible-lint` with:
 - `skip_list` for rules to ignore (line-length, jinja spacing)
 - `warn_list` for rules to warn about (experimental, ignore-errors)
 
+### SSH Configuration
+- Use `~/.ssh/config` hosts for inventory entries
+- Set `IdentityFile` to `ansible/ansible_id_ed25519` for SSH connections
+- Ensure `ansible_id_ed25519` has correct permissions: `chmod 600 ansible/ansible_id_ed25519`
+- Example SSH config entry:
+  ```
+  Host my-server
+      HostName [server-ip]
+      User ansible
+      IdentityFile ~/.ssh/ansible/ansible_id_ed25519
+  ```
+
 ## Playbook Best Practices
 
 ### Tags
@@ -221,6 +233,11 @@ Always configure `.ansible-lint` with:
 ### Secret Management
 - Use `ansible-vault` for encrypting sensitive variables in playbooks
 - Use GPG or password managers for vault password storage (see SECURITY.md)
+- **Vault Password File**: Use `.vault_pass` file in project root for automated vault encryption/decryption
+  - Ensure `.vault_pass` has correct permissions: `chmod 600 .vault_pass`
+  - Add `.vault_pass` to `.gitignore` to prevent committing passwords
+  - Configure in `ansible.cfg`: `vault_password_file = .vault_pass`
+  - Example: `ansible-vault encrypt secrets.yaml` (reads password from `.vault_pass`)
 - Store secrets in environment variables only when absolutely necessary
 - Consider using external secret management systems (HashiCorp Vault, AWS Secrets Manager)
 

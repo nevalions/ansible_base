@@ -1,0 +1,56 @@
+---
+- name: Clean up stale APT locks and processes
+  hosts: all
+  become: true
+  gather_facts: no
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    apt_lock_files:
+      - /var/lib/apt/lists/lock
+      - /var/lib/dpkg/lock
+      - /var/lib/dpkg/lock-frontend
+      - /var/cache/apt/archives/lock
+
+  tasks:
+    - name: Remove all APT lock files (aggressive cleanup)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ apt_lock_files }}"
+      ignore_errors: true
+      register: lock_removed
+
+    - name: Display lock removal results
+      ansible.builtin.debug:
+        msg: "Lock file {{ item.item }}: {{ 'REMOVED' if item.changed else 'NOT FOUND' }}"
+      loop: "{{ lock_removed.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Find APT processes
+      ansible.builtin.shell: ps aux | grep -E 'apt|dpkg|unattended' | grep python3 | grep -v grep | awk '{print $2}'
+      register: apt_processes
+      changed_when: false
+
+    - name: Display APT processes found
+      ansible.builtin.debug:
+        msg: "Found APT processes: {{ apt_processes.stdout_lines | default([]) }}"
+      when: apt_processes.stdout_lines is defined
+
+    - name: Kill all APT processes (skip check mode)
+      ansible.builtin.shell: kill -9 {{ item }}
+      loop: "{{ apt_processes.stdout_lines | default([]) }}"
+      changed_when: false
+      ignore_errors: true
+      register: apt_killed
+      when: not ansible_check_mode
+
+    - name: Display cleanup summary
+      ansible.builtin.debug:
+        msg:
+          - "APT lock files removed: {{ lock_removed.results | selectattr('changed') | list | length }}"
+          - "APT processes killed: {{ apt_killed.results | default([]) | length }}"
+          - "APT cleanup complete"
+      run_once: yes

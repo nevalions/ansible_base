@@ -1,0 +1,48 @@
+---
+- name: Check if WireGuard interface exists
+  ansible.builtin.command: ip link show {{ vault_wg_interface }}
+  register: wg_interface_link
+  changed_when: false
+  ignore_errors: true
+
+- name: Display interface link status
+  ansible.builtin.debug:
+    msg: "Interface {{ vault_wg_interface }} link status: {{ 'UP' if wg_interface_link.rc == 0 else 'DOWN' }}"
+
+- name: Check WireGuard interface status
+  ansible.builtin.command: wg show {{ vault_wg_interface }}
+  register: wg_interface_status
+  changed_when: false
+  no_log: true
+  ignore_errors: true
+
+- name: Display WireGuard interface status
+  ansible.builtin.debug:
+    msg: "{{ wg_interface_status.stdout | wg_sanitize }}"
+  when: wg_interface_status.stdout is defined
+
+- name: Get WireGuard interface IP address
+  ansible.builtin.shell: ip -4 addr show {{ vault_wg_interface }} | grep -o 'inet ' | awk '{print $2}'
+  register: wg_interface_ip
+  changed_when: false
+  async: 15
+  poll: 2
+  ignore_errors: true
+
+- name: Display WireGuard interface IP
+  ansible.builtin.debug:
+    msg: "WireGuard interface {{ vault_wg_interface }} IP: {{ wg_interface_ip.stdout }}"
+  when: wg_interface_ip.stdout is defined
+
+- name: Check if WireGuard service is active
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+  register: wg_service_status
+  ignore_errors: true
+
+- name: Display WireGuard service status
+  ansible.builtin.debug:
+    msg: "WireGuard service status: {{ wg_service_status.status.ActiveState | default('unknown') }}"
+  when: wg_service_status.status is defined
+
+

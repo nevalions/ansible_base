@@ -3,6 +3,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  become: false
   vars:
     install_docker: true
   tasks:

@@ -1,8 +1,13 @@
 ---
+- name: Set debconf for non-interactive APT
+  ansible.builtin.shell: echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+  changed_when: false
+  when: ansible_os_family == 'Debian'
+
 - name: Ensure UFW is installed
-  ansible.builtin.apt:
-    name: ufw
-    state: present
+  ansible.builtin.shell: DEBIAN_FRONTEND=noninteractive apt-get install -y ufw
+  register: ufw_install
+  changed_when: "'0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.' not in ufw_install.stdout"
   when: ansible_os_family == 'Debian'
 
 - name: Allow WireGuard client listen port

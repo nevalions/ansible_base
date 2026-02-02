@@ -46,8 +46,8 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 - Copies admin.conf to user's .kube/config
 - Installs Calico Tigera Operator
 - Waits for Tigera Operator to be ready
-- Applies Calico custom resources (from `/home/[your-username]/kuber-bay/kube/calico/`)
-- Waits for Calico pods to be ready
+ - Applies Calico custom resources (from `/path/to/calico/custom-resources.yaml`)
+ - Waits for Calico pods to be ready
 - **VERIFICATION:** Validates control plane is Ready
 - **VERIFICATION:** Checks Tigera Operator is Running
 - **VERIFICATION:** Displays Calico IP pools
@@ -64,7 +64,7 @@ kubeadm_kubelet_extra_args:
 kubeadm_api_version: "v1beta4"
 calico_version: "v3.31.3"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
-calico_custom_resources_src: "/home/[your-username]/kuber-bay/kube/calico/2-custom-resources.yaml"
+ calico_custom_resources_src: "/path/to/calico/2-custom-resources.yaml"
 ```
 
 **Usage:**

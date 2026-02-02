@@ -1,0 +1,104 @@
+---
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    var: ufw_status.stdout_lines
+  when: ufw_status.stdout_lines is defined
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: ufw_status_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Set UFW active status
+  ansible.builtin.set_fact:
+    ufw_active: "{{ 'active' in ufw_status_check.stdout }}"
+  when: ufw_status_check.stdout is defined
+
+- name: Display UFW active status
+  ansible.builtin.debug:
+    msg: "UFW is {{ 'ACTIVE' if ufw_active | default(false) else 'INACTIVE' }}"
+
+- name: Check WireGuard port in UFW (servers only)
+  ansible.builtin.command: ufw status
+  register: wg_port_ufw
+  changed_when: false
+  ignore_errors: true
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
+
+- name: Set WireGuard port status
+  ansible.builtin.set_fact:
+    wg_port_allowed: "{{ vault_wg_server_port | string in wg_port_ufw.stdout }}"
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
+    - wg_port_ufw.stdout is defined
+
+- name: Display WireGuard port firewall status
+  ansible.builtin.debug:
+    msg: "WireGuard port {{ vault_wg_server_port }}: {{ 'ALLOWED' if wg_port_allowed | default(false) else 'NOT FOUND' }} in UFW"
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
+
+- name: Get UFW status for network checks
+  ansible.builtin.command: ufw status
+  register: ufw_network_status
+  changed_when: false
+  ignore_errors: true
+  when: vault_wg_allowed_networks is defined
+
+- name: Display allowed networks status
+  ansible.builtin.debug:
+    msg: "Network {{ item }}: {{ 'ALLOWED' if (item | ansible.utils.ipaddr('address') | string) in (ufw_network_status.stdout | default('')) else 'NOT FOUND' }}"
+  loop: "{{ vault_wg_allowed_networks | default([]) }}"
+  when: vault_wg_allowed_networks is defined
+  ignore_errors: true
+
+- name: Check WireGuard interface in UFW (for forwarding rules)
+  ansible.builtin.command: ufw status verbose
+  register: wg_interface_ufw
+  changed_when: false
+  ignore_errors: true
+
+- name: Set WireGuard interface status
+  ansible.builtin.set_fact:
+    wg_interface_configured: "{{ vault_wg_interface | string in wg_interface_ufw.stdout }}"
+  when: wg_interface_ufw.stdout is defined
+
+- name: Display WireGuard interface firewall status
+  ansible.builtin.debug:
+    msg: "WireGuard interface {{ vault_wg_interface }}: {{ 'CONFIGURED' if wg_interface_configured | default(false) else 'NOT FOUND' }} in UFW"
+  when: wg_interface_ufw.stdout is defined
+
+- name: Verify WireGuard service can bind to port
+  ansible.builtin.command: ss -ulpn
+  register: wg_port_binding
+  changed_when: false
+  ignore_errors: true
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
+
+- name: Set WireGuard port binding status
+  ansible.builtin.set_fact:
+    wg_port_listening: "{{ vault_wg_server_port | string in wg_port_binding.stdout }}"
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
+    - wg_port_binding.stdout is defined
+
+- name: Display WireGuard port binding status
+  ansible.builtin.debug:
+    msg: "WireGuard listening on port {{ vault_wg_server_port }}: {{ 'YES' if wg_port_listening | default(false) else 'NO' }}"
+  when:
+    - inventory_hostname in groups.get('wireguard_servers', [])
+    - vault_wg_server_port is defined
