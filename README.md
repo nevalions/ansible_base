@@ -602,6 +602,21 @@ ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit dns_servers
 - All sensitive data masked using `sanitize_security` filter
 - See `vault_secrets.example.yml` for template structure
 
+### Full DNS Deployment
+
+Wrapper playbook that runs DNS server deployment and verification in sequence.
+
+**Usage:**
+```bash
+# Deploy DNS servers and verify infrastructure
+ansible-playbook -i hosts_bay.ini dns_full_deployment.yaml
+```
+
+**Features:**
+- Runs `dns_server_manage.yaml` followed by `dns_verify.yaml`
+- Single command for complete DNS deployment workflow
+- Proper Ansible import semantics ensures sequential execution
+
 ### NFS Client
 Configures NFS client mounts.
 
@@ -755,6 +770,7 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [host-or-group-name]
 | `dns_server_manage.yaml` | Manage Unbound DNS servers | dns_servers |
 | `dns_client_manage.yaml` | Configure DNS clients | dns_clients |
 | `dns_verify.yaml` | Verify DNS infrastructure health | wireguard_cluster |
+| `dns_full_deployment.yaml` | Deploy and verify DNS servers and infrastructure | localhost |
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
@@ -807,6 +823,7 @@ ansible-playbook workstation.yaml --list-tags
 - **dns_server_manage.yaml**: `dns`, `server`, `manage`
 - **dns_client_manage.yaml**: `dns`, `client`, `manage`
 - **dns_verify.yaml**: `dns`, `verify`, `test`
+- **dns_full_deployment.yaml**: `dns`, `deploy`, `full`
 - **playbooks/disk/create_config_mount_new_disk.yaml**: `disk`, `storage`, `partition`, `mount`
 
 ## Code Quality

@@ -1,0 +1,6 @@
+---
+- name: Deploy and verify DNS
+  import_playbook: dns_server_manage.yaml
+
+- name: Deploy and verify DNS
+  import_playbook: dns_verify.yaml
