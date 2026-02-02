@@ -308,7 +308,7 @@ vault_become_pass: [your-password-here]
 ```yaml
 ansible_user: some-real-username
 ansible_port: 12345
-ansible_host: 192.168.1.100
+ansible_host: [example-ip]
 ```
 
 **This repository follows security best practices to protect sensitive infrastructure information.**
