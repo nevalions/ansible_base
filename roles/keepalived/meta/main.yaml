@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Configure Keepalived for Kubernetes API VIP with health checks
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - kubernetes
+    - keepalived
+    - vip
+    - loadbalancer
+    - high-availability
+    - ha
+
+dependencies: []

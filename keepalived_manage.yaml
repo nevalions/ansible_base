@@ -1,0 +1,38 @@
+---
+- name: Configure Keepalived for Kubernetes API VIP
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+    - vars/packages.yaml
+  tags:
+    - keepalived
+    - kubernetes
+    - loadbalancer
+  pre_tasks:
+    - name: Ensure required system facts are collected
+      ansible.builtin.setup:
+  roles:
+    - keepalived
+
+- name: Verify Keepalived VIP is active
+  hosts: haproxy_spb
+  become: true
+  gather_facts: false
+  tags:
+    - keepalived
+    - verify
+  tasks:
+    - name: Check if VIP is assigned
+      ansible.builtin.command: ip addr show {{ keepalived_vip_interface }} | grep {{ keepalived_vip }}
+      register: vip_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert VIP is active
+      ansible.builtin.assert:
+        that:
+          - vip_check.rc == 0
+        success_msg: "VIP {{ keepalived_vip }} is active on {{ keepalived_vip_interface }}"
+        fail_msg: "VIP {{ keepalived_vip }} is NOT active on {{ keepalived_vip_interface }}"

@@ -1,0 +1,14 @@
+---
+- name: Configure HAProxy for Kubernetes API
+  hosts: planes_all
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+    - vars/packages.yaml
+  tags:
+    - haproxy
+    - kubernetes
+    - loadbalancer
+  roles:
+    - haproxy_k8s

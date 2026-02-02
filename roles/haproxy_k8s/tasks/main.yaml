@@ -1,0 +1,88 @@
+---
+- name: Determine HAProxy backend hosts
+  ansible.builtin.set_fact:
+    haproxy_k8s_backend_hosts_dynamic: >-
+      {% if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 %}
+      {% for plane in vault_k8s_control_planes %}
+      - name: "{{ plane.name }}"
+        ip: "{{ plane.wireguard_ip }}"
+        port: "{{ plane.backend_port }}"
+      {% endfor %}
+      {% else %}
+      {{ haproxy_k8s_backend_hosts }}
+      {% endif %}
+
+- name: Ensure HAProxy is installed
+  ansible.builtin.apt:
+    name:
+      - haproxy
+    state: present
+    update_cache: true
+
+- name: Configure UFW to allow WireGuard network access to HAProxy
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ haproxy_k8s_frontend_port }}"
+    from: "{{ net }}"
+    direction: in
+  loop: "{{ haproxy_k8s_allowed_networks }}"
+  loop_control:
+    loop_var: net
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Check if HAProxy config exists
+  ansible.builtin.stat:
+    path: /etc/haproxy/haproxy.cfg
+  register: haproxy_config
+
+- name: Backup existing HAProxy config
+  ansible.builtin.copy:
+    src: /etc/haproxy/haproxy.cfg
+    dest: /etc/haproxy/haproxy.cfg.backup.{{ ansible_date_time.epoch }}
+    remote_src: true
+    mode: "0640"
+  when: haproxy_config.stat.exists
+
+- name: Deploy HAProxy configuration for Kubernetes API
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    mode: "0640"
+    validate: "haproxy -c -f %s"
+  notify: Restart HAProxy
+
+- name: Ensure HAProxy is enabled and started
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+
+- name: Wait for HAProxy to be ready
+  ansible.builtin.wait_for:
+    port: "{{ haproxy_k8s_frontend_port }}"
+    delay: 2
+    timeout: 30
+
+- name: Verify HAProxy is listening on all interfaces
+  ansible.builtin.command: ss -tlnp | grep {{ haproxy_k8s_frontend_port }}
+  register: haproxy_listening
+  changed_when: false
+  failed_when: false
+
+- name: Assert HAProxy is listening
+  ansible.builtin.assert:
+    that:
+      - haproxy_listening.rc == 0
+    success_msg: "HAProxy is listening on port {{ haproxy_k8s_frontend_port }}"
+    fail_msg: "HAProxy is not listening on port {{ haproxy_k8s_frontend_port }}"
+
+- name: Verify HAProxy backend hosts are reachable
+  ansible.builtin.wait_for:
+    host: "{{ host.ip }}"
+    port: "{{ host.port }}"
+    timeout: 5
+  loop: "{{ haproxy_k8s_backend_hosts_dynamic }}"
+  loop_control:
+    loop_var: host
+  when: haproxy_k8s_backend_hosts_dynamic | length > 0
