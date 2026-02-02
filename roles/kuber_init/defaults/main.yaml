@@ -9,7 +9,7 @@ kubeadm_api_version: "v1beta4"
 
 calico_version: "v3.31.3"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
-calico_custom_resources_src: "/home/[your-username]/kuber-bay/kube/calico/2-custom-resources.yaml"
+ calico_custom_resources_src: "/path/to/calico/2-custom-resources.yaml"
 
 kubeconfig_user_home: "/root"
 kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"
