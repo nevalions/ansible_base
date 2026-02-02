@@ -162,7 +162,8 @@ The `ansible.cfg` file provides project-wide configuration:
 - **Roles path**: Set to `./roles`
 - **Fact caching**: Uses JSON file caching in `/tmp/ansible_facts`
 - **Output format**: Uses YAML output for better readability
-- **SSH pipelining**: Enabled for faster execution
+- **SSH pipelining**: Disabled to prevent connection issues with concurrent operations
+- **Privilege escalation timeout**: 30s (increased for stability)
 - **Gathering**: Smart gathering to optimize performance
 - **Logging**: Logs to `./ansible.log`
 
@@ -732,6 +733,7 @@ System upgrade role with automatic error recovery and diagnostics.
 - Implements retry logic for transient network errors (3 retries, 10s delay)
 - Provides detailed diagnostics on upgrade failures
 - Reports package count changes and reboot requirements
+- Displays final summary with total packages upgraded and hosts requiring reboot (IP addresses masked for security)
 
 **Automatic Error Recovery:**
 - Stale lock files from crashed processes

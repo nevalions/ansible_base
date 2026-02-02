@@ -24,9 +24,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - **README.md**:
-  - Added detailed Upgrade role section with features and usage
-  - Documented automatic error recovery capabilities
-  - Included specific examples for targeted upgrades
+   - Added detailed Upgrade role section with features and usage
+   - Documented automatic error recovery capabilities
+   - Included specific examples for targeted upgrades
+
+## [1.4.0] - 2026-02-02
+
+### Fixed
+- **Privilege Escalation**:
+  - Disabled SSH pipelining in `ansible.cfg` to prevent timeout errors during concurrent host operations
+  - Increased `become_timeout` to 30 seconds for improved stability with privilege escalation
+  - Fixes "Timeout (12s) waiting for privilege escalation prompt" errors when running playbooks on multiple hosts
+- **upgrade_deb Role**:
+  - Fixed DNS connectivity check from placeholder `[dns-server]` to Google public DNS (8.8.8.8)
+  - Added conditional check `when: caddy_repo.stat.exists` to Caddy GPG keyring verification task
+  - Eliminates misleading "keyring not found" messages on hosts without Caddy repository
+
+### Added
+- **upgrade_deb Playbook**:
+  - New final summary play that aggregates upgrade results across all hosts
+  - Displays total packages upgraded across all hosts
+  - Lists hosts requiring reboot with IP addresses masked (e.g., `192.***.***.22`)
+  - Shows reboot reminder when hosts require reboot to complete upgrades
+  - Includes `vars_files: - vault_secrets.yml` for AGENTS.md compliance
+
+### Changed
+- **Kubernetes Configuration**:
+  - `roles/kuber_init/defaults/main.yaml`:
+    - Replaced placeholder `[internal-ip]/16` with vault variable `{{ vault_k8s_pod_subnet | default('10.244.0.0/16') }}`
+    - Replaced placeholder `[internal-ip]/16` with vault variable `{{ vault_k8s_service_subnet | default('10.96.0.0/12') }}`
+    - Changed control plane endpoint to use `{{ vault_haproxy_k8s_frontend_port | default('7443') }}`
+    - Uses Kubernetes standard pod and service network defaults when vault variables not defined
+  - `roles/kuber/tasks/main.yaml`:
+    - Added port 7443 to firewall rules (standard alternative Kubernetes API port)
+
+- **Vault Configuration**:
+  - `vault_secrets.example.yml`:
+    - Added new Kubernetes configuration variables: `[pod-network-cidr]`, `[service-network-cidr]`
+    - Added HAProxy Kubernetes API variables: `[haproxy-frontend-port]`, `[haproxy-backend-port]`, `[control-plane-ip]`
+    - Provides template structure for custom Kubernetes network and HAProxy configuration
+
+### Documentation
+- **README.md**:
+  - Updated ansible.cfg section to reflect SSH pipelining disabled (line 165)
+  - Added privilege escalation timeout information (30s)
+  - Enhanced Upgrade role features to include final summary capability
+- **CHANGELOG.md**:
+  - Added comprehensive entry for version 1.4.0
+
+### Security
+- **IP Address Masking**:
+  - Final upgrade summary masks middle octets of IP addresses (e.g., `192.168.10.22` → `192.***.***.22`)
+  - Prevents exposure of sensitive network information in logs and output
+  - Uses regex pattern: `^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$` → `\1.***.***.\4`
 
 ## [1.2.0] - 2026-01-29
 

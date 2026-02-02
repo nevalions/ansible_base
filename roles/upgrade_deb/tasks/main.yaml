@@ -1,7 +1,7 @@
 ---
 - name: Check internet connectivity
   ansible.builtin.wait_for:
-    host: [dns-server]
+    host: 8.8.8.8
     port: 53
     timeout: 10
 
@@ -81,6 +81,7 @@
       ansible.builtin.stat:
         path: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
       register: caddy_keyring
+      when: caddy_repo.stat.exists
 
     - name: Clean up temporary GPG key file
       ansible.builtin.file:

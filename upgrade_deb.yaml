@@ -14,3 +14,53 @@
     - vault_secrets.yml
   roles:
     - upgrade
+
+- name: Generate upgrade summary
+  hosts: bay_cluster_all
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  run_once: true
+  tags:
+    - upgrade
+    - maintenance
+    - debian
+  tasks:
+    - name: Calculate total packages upgraded
+      ansible.builtin.set_fact:
+        total_packages_upgraded: >-
+          {{
+            play_hosts | map('extract', hostvars)
+            | map('attr', 'packages_upgraded_count', 0)
+            | map('int', 0)
+            | sum | default(0)
+          }}
+
+    - name: Collect hosts requiring reboot
+      ansible.builtin.set_fact:
+        reboot_required_hosts: >-
+          {{
+            play_hosts | map('extract', hostvars)
+            | selectattr('reboot_required.stat.exists', 'equalto', true)
+            | map('attr', 'inventory_hostname')
+            | map('regex_replace', '^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$', '\\1.***.***.\\4')
+            | list
+          }}
+
+    - name: Display final upgrade summary
+      ansible.builtin.debug:
+        msg:
+          - "=== Debian Upgrade Final Summary ==="
+          - "===================================="
+          - "Total hosts processed: {{ play_hosts | length }}"
+          - "Total packages upgraded: {{ total_packages_upgraded }}"
+          - "Hosts requiring reboot: {{ reboot_required_hosts | length }}"
+          - "{% if reboot_required_hosts | length > 0 %}Reboot required hosts:"
+          - "{% for host in reboot_required_hosts %}  - {{ host }}"
+          - "{% endfor %}{% else %}No hosts require reboot{% endif %}"
+          - "===================================="
+
+    - name: Display reboot reminder
+      ansible.builtin.debug:
+        msg: "IMPORTANT: {{ reboot_required_hosts | length }} host(s) require reboot to complete the upgrade"
+      when: reboot_required_hosts | length > 0
