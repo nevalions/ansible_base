@@ -1,0 +1,56 @@
+---
+- name: Check for original resolv.conf backup
+  ansible.builtin.stat:
+    path: /etc/resolv.conf.original
+  register: original_resolv_conf
+
+- name: Check for systemd-resolved status
+  ansible.builtin.systemd:
+    name: systemd-resolved
+  register: systemd_resolved_status
+  failed_when: false
+
+- name: Restore original resolv.conf
+  ansible.builtin.copy:
+    src: /etc/resolv.conf.original
+    dest: /etc/resolv.conf
+    mode: '0644'
+    remote_src: yes
+  when:
+    - original_resolv_conf.stat.exists | bool
+    - ansible_facts['os_family'] == 'Debian'
+
+- name: Remove Ansible-managed resolv.conf if no backup exists
+  ansible.builtin.file:
+    path: /etc/resolv.conf
+    state: absent
+  when:
+    - not original_resolv_conf.stat.exists | bool
+    - ansible_facts['os_family'] == 'Debian'
+
+- name: Re-enable systemd-resolved
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    enabled: true
+    state: started
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - systemd_resolved_status.status is defined
+
+- name: Remove backup files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/resolv.conf.original
+    - /etc/resolv.conf.ansible_backup
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+
+- name: Display DNS client removal completion
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Client Removal Complete ==="
+      - "Operation: {{ dns_operation }}"
+      - "systemd-resolved: {{ 'Restored and enabled' if ansible_facts['os_family'] == 'Debian' else 'N/A' }}"
+      - "resolv.conf: Restored to original"

@@ -1,0 +1,101 @@
+---
+- name: Display DNS server verification start
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Server Verification: {{ inventory_hostname }} ==="
+
+- name: Check unbound service status
+  ansible.builtin.systemd:
+    name: unbound
+  register: unbound_status
+  ignore_errors: true
+
+- name: Assert unbound service is running
+  ansible.builtin.assert:
+    that:
+      - unbound_status.status.ActiveState == 'active'
+    success_msg: "Unbound service is running"
+    fail_msg: "CRITICAL: Unbound service is not running"
+  when: verify_fail_immediately
+
+- name: Increment counter if unbound service failed
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: unbound_status.status.ActiveState != 'active'
+
+- name: Check if unbound is listening on port 53 (UDP)
+  ansible.builtin.shell: ss -ulnp | grep ":53"
+  register: unbound_port_udp
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert unbound listening on port 53 UDP
+  ansible.builtin.assert:
+    that:
+      - unbound_port_udp.rc == 0
+    success_msg: "Unbound listening on port 53 UDP"
+    fail_msg: "CRITICAL: Unbound not listening on port 53 UDP"
+  when: verify_fail_immediately
+
+- name: Increment counter if port 53 UDP failed
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: unbound_port_udp.rc != 0
+
+- name: Check if unbound is listening on port 53 (TCP)
+  ansible.builtin.shell: ss -tlnp | grep ":53"
+  register: unbound_port_tcp
+  changed_when: false
+  ignore_errors: true
+
+- name: Increment counter if port 53 TCP failed
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: unbound_port_tcp.rc != 0
+
+- name: Validate unbound configuration
+  ansible.builtin.command: unbound-checkconf /etc/unbound/unbound.conf
+  register: unbound_config_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert unbound configuration is valid
+  ansible.builtin.assert:
+    that:
+      - unbound_config_check.rc == 0
+    success_msg: "Unbound configuration is valid"
+    fail_msg: "CRITICAL: Unbound configuration has errors"
+  when: verify_fail_immediately
+
+- name: Increment counter if configuration invalid
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: unbound_config_check.rc != 0
+
+- name: Test local DNS resolution (query self)
+  ansible.builtin.command: "nslookup localhost 127.0.0.1"
+  register: dns_local_test
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert local DNS resolution works
+  ansible.builtin.assert:
+    that:
+      - dns_local_test.rc == 0
+    success_msg: "Local DNS resolution working"
+    fail_msg: "CRITICAL: Local DNS resolution failed"
+  when: verify_fail_immediately
+
+- name: Increment counter if local DNS failed
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: dns_local_test.rc != 0
+
+- name: Display DNS server status
+  ansible.builtin.debug:
+    msg:
+      - "Unbound Service: {{ 'Running' if unbound_status.status.ActiveState == 'active' else 'Stopped' }}"
+      - "Port 53 UDP: {{ 'Listening' if unbound_port_udp.rc == 0 else 'Not listening' }}"
+      - "Port 53 TCP: {{ 'Listening' if unbound_port_tcp.rc == 0 else 'Not listening' }}"
+      - "Config Valid: {{ 'Yes' if unbound_config_check.rc == 0 else 'No' }}"
+      - "Local DNS: {{ 'Working' if dns_local_test.rc == 0 else 'Failed' }}"

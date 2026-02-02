@@ -1,0 +1,35 @@
+---
+skip_folder_check: true
+
+# DNS configuration from vault
+dns_nameservers: "{{ [vault_dns_server_primary, vault_dns_server_secondary] | select('defined') | select('ne', '') | list }}"
+
+# Test configuration
+verify_ping_count: 3
+verify_ping_timeout: 2
+verify_dns_timeout: 5
+verify_dns_retry: 2
+
+# DNS test targets - internal
+verify_internal_test_records:
+  - name: "[dns-server-1]"
+    domain: "[search-domain]"
+  - name: "[dns-server-2]"
+    domain: "[search-domain]"
+  - name: "[client-hostname-1]"
+    domain: "[search-domain]"
+  - name: "[client-hostname-2]"
+    domain: "[search-domain]"
+
+# DNS test targets - external
+verify_external_test_hosts:
+  - "google.com"
+  - "example.com"
+
+# Health thresholds
+verify_max_ping_loss: 0
+verify_max_dns_timeout: 2
+verify_peer_handshake_recent: 180
+
+# Failure tracking
+verify_fail_immediately: true

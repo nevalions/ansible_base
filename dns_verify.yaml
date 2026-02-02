@@ -1,0 +1,14 @@
+---
+- name: Verify DNS Infrastructure Health
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - dns
+    - verify
+    - test
+  roles:
+    - dns_verify

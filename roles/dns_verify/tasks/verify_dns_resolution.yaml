@@ -1,0 +1,130 @@
+---
+- name: Display DNS resolution tests start
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Resolution Tests: {{ inventory_hostname }} ==="
+
+- name: Initialize DNS test results
+  ansible.builtin.set_fact:
+    dns_internal_tests: []
+    dns_external_tests: []
+
+- name: Test internal DNS resolution (cluster.local)
+  block:
+    - name: Query each internal DNS record
+      ansible.builtin.command: "nslookup {{ item.name }}.{{ item.domain }} {{ vault_dns_server_primary }}"
+      register: dns_internal_result
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ verify_internal_test_records }}"
+      when: inventory_hostname in groups.get('dns_clients', [])
+
+    - name: Display internal DNS test results
+      ansible.builtin.debug:
+        msg: "{{ ('Internal DNS ' ~ ('SUCCESS' if item.rc == 0 else 'FAILED') ~ ': ' ~ item.item.name ~ '.' ~ item.item.domain) | sanitize_security }}"
+      loop: "{{ dns_internal_result.results | selectattr('rc', 'defined') | list }}"
+      when: dns_internal_result.results is defined
+
+    - name: Assert all internal DNS tests passed
+      ansible.builtin.assert:
+        that:
+          - dns_internal_result.results | selectattr('rc', 'ne', 0) | length == 0
+        success_msg: "Internal DNS resolution working"
+        fail_msg: "CRITICAL: Internal DNS resolution failed"
+      when:
+        - verify_fail_immediately
+        - inventory_hostname in groups.get('dns_clients', [])
+        - dns_internal_result.results is defined
+
+    - name: Count internal DNS failures
+      ansible.builtin.set_fact:
+        dns_verify_failed: "{{ dns_verify_failed | int + (dns_internal_result.results | selectattr('rc', 'ne', 0) | length) }}"
+      when:
+        - inventory_hostname in groups.get('dns_clients', [])
+        - dns_internal_result.results is defined
+  when: verify_internal_test_records is defined
+
+- name: Test external DNS resolution via primary DNS
+  block:
+    - name: Query external hosts via primary DNS
+      ansible.builtin.command: "nslookup {{ item }} {{ vault_dns_server_primary }}"
+      register: dns_external_primary
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ verify_external_test_hosts }}"
+      when: inventory_hostname in groups.get('dns_clients', [])
+
+    - name: Display external DNS results (primary)
+      ansible.builtin.debug:
+        msg: "{{ ('External DNS (primary) ' ~ ('SUCCESS' if item.rc == 0 else 'FAILED') ~ ': ' ~ item.item) }}"
+      loop: "{{ dns_external_primary.results | selectattr('rc', 'defined') | list }}"
+      when:
+        - dns_external_primary.results is defined
+
+    - name: Assert external DNS tests passed (primary)
+      ansible.builtin.assert:
+        that:
+          - dns_external_primary.results | selectattr('rc', 'ne', 0) | length == 0
+        success_msg: "External DNS resolution working (primary)"
+        fail_msg: "CRITICAL: External DNS resolution failed (primary)"
+      when:
+        - verify_fail_immediately
+        - inventory_hostname in groups.get('dns_clients', [])
+        - dns_external_primary.results is defined
+
+    - name: Count external DNS failures (primary)
+      ansible.builtin.set_fact:
+        dns_verify_failed: "{{ dns_verify_failed | int + (dns_external_primary.results | selectattr('rc', 'ne', 0) | length) }}"
+      when:
+        - inventory_hostname in groups.get('dns_clients', [])
+        - dns_external_primary.results is defined
+  when: verify_external_test_hosts is defined
+
+- name: Test external DNS resolution via secondary DNS
+  block:
+    - name: Query external hosts via secondary DNS
+      ansible.builtin.command: "nslookup {{ item }} {{ vault_dns_server_secondary }}"
+      register: dns_external_secondary
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ verify_external_test_hosts }}"
+      when:
+        - inventory_hostname in groups.get('dns_clients', [])
+        - vault_dns_server_secondary is defined
+        - vault_dns_server_secondary != ''
+
+    - name: Display external DNS results (secondary)
+      ansible.builtin.debug:
+        msg: "{{ ('External DNS (secondary) ' ~ ('SUCCESS' if item.rc == 0 else 'FAILED') ~ ': ' ~ item.item) }}"
+      loop: "{{ dns_external_secondary.results | selectattr('rc', 'defined') | list }}"
+      when:
+        - dns_external_secondary.results is defined
+
+    - name: Count external DNS failures (secondary)
+      ansible.builtin.set_fact:
+        dns_verify_warnings: "{{ dns_verify_warnings | int + (dns_external_secondary.results | selectattr('rc', 'ne', 0) | length) }}"
+      when:
+        - inventory_hostname in groups.get('dns_clients', [])
+        - dns_external_secondary.results is defined
+  when: verify_external_test_hosts is defined
+
+- name: Calculate total DNS tests
+  ansible.builtin.set_fact:
+    dns_internal_test_count: "{{ dns_internal_result.results | selectattr('rc', 'defined') | length if (dns_internal_result.results is defined) else 0 }}"
+    dns_external_primary_count: "{{ dns_external_primary.results | selectattr('rc', 'defined') | length if (dns_external_primary.results is defined) else 0 }}"
+    dns_external_secondary_count: "{{ dns_external_secondary.results | selectattr('rc', 'defined') | length if (dns_external_secondary.results is defined) else 0 }}"
+    dns_verify_tests_total: "{{ dns_verify_tests_total | int + (dns_internal_result.results | selectattr('rc', 'defined') | length if (dns_internal_result.results is defined) else 0) + (dns_external_primary.results | selectattr('rc', 'defined') | length if (dns_external_primary.results is defined) else 0) + (dns_external_secondary.results | selectattr('rc', 'defined') | length if (dns_external_secondary.results is defined) else 0) }}"
+
+- name: Calculate passed DNS tests
+  ansible.builtin.set_fact:
+    dns_internal_passed: "{{ dns_internal_result.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_internal_result.results is defined) else 0 }}"
+    dns_external_primary_passed: "{{ dns_external_primary.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_external_primary.results is defined) else 0 }}"
+    dns_external_secondary_passed: "{{ dns_external_secondary.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_external_secondary.results is defined) else 0 }}"
+    dns_verify_passed: "{{ dns_verify_passed | int + (dns_internal_result.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_internal_result.results is defined) else 0) + (dns_external_primary.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_external_primary.results is defined) else 0) + (dns_external_secondary.results | selectattr('rc', 'defined') | selectattr('rc', 'equalto', 0) | length if (dns_external_secondary.results is defined) else 0) }}"
+
+- name: Display DNS resolution summary
+  ansible.builtin.debug:
+    msg:
+      - "Internal DNS: {{ dns_internal_passed }}/{{ dns_internal_test_count }} passed"
+      - "External DNS (primary): {{ dns_external_primary_passed }}/{{ dns_external_primary_count }} passed"
+      - "External DNS (secondary): {{ dns_external_secondary_passed }}/{{ dns_external_secondary_count }} passed"

@@ -1,0 +1,24 @@
+---
+- name: Initialize counters
+  ansible.builtin.set_fact:
+    dns_verify_failed: 0
+    dns_verify_warnings: 0
+    dns_verify_tests_total: 0
+    dns_verify_passed: 0
+
+- name: Import server verification
+  ansible.builtin.include_tasks: verify_servers.yaml
+  when: inventory_hostname in groups.get('dns_servers', [])
+
+- name: Import client verification
+  ansible.builtin.include_tasks: verify_clients.yaml
+  when: inventory_hostname in groups.get('dns_clients', [])
+
+- name: Import WireGuard verification
+  ansible.builtin.include_tasks: verify_wireguard.yaml
+
+- name: Import DNS resolution tests
+  ansible.builtin.include_tasks: verify_dns_resolution.yaml
+
+- name: Generate verification report
+  ansible.builtin.include_tasks: generate_report.yaml

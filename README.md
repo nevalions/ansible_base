@@ -495,6 +495,113 @@ ansible-playbook -i hosts_dns.ini dns_server_manage.yaml
 - No hardcoded values in playbooks
 - See `vault_secrets.example.yml` for template structure
 
+### DNS Client
+Configures DNS resolvers on client hosts with encrypted vault variables.
+
+**Variables (from vault_secrets.yml):**
+- `vault_dns_server_primary`: Primary DNS server IP
+- `vault_dns_server_secondary`: Secondary DNS server IP (optional)
+- `vault_dns_zone`: DNS search domain
+- `vault_dns_client_options`: resolv.conf options (default: timeout:2, attempts:3, rotate)
+
+**Features:**
+- Stops and disables systemd-resolved (Debian/Ubuntu)
+- Deploys custom `/etc/resolv.conf` with specified DNS servers
+- Backs up original configuration before changes
+- Tests DNS resolution on deployment
+- Supports removal to restore default systemd-resolved configuration
+- Check mode support for safe dry-run testing
+- All IPs encrypted in Ansible Vault
+
+**Usage:**
+```bash
+# Install DNS client configuration
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml
+
+# Install on specific hosts
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --limit dns_clients
+
+# Remove DNS client configuration (restore systemd-resolved)
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml -e dns_operation=remove
+```
+
+**Security:**
+- All IPs, hostnames, and ports encrypted in `vault_secrets.yml`
+- No hardcoded values in playbooks
+- Original configuration backed up before changes
+- See `vault_secrets.example.yml` for template structure
+
+### DNS Verify
+Comprehensive DNS infrastructure health verification for servers, clients, and WireGuard connectivity.
+
+**Variables (from vault_secrets.yml):**
+- `vault_dns_server_primary`: Primary DNS server IP
+- `vault_dns_server_secondary`: Secondary DNS server IP
+- `vault_dns_zone`: DNS search domain
+- `vault_wg_interface`: WireGuard interface name
+- `vault_wg_peers`: WireGuard peers configuration
+
+**Verification Checks:**
+
+**DNS Servers:**
+- Unbound service status (running/stopped)
+- Port 53 listening (UDP/TCP)
+- Configuration validity with `unbound-checkconf`
+- Local DNS resolution test
+
+**DNS Clients:**
+- systemd-resolved status (should be disabled)
+- `/etc/resolv.conf` existence
+- Ansible-managed configuration check
+- DNS server configuration validation
+
+**WireGuard:**
+- Interface existence and status
+- VPN IP assignment
+- Connectivity to DNS servers via ping
+
+**DNS Resolution Tests:**
+- Internal DNS: Resolve `[dns-server-1].[search-domain]`, `[client-hostname].[search-domain]`
+- External DNS: Resolve `google.com`, `example.com` via primary/secondary DNS servers
+
+**Features:**
+- Per-host health reporting with pass/fail/warning counts
+- Overall cluster health summary
+- Fail-fast on critical issues when `verify_fail_immediately: true`
+- Serial execution (1 host at a time) for safe testing
+- All sensitive IPs masked in output
+- Check mode support
+
+**Usage:**
+```bash
+# Verify DNS infrastructure (check mode)
+ansible-playbook -i hosts_bay.ini dns_verify.yaml --check
+
+# Verify DNS infrastructure (run actual tests)
+ansible-playbook -i hosts_bay.ini dns_verify.yaml
+
+# Verify specific hosts
+ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit dns_clients
+
+# Verify only DNS servers
+ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit dns_servers
+```
+
+**Exit Codes:**
+- `0`: All critical checks passed (cluster HEALTHY or DEGRADED)
+- `1`: Critical failures detected when `verify_fail_immediately: true`
+
+**Health Status:**
+- **HEALTHY**: All critical checks passed, no warnings
+- **DEGRADED**: All critical checks passed, warnings detected
+- **CRITICAL**: One or more critical checks failed
+
+**Security:**
+- All IPs, hostnames, and ports encrypted in `vault_secrets.yml`
+- No secrets logged or displayed
+- All sensitive data masked using `sanitize_security` filter
+- See `vault_secrets.example.yml` for template structure
+
 ### NFS Client
 Configures NFS client mounts.
 
@@ -645,6 +752,9 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [host-or-group-name]
 | `common_install.yaml` | Setup common tools, zsh, dotfiles | workers |
 | `nfs_server_manage.yaml` | Manage NFS exports | nfs_servers |
 | `nfs_client_manage.yaml` | Manage NFS mounts | nfs_clients |
+| `dns_server_manage.yaml` | Manage Unbound DNS servers | dns_servers |
+| `dns_client_manage.yaml` | Configure DNS clients | dns_clients |
+| `dns_verify.yaml` | Verify DNS infrastructure health | wireguard_cluster |
 | `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
@@ -694,6 +804,9 @@ ansible-playbook workstation.yaml --list-tags
 - **kuber_plane_reset.yaml**: `kubernetes`, `k8s`, `reset`, `cleanup`, `master`
 - **wireguard_manage.yaml**: `wireguard`, `vpn`
 - **wireguard_rotate_keys.yaml**: `wireguard`, `rotate`
+- **dns_server_manage.yaml**: `dns`, `server`, `manage`
+- **dns_client_manage.yaml**: `dns`, `client`, `manage`
+- **dns_verify.yaml**: `dns`, `verify`, `test`
 - **playbooks/disk/create_config_mount_new_disk.yaml**: `disk`, `storage`, `partition`, `mount`
 
 ## Code Quality

@@ -1,0 +1,24 @@
+---
+- name: Manage DNS client configuration
+  hosts: dns_clients
+  become: true
+  gather_facts: true
+  serial: "50%"
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - dns
+    - client
+    - manage
+  vars:
+    dns_operation: "install"
+
+  tasks:
+    - name: Apply DNS client role
+      ansible.builtin.include_role:
+        name: dns_client
+      when: dns_operation == "install"
+
+    - name: Run DNS client removal tasks
+      ansible.builtin.include_tasks: roles/dns_client/tasks/remove.yaml
+      when: dns_operation == "remove"

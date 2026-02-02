@@ -1,0 +1,65 @@
+---
+- name: Calculate overall health status
+  ansible.builtin.set_fact:
+    dns_health_status: "{{ 'CRITICAL' if dns_verify_failed | int > 0 else 'DEGRADED' if dns_verify_warnings | int > 0 else 'HEALTHY' }}"
+
+- name: Determine host type
+  ansible.builtin.set_fact:
+    host_type: "{{ 'DNS Server' if inventory_hostname in groups.get('dns_servers', []) else 'DNS Client' if inventory_hostname in groups.get('dns_clients', []) else 'Unknown' }}"
+
+- name: Display host verification summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Host Verification Summary: {{ inventory_hostname | sanitize_security }} ==="
+      - "Host Type: {{ host_type }}"
+      - "WireGuard: {{ 'UP' if wg_interface_status.rc == 0 else 'DOWN' if wg_interface_status is defined else 'N/A' }}"
+      - "VPN IP: {{ host_vpn_ip | default('N/A') | sanitize_security }}"
+      - "Tests Total: {{ dns_verify_tests_total }}"
+      - "Tests Passed: {{ dns_verify_passed }}"
+      - "Tests Failed: {{ dns_verify_failed }}"
+      - "Warnings: {{ dns_verify_warnings }}"
+      - "Health Status: {{ dns_health_status }}"
+      - "============================================="
+
+- name: Generate aggregated summary across all hosts
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Infrastructure Verification Report ==="
+      - "========================================="
+      - "Run Date: {{ ansible_date_time.date }} {{ ansible_date_time.time }}"
+      - "Total Hosts Checked: {{ ansible_play_hosts | length }}"
+      - "Overall Status: {{ '✅ HEALTHY' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else '❌ CRITICAL' }}"
+      - "========================================="
+  run_once: true
+
+- name: Display overall cluster health
+  ansible.builtin.debug:
+    msg:
+      - "=== Overall Cluster Health ==="
+      - "WireGuard Cluster: {{ 'UP' if wg_interface_status.rc == 0 else 'DOWN' }}"
+      - "DNS Servers: {{ 'All healthy' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
+      - "DNS Clients: {{ 'All connected' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
+      - "DNS Resolution: {{ 'Working' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Failed' }}"
+      - "========================================"
+  run_once: true
+
+- name: Fail playbook if critical issues detected
+  ansible.builtin.fail:
+    msg: "DNS Infrastructure Verification FAILED - {{ dns_verify_failed }} critical issue(s) detected"
+  when:
+    - verify_fail_immediately
+    - dns_verify_failed | int > 0
+    - inventory_hostname == ansible_play_hosts[0]
+  run_once: true
+
+- name: Display completion message
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Infrastructure Verification Complete ==="
+      - "Overall Status: {{ '✅ HEALTHY' if dns_health_status == 'HEALTHY' else '⚠️ DEGRADED' if dns_health_status == 'DEGRADED' else '❌ CRITICAL' }}"
+      - "Total Tests: {{ dns_verify_tests_total }}"
+      - "Passed: {{ dns_verify_passed }}"
+      - "Failed: {{ dns_verify_failed }}"
+      - "Warnings: {{ dns_verify_warnings }}"
+      - "=============================================="
+  run_once: true

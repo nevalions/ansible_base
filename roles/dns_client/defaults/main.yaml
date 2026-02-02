@@ -1,0 +1,8 @@
+---
+skip_folder_check: true
+
+dns_operation: "install"
+dns_nameservers: "{{ [vault_dns_server_primary, vault_dns_server_secondary] | select('defined') | select('ne', '') | list }}"
+dns_search_domains: "{{ [vault_dns_zone] | select('defined') | select('ne', '') | list }}"
+dns_options: "{{ vault_dns_client_options | default(['timeout:2', 'attempts:3', 'rotate']) }}"
+dns_test_host: "google.com"

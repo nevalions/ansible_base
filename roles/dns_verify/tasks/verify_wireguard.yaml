@@ -1,0 +1,125 @@
+---
+- name: Check if host is in WireGuard cluster
+  ansible.builtin.set_fact:
+    is_wireguard_host: "{{ inventory_hostname in groups.get('wireguard_cluster', []) }}"
+
+- name: Initialize default values for potentially undefined variables
+  ansible.builtin.set_fact:
+    wg_interface_display: "N/A"
+    ping_primary_display: "N/A"
+    ping_secondary_display: "N/A"
+    host_vpn_ip: "N/A"
+    wg_interface_status_rc: 1
+    ping_primary_rc: 1
+    ping_secondary_rc: 1
+
+- name: Display WireGuard verification start
+  ansible.builtin.debug:
+    msg:
+      - "=== WireGuard Verification: {{ inventory_hostname }} ==="
+
+- name: Check if WireGuard interface exists
+  ansible.builtin.command: ip link show {{ vault_wg_interface }}
+  register: wg_interface_link
+  changed_when: false
+  ignore_errors: true
+
+- name: Assert WireGuard interface exists
+  ansible.builtin.assert:
+    that:
+      - wg_interface_link.rc == 0
+    success_msg: "WireGuard interface {{ vault_wg_interface }} exists"
+    fail_msg: "CRITICAL: WireGuard interface {{ vault_wg_interface }} not found"
+  when: is_wireguard_host and verify_fail_immediately
+
+- name: Increment counter if WireGuard interface missing
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when:
+    - is_wireguard_host
+    - wg_interface_link.rc != 0
+
+- name: Check WireGuard interface status
+  ansible.builtin.command: wg show {{ vault_wg_interface }}
+  register: wg_interface_status
+  changed_when: false
+  ignore_errors: true
+  when: wg_interface_link.rc == 0
+
+- name: Assert WireGuard interface is UP
+  ansible.builtin.assert:
+    that:
+      - wg_interface_status.rc == 0
+    success_msg: "WireGuard interface is UP"
+    fail_msg: "CRITICAL: WireGuard interface is DOWN"
+  when:
+    - is_wireguard_host
+    - verify_fail_immediately
+    - wg_interface_link.rc == 0
+
+- name: Increment counter if WireGuard interface DOWN
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when:
+    - is_wireguard_host
+    - wg_interface_link.rc == 0
+    - wg_interface_status.rc != 0
+
+- name: Get WireGuard interface IP address
+  ansible.builtin.shell: ip -4 addr show {{ vault_wg_interface }} | grep -oP 'inet \\K[\\d.]+' | head -1
+  register: wg_interface_ip
+  changed_when: false
+  ignore_errors: true
+  when: wg_interface_link.rc == 0
+
+- name: Find host's VPN IP from peers
+  ansible.builtin.set_fact:
+    host_vpn_ip: "{{ item.allowed_ips.split('/')[0] }}"
+  loop: "{{ vault_wg_peers | selectattr('name', 'equalto', inventory_hostname) | list }}"
+  when:
+    - vault_wg_peers is defined
+    - wg_interface_link.rc == 0
+
+- name: Ping from DNS clients to DNS servers
+  block:
+    - name: Ping to primary DNS server
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ vault_dns_server_primary }}
+      register: ping_primary_dns
+      changed_when: false
+      ignore_errors: true
+
+    - name: Ping to secondary DNS server
+      ansible.builtin.command: ping -c {{ verify_ping_count }} {{ vault_dns_server_secondary }}
+      register: ping_secondary_dns
+      changed_when: false
+      ignore_errors: true
+
+    - name: Assert DNS servers reachable
+      ansible.builtin.assert:
+        that:
+          - ping_primary_dns.rc == 0
+          - ping_secondary_dns.rc == 0
+        success_msg: "DNS servers reachable"
+        fail_msg: "CRITICAL: DNS servers not reachable via VPN"
+      when: verify_fail_immediately
+
+    - name: Increment counter for DNS server ping failures
+      ansible.builtin.set_fact:
+        dns_verify_failed: "{{ dns_verify_failed | int + (1 if ping_primary_dns.rc != 0 else 0) + (1 if ping_secondary_dns.rc != 0 else 0) }}"
+  when:
+    - is_wireguard_host
+    - inventory_hostname in groups.get('dns_clients', [])
+
+- name: Update display values based on actual status
+  ansible.builtin.set_fact:
+    wg_interface_display: "{{ 'UP' if (wg_interface_status is defined and wg_interface_status.rc is defined and wg_interface_status.rc == 0) else 'DOWN' if (wg_interface_status is defined and wg_interface_status.rc is defined and wg_interface_status.rc != 0) else 'N/A' }}"
+    ping_primary_display: "{{ 'Success' if (ping_primary_dns is defined and ping_primary_dns.rc is defined and ping_primary_dns.rc == 0) else 'Failed' if (ping_primary_dns is defined and ping_primary_dns.rc is defined and ping_primary_dns.rc != 0) else 'N/A' }}"
+    ping_secondary_display: "{{ 'Success' if (ping_secondary_dns is defined and ping_secondary_dns.rc is defined and ping_secondary_dns.rc == 0) else 'Failed' if (ping_secondary_dns is defined and ping_secondary_dns.rc is defined and ping_secondary_dns.rc != 0) else 'N/A' }}"
+
+- name: Display WireGuard status
+  ansible.builtin.debug:
+    msg:
+      - "WireGuard Interface: {{ wg_interface_display }}"
+      - "VPN IP: {{ host_vpn_ip | default('N/A') | sanitize_security }}"
+      - "Ping to Primary DNS: {{ ping_primary_display }}"
+      - "Ping to Secondary DNS: {{ ping_secondary_display }}"

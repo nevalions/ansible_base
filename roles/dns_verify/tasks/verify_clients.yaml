@@ -1,0 +1,101 @@
+---
+- name: Display DNS client verification start
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Client Verification: {{ inventory_hostname }} ==="
+
+- name: Check if systemd-resolved is disabled
+  ansible.builtin.systemd:
+    name: systemd-resolved
+  register: systemd_resolved_status
+  ignore_errors: true
+
+- name: Display systemd-resolved status
+  ansible.builtin.debug:
+    msg: "systemd-resolved: {{ systemd_resolved_status.status.ActiveState | default('unknown') }}"
+
+- name: Increment counter if systemd-resolved still running
+  ansible.builtin.set_fact:
+    dns_verify_warnings: "{{ dns_verify_warnings | int + 1 }}"
+  when: systemd_resolved_status.status is defined and systemd_resolved_status.status.ActiveState != 'inactive'
+
+- name: Check resolv.conf exists
+  ansible.builtin.stat:
+    path: /etc/resolv.conf
+  register: resolv_conf_stat
+
+- name: Assert resolv.conf exists
+  ansible.builtin.assert:
+    that:
+      - resolv_conf_stat.stat.exists
+    success_msg: "/etc/resolv.conf exists"
+    fail_msg: "CRITICAL: /etc/resolv.conf not found"
+  when: verify_fail_immediately
+
+- name: Increment counter if resolv.conf missing
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + 1 }}"
+  when: not resolv_conf_stat.stat.exists
+
+- name: Read resolv.conf content
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: resolv_conf_content
+  when: resolv_conf_stat.stat.exists
+
+- name: Check if resolv.conf is Ansible managed
+  ansible.builtin.set_fact:
+    resolv_is_managed: "{{ 'ANSIBLE MANAGED' in resolv_conf_content.content | b64decode }}"
+  when: resolv_conf_stat.stat.exists
+
+- name: Display resolv.conf management status
+  ansible.builtin.debug:
+    msg: "Ansible managed: {{ 'Yes' if resolv_is_managed | bool else 'No' }}"
+  when: resolv_conf_stat.stat.exists
+
+- name: Increment counter if resolv.conf not managed
+  ansible.builtin.set_fact:
+    dns_verify_warnings: "{{ dns_verify_warnings | int + 1 }}"
+  when:
+    - resolv_conf_stat.stat.exists
+    - not resolv_is_managed
+
+- name: Extract nameservers from resolv.conf
+  ansible.builtin.set_fact:
+    resolv_nameservers: "{{ resolv_conf_content.content | b64decode | regex_findall('nameserver\\s+(\\S+)', '\\1') | list }}"
+  when:
+    - resolv_conf_stat.stat.exists
+    - resolv_is_managed
+
+- name: Check if correct DNS servers are configured
+  ansible.builtin.set_fact:
+    dns_servers_correct: "{{ dns_nameservers | difference(resolv_nameservers) | length == 0 }}"
+  when:
+    - resolv_conf_stat.stat.exists
+    - resolv_is_managed
+    - resolv_nameservers is defined
+
+- name: Display DNS servers configuration
+  ansible.builtin.debug:
+    msg: "DNS servers: {{ 'Correct' if dns_servers_correct | bool else 'Incorrect' }}"
+  when:
+    - resolv_conf_stat.stat.exists
+    - resolv_is_managed
+    - dns_servers_correct is defined
+
+- name: Increment counter if wrong DNS servers
+  ansible.builtin.set_fact:
+    dns_verify_warnings: "{{ dns_verify_warnings | int + 1 }}"
+  when:
+    - resolv_conf_stat.stat.exists
+    - resolv_is_managed
+    - dns_servers_correct is defined
+    - not dns_servers_correct
+
+- name: Display DNS client status
+  ansible.builtin.debug:
+    msg:
+      - "systemd-resolved: {{ 'Disabled' if systemd_resolved_status.status is not defined else systemd_resolved_status.status.ActiveState }}"
+      - "resolv.conf: {{ 'Exists' if resolv_conf_stat.stat.exists else 'Missing' }}"
+      - "Ansible managed: {{ 'Yes' if resolv_is_managed | bool else 'No' }}"
+      - "DNS servers: {{ resolv_nameservers | default(['N/A']) }}"

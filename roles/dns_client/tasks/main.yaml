@@ -1,0 +1,90 @@
+---
+- name: Check DNS client configuration status
+  ansible.builtin.stat:
+    path: /etc/resolv.conf
+  register: resolv_conf_stat
+
+- name: Display DNS client management start
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Client Management Start ==="
+      - "Operation: {{ dns_operation }}"
+      - "DNS servers: {{ dns_nameservers }}"
+      - "Search domains: {{ dns_search_domains | default([]) | length }}"
+      - "Current resolv.conf: {{ 'Ansible managed' if 'ANSIBLE MANAGED' in resolv_conf_stat.stat.exists | ternary(lookup('file', '/etc/resolv.conf', errors='ignore'), '') | default('') else 'Unknown' }}"
+
+- name: Backup original resolv.conf before changes
+  ansible.builtin.copy:
+    src: /etc/resolv.conf
+    dest: /etc/resolv.conf.original
+    remote_src: yes
+    mode: '0644'
+  when:
+    - dns_operation == "install"
+    - resolv_conf_stat.stat.exists | bool
+  ignore_errors: true
+
+- name: Stop and disable systemd-resolved
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    state: stopped
+    enabled: false
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+
+- name: Remove systemd-resolved stub resolv.conf
+  ansible.builtin.file:
+    path: /etc/resolv.conf
+    state: absent
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - resolv_conf_stat.stat.exists | bool
+
+- name: Deploy resolv.conf with custom DNS servers
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    mode: '0644'
+    backup: yes
+  when: dns_operation == "install"
+
+- name: Test DNS resolution
+  ansible.builtin.command: "nslookup {{ dns_test_host | default('google.com') }} {{ dns_nameservers[0] }}"
+  register: dns_test
+  changed_when: false
+  failed_when: false
+  when:
+    - dns_operation == "install"
+    - dns_nameservers | length > 0
+
+- name: Display DNS test result
+  ansible.builtin.debug:
+    msg:
+      - "DNS resolution test for {{ dns_test_host | default('google.com') }}"
+      - "Result: {{ 'SUCCESS' if dns_test.rc == 0 else 'FAILED' }}"
+      - "Output: {{ dns_test.stdout_lines if dns_test.stdout_lines else ['No output'] }}"
+  when:
+    - dns_operation == "install"
+    - dns_nameservers | length > 0
+
+- name: Assert DNS is working
+  ansible.builtin.assert:
+    that:
+      - dns_test.rc == 0
+    success_msg: "DNS resolution is working correctly"
+    fail_msg: "DNS resolution failed - check network connectivity and DNS server availability"
+  when:
+    - dns_operation == "install"
+    - dns_nameservers | length > 0
+    - not ansible_check_mode
+
+- name: Display DNS client management completion
+  ansible.builtin.debug:
+    msg:
+      - "=== DNS Client Management Complete ==="
+      - "Operation: {{ dns_operation }}"
+      - "DNS servers configured: {{ dns_nameservers | length }}"
+      - "resolv.conf: /etc/resolv.conf (Ansible managed)"
+  when: dns_operation == "install"
