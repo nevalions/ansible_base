@@ -124,8 +124,8 @@
     proto: "{{ item.proto | default('tcp') }}"
   loop:
     - { port: "{{ ansible_port | default('22') }}" }
-    - { port: "6443" }
-    - { port: "7443" }
+    - { port: "[k8s-api-port]" }
+    - { port: "[haproxy-frontend-port]" }
     - { port: "80" }
     - { port: "443" }
     - { port: "8443" }
