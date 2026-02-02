@@ -31,8 +31,9 @@
         total_packages_upgraded: >-
           {{
             play_hosts | map('extract', hostvars)
-            | map('attr', 'packages_upgraded_count', 0)
-            | map('int', 0)
+            | selectattr('ansible_facts.packages_upgraded_count', 'defined')
+            | map(attribute='ansible_facts.packages_upgraded_count')
+            | map('int')
             | sum | default(0)
           }}
 
@@ -41,7 +42,7 @@
         reboot_required_hosts: >-
           {{
             play_hosts | map('extract', hostvars)
-            | selectattr('reboot_required.stat.exists', 'equalto', true)
+            | selectattr('ansible_facts.reboot_required_status', 'equalto', true)
             | map('attr', 'inventory_hostname')
             | map('regex_replace', '^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$', '\\1.***.***.\\4')
             | list
@@ -55,9 +56,11 @@
           - "Total hosts processed: {{ play_hosts | length }}"
           - "Total packages upgraded: {{ total_packages_upgraded }}"
           - "Hosts requiring reboot: {{ reboot_required_hosts | length }}"
-          - "{% if reboot_required_hosts | length > 0 %}Reboot required hosts:"
-          - "{% for host in reboot_required_hosts %}  - {{ host }}"
-          - "{% endfor %}{% else %}No hosts require reboot{% endif %}"
+          - "{% if reboot_required_hosts | length > 0 %}Reboot required hosts:\n{% for host in reboot_required_hosts %}  - {{ host }}\n{% endfor %}{% else %}No hosts require reboot{% endif %}"
+          - "===================================="
+          - ""
+          - "=== Per-Host Details ==="
+          - "{% for host in play_hosts %}{{ host | regex_replace('^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$', '\\1.***.***.\\4') }}: {{ hostvars[host].ansible_facts.packages_upgraded_count | default(0) }} packages, Reboot: {{ 'Yes' if hostvars[host].ansible_facts.reboot_required_status | default(false) else 'No' }}\n{% endfor %}"
           - "===================================="
 
     - name: Display reboot reminder
