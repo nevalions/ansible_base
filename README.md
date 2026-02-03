@@ -750,11 +750,11 @@ ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit [control-plane-hostna
 vault_k8s_control_planes:
   - name: "control-plane-1"
     wireguard_ip: "[control-plane-wg-ip]"
-    backend_port: 7443
+    backend_port: [haproxy-backend-port]
   - name: "control-plane-2"
     wireguard_ip: "[control-plane-wg-ip-2]"
-    backend_port: 7443
-```
+    backend_port: [haproxy-backend-port]
+  ```
 
 **Security:**
 - All IPs, ports, and hostnames encrypted in `vault_secrets.yml`
@@ -769,7 +769,7 @@ Manages Virtual IP (VIP) for Kubernetes API high availability.
 - `keepalived_vip`: Virtual IP address
 - `keepalived_vip_cidr`: VIP CIDR (default: 32)
 - `keepalived_vip_interface`: Network interface (default: wg99)
-- `keepalived_vip_port`: VIP port for Kubernetes API (default: 6443)
+- `keepalived_vip_port`: VIP port for Kubernetes API (default: [k8s-api-port])
 - `keepalived_password`: VRRP authentication password
 - `keepalived_router_id`: VRRP router ID
 - `keepalived_control_planes`: List of control planes for DNAT rules
@@ -777,7 +777,7 @@ Manages Virtual IP (VIP) for Kubernetes API high availability.
 **Features:**
 - Keepalived installation and configuration
 - VIP assignment and automatic failover
-- iptables DNAT: VIP:6443 → active plane:7443
+- iptables DNAT: VIP:[k8s-api-port] → active plane:[haproxy-backend-port]
 - iptables MASQUERADE for DNAT traffic
 - UFW firewall rules for VIP and WireGuard
 - Health checks on HAProxy and Kubernetes API

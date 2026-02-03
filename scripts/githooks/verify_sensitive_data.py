@@ -62,6 +62,12 @@ SENSITIVE_PATTERNS = {
         r'"51842"',
         r'"51942"',
         r'ansible_port:\s*\d+',
+        # Unquoted standalone ports (catch unquoted ports in examples)
+        r'\b(6443|7443|51840|51841|51842|51942)\b',
+        # Ports in default value descriptions
+        r'\(default:\s*(6443|7443|51840|51841|51842|51942)\)',
+        # Ports in variable documentation (e.g., `backend_port: 7443`)
+        r'`[^`]*(6443|7443|51840|51841|51842|51942)[^`]*`',
     ],
     'hardcoded_username': [
         r'ansible_user:\s*["\']?(www|root|linroot)["\']?',
@@ -99,6 +105,7 @@ ACCEPTABLE_PATTERNS = [
     r'\[server-port\]',
     r'\[k8s-api-port\]',
     r'\[haproxy-frontend-port\]',
+    r'\[haproxy-backend-port\]',
     r'\[cluster-hostname\]',
     r'\[server-hostname\]',
     r'\[your-username\]',
@@ -113,6 +120,7 @@ ACCEPTABLE_PATTERNS = [
     r'\[cluster-hostname\]:(?:6443|7443)',
     r'\[control-plane-ip\]:(?:6443|7443)',
     r'\[haproxy-hostname\]:(?:6443|7443)',
+    r'\[control-plane-wg-ip\]:(?:6443|7443)',
     r':\s*(?:6443|7443|51840|51841|51842|51942)\b',
     # Masked documentation (WireGuard sanitization)
     r'192\.168\.\d+\.\*\*\*',
