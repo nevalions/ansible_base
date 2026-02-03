@@ -1,0 +1,83 @@
+---
+- name: Check if HAProxy config file exists
+  ansible.builtin.stat:
+    path: "{{ haproxy_config_path }}"
+  register: haproxy_config_stat
+
+- name: Display config file status
+  ansible.builtin.debug:
+    msg: "HAProxy config file: {{ 'EXISTS' if haproxy_config_stat.stat.exists else 'NOT FOUND' }} ({{ haproxy_config_path }})"
+
+- name: Validate HAProxy configuration syntax
+  ansible.builtin.command: haproxy -c -f {{ haproxy_config_path }}
+  register: haproxy_config_check
+  changed_when: false
+  ignore_errors: true
+  when: haproxy_config_stat.stat.exists
+
+- name: Display configuration syntax
+  ansible.builtin.debug:
+    msg: "HAProxy configuration syntax: {{ 'VALID' if haproxy_config_check.rc == 0 else 'INVALID' }}"
+  when: haproxy_config_stat.stat.exists
+
+- name: Check config file permissions
+  ansible.builtin.stat:
+    path: "{{ haproxy_config_path }}"
+  register: haproxy_config_perms
+  changed_when: false
+
+- name: Display config file permissions
+  ansible.builtin.debug:
+    msg: "HAProxy config permissions: {{ haproxy_config_perms.stat.mode | default('unknown') }}"
+  when: haproxy_config_perms.stat is defined
+
+- name: Extract frontend configuration
+  ansible.builtin.command: grep -E "^frontend|\\s+bind" {{ haproxy_config_path }}
+  register: haproxy_frontend_config
+  changed_when: false
+  ignore_errors: true
+  when: haproxy_config_stat.stat.exists
+
+- name: Display frontend configuration
+  ansible.builtin.debug:
+    msg: "HAProxy frontend:\n{{ haproxy_frontend_config.stdout_lines | default([]) }}"
+  when:
+    - haproxy_frontend_config.stdout_lines is defined
+    - haproxy_frontend_config.stdout_lines | length > 0
+
+- name: Check if expected frontend port is configured
+  ansible.builtin.set_fact:
+    frontend_port_configured: "{{ haproxy_expected_port in haproxy_frontend_config.stdout | default('') }}"
+  when: haproxy_frontend_config.stdout is defined
+
+- name: Display frontend port status
+  ansible.builtin.debug:
+    msg: "Frontend port {{ haproxy_expected_port }}: {{ 'CONFIGURED' if frontend_port_configured | default(false) else 'NOT FOUND' }}"
+  when: frontend_port_configured is defined
+
+- name: Extract backend configuration
+  ansible.builtin.command: grep -E "^backend|\\s+server" {{ haproxy_config_path }}
+  register: haproxy_backend_config
+  changed_when: false
+  ignore_errors: true
+  when: haproxy_config_stat.stat.exists
+
+- name: Display backend configuration
+  ansible.builtin.debug:
+    msg: "HAProxy backend:\n{{ haproxy_backend_config.stdout_lines | default([]) }}"
+  when:
+    - haproxy_backend_config.stdout_lines is defined
+    - haproxy_backend_config.stdout_lines | length > 0
+
+- name: Count configured backends
+  ansible.builtin.set_fact:
+    backend_count: "{{ haproxy_backend_config.stdout_lines | select('match', '\\s+server ') | list | length | default(0) }}"
+  when: haproxy_backend_config.stdout is defined
+
+- name: Display backend count
+  ansible.builtin.debug:
+    msg: "Configured backends: {{ backend_count | default(0) }}"
+
+- name: Set configuration check results
+  ansible.builtin.set_fact:
+    haproxy_config_ok: "{{ haproxy_config_check.rc == 0 if haproxy_config_check.rc is defined else false }}"

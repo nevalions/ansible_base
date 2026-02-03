@@ -15,23 +15,22 @@ All sensitive variables are stored in `vault_secrets.yml`:
 
 ```yaml
 # Keepalived Configuration
-keepalived_vip: "[vip-address]"
-keepalived_vip_cidr: 32
-keepalived_vip_interface: "[vip-interface]"
-keepalived_vip_port: "[k8s-api-port]"
-keepalived_password: "[keepalived-password]"
-keepalived_router_id: 51
-keepalived_check_interval: 2000
-keepalived_check_rise: 2
-keepalived_check_fall: 3
-keepalived_priority: 100
+vault_keepalived_vip: "[vip-address]"
+vault_keepalived_vip_cidr: "32"
+vault_keepalived_vip_interface: "[vip-interface]"
+vault_keepalived_password: "[keepalived-password]"
+vault_keepalived_router_id: "51"
 
-# Control Planes for DNAT
-keepalived_control_planes:
+# Kubernetes API VIP (for workers to join)
+vault_k8s_api_vip: "[vip-address]"
+vault_k8s_api_port: "[k8s-api-port]"
+
+# Control Plane Configuration (multi-plane support)
+vault_k8s_control_planes:
   - name: "[control-plane-hostname]"
     wireguard_ip: "[control-plane-wg-ip]"
-    api_port: [haproxy-backend-port]
-    backend_port: [haproxy-backend-port]
+    backend_port: "[haproxy-backend-port]"
+    api_port: "[k8s-api-port]"
     priority: 99
   ```
 
@@ -112,11 +111,11 @@ HAProxy backend :[haproxy-backend-port] → localhost:[k8s-api-port]
 2. Add WireGuard peer configuration
 3. Update `vault_secrets.yml`:
    ```yaml
-   keepalived_control_planes:
+   vault_k8s_control_planes:
      - name: "[control-plane-hostname-2]"
        wireguard_ip: "[control-plane-wg-ip-2]"
-       api_port: 7443
-       backend_port: 7443
+       backend_port: "[haproxy-backend-port]"
+       api_port: "[k8s-api-port]"
        priority: 99
    ```
 4. Re-run playbooks:

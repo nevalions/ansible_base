@@ -1,0 +1,94 @@
+---
+- name: Import service verification
+  ansible.builtin.include_tasks: verify_service.yaml
+
+- name: Import configuration verification
+  ansible.builtin.include_tasks: verify_configuration.yaml
+
+- name: Import listening verification
+  ansible.builtin.include_tasks: verify_listening.yaml
+
+- name: Import firewall verification
+  ansible.builtin.include_tasks: verify_firewall.yaml
+
+- name: Import backend connectivity verification
+  ansible.builtin.include_tasks: verify_backend_connectivity.yaml
+
+- name: Set individual check results
+  ansible.builtin.set_fact:
+    service_check_passed: "{{ haproxy_service_ok | default(false) }}"
+    config_check_passed: "{{ haproxy_config_ok | default(false) }}"
+    listening_check_passed: "{{ haproxy_listening_ok | default(false) }}"
+    firewall_check_passed: "{{ haproxy_firewall_ok | default(false) }}"
+    backend_check_passed: "{{ haproxy_backend_connectivity_ok | default(false) }}"
+    backend_defined: "{{ backend_count | int > 0 if backend_count is defined else false }}"
+
+- name: Count passed checks
+  ansible.builtin.set_fact:
+    passed_checks: >-
+      {% set pass_count = 0 %}
+      {% if service_check_passed %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {% if config_check_passed %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {% if listening_check_passed %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {% if firewall_check_passed %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {% if backend_check_passed %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {% if backend_defined %}{% set pass_count = pass_count + 1 %}{% endif %}
+      {{ pass_count }}
+
+- name: Calculate failed checks
+  ansible.builtin.set_fact:
+    failed_checks: "{{ 6 - (passed_checks | int) }}"
+
+- name: Calculate unreachable backends
+  ansible.builtin.set_fact:
+    unreachable_backends: "{{ (total_backends_count | default(0) | int) - (reachable_backends_count | default(0) | int) }}"
+
+- name: Display verification report header
+  ansible.builtin.debug:
+    msg:
+      - ""
+      - "=========================================="
+      - "  HAProxy Verification Report"
+      - "  Host: {{ inventory_hostname }}"
+      - "=========================================="
+
+- name: Display service status
+  ansible.builtin.debug:
+    msg:
+      - "Service Status:"
+      - "  HAProxy service: {{ 'ACTIVE (running)' if haproxy_active.stdout == 'active' else 'INACTIVE' }}"
+      - "  HAProxy enabled: {{ 'YES' if haproxy_enabled.stdout == 'enabled' else 'NO' }}"
+
+- name: Display configuration status
+  ansible.builtin.debug:
+    msg:
+      - "Configuration:"
+      - "  Config file: {{ 'EXISTS' if haproxy_config_stat.stat.exists else 'NOT FOUND' }}"
+      - "  Config syntax: {{ 'VALID' if haproxy_config_check.rc == 0 else 'INVALID' if haproxy_config_check.rc is defined else 'UNKNOWN' }}"
+      - "  Frontend port {{ haproxy_expected_port }}: {{ 'CONFIGURED' if frontend_port_configured | default(false) else 'NOT FOUND' if frontend_port_configured is defined else 'UNKNOWN' }}"
+      - "  Configured backends: {{ backend_count | default(0) | int }}"
+
+- name: Display network status
+  ansible.builtin.debug:
+    msg:
+      - "Network:"
+      - "  Listening on port {{ haproxy_expected_port }}: {{ 'YES' if haproxy_listening_ok | default(false) else 'NO' }}"
+      - "  UFW status: {{ 'ACTIVE' if ufw_is_active else 'INACTIVE' }}"
+      - "  Port {{ haproxy_expected_port }} from {{ vault_wg_network_cidr | default('WireGuard') }}: {{ 'ALLOWED' if haproxy_port_wg_allowed.rc == 0 else 'NOT FOUND' if haproxy_port_wg_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
+      - "  Port {{ haproxy_expected_port }} from localhost: {{ 'ALLOWED' if haproxy_port_local_allowed.rc == 0 else 'NOT FOUND' if haproxy_port_local_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
+
+- name: Display backend connectivity status
+  ansible.builtin.debug:
+    msg:
+      - "Backend Connectivity:"
+      - "  Total backends: {{ total_backends_count | default(0) | int }}"
+      - "  Reachable: {{ reachable_backends_count | default(0) | int }}"
+      - "  Unreachable: {{ unreachable_backends | int }}"
+
+- name: Display verification summary
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "  Summary: {{ passed_checks | int }}/6 checks passed"
+      - "  Status: {{ 'SUCCESS' if failed_checks | int == 0 else 'WARNINGS' if failed_checks | int > 0 else 'UNKNOWN' }}"
+      - "=========================================="

@@ -1,0 +1,14 @@
+---
+- name: Verify HAProxy for Kubernetes API
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../../vault_secrets.yml
+    - roles/haproxy_k8s/defaults/main.yaml
+  tags:
+    - haproxy
+    - verify
+    - test
+  roles:
+    - haproxy_verify

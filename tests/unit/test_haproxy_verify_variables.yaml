@@ -1,0 +1,75 @@
+---
+- name: Test haproxy_verify variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify verify_timeout_seconds is positive
+      ansible.builtin.assert:
+        that:
+          - verify_timeout_seconds is defined
+          - verify_timeout_seconds | int > 0
+        success_msg: "verify_timeout_seconds variable defined correctly"
+        fail_msg: "verify_timeout_seconds variable missing or invalid"
+      vars:
+        verify_timeout_seconds: "30"
+
+    - name: Verify verify_retry_count is positive
+      ansible.builtin.assert:
+        that:
+          - verify_retry_count is defined
+          - verify_retry_count | int > 0
+        success_msg: "verify_retry_count variable defined correctly"
+        fail_msg: "verify_retry_count variable missing or invalid"
+      vars:
+        verify_retry_count: "3"
+
+    - name: Verify verify_sleep_seconds is positive
+      ansible.builtin.assert:
+        that:
+          - verify_sleep_seconds is defined
+          - verify_sleep_seconds | int > 0
+        success_msg: "verify_sleep_seconds variable defined correctly"
+        fail_msg: "verify_sleep_seconds variable missing or invalid"
+      vars:
+        verify_sleep_seconds: "2"
+
+    - name: Verify haproxy_expected_port is valid port number
+      ansible.builtin.assert:
+        that:
+          - haproxy_expected_port is defined
+          - haproxy_expected_port | string | regex_search('^[0-9]+$')
+        success_msg: "haproxy_expected_port variable defined correctly"
+        fail_msg: "haproxy_expected_port variable missing or invalid"
+      vars:
+        haproxy_expected_port: "6443"
+
+    - name: Verify haproxy_expected_user is defined
+      ansible.builtin.assert:
+        that:
+          - haproxy_expected_user is defined
+          - haproxy_expected_user | length > 0
+        success_msg: "haproxy_expected_user variable defined correctly"
+        fail_msg: "haproxy_expected_user variable missing"
+      vars:
+        haproxy_expected_user: "haproxy"
+
+    - name: Verify haproxy_expected_group is defined
+      ansible.builtin.assert:
+        that:
+          - haproxy_expected_group is defined
+          - haproxy_expected_group | length > 0
+        success_msg: "haproxy_expected_group variable defined correctly"
+        fail_msg: "haproxy_expected_group variable missing"
+      vars:
+        haproxy_expected_group: "haproxy"
+
+    - name: Verify haproxy_config_path is defined
+      ansible.builtin.assert:
+        that:
+          - haproxy_config_path is defined
+          - haproxy_config_path | length > 0
+        success_msg: "haproxy_config_path variable defined correctly"
+        fail_msg: "haproxy_config_path variable missing"
+      vars:
+        haproxy_config_path: "/etc/haproxy/haproxy.cfg"

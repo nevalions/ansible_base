@@ -9,7 +9,7 @@
 ❌ **NEVER** include real usernames
 ❌ **NEVER** include real IP addresses (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
 ❌ **NEVER** include real SSH ports (e.g., `22`, custom SSH ports)
-❌ **NEVER** include real hostnames or domain names
+❌ **NEVER** include real hostnames or domain names (except in `hosts:` field)
 ❌ **NEVER** include real passwords or API keys
 ❌ **NEVER** include SSH private keys or certificates
 ❌ **NEVER** include network CIDRs or network identifiers
@@ -256,7 +256,7 @@ Always configure `.ansible-lint` with:
 ❌ **Real usernames** (use placeholders instead)
 ❌ **Real IP addresses** (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
 ❌ **Real SSH ports** (e.g., `22`, custom SSH ports)
-❌ **Real hostnames or domain names**
+❌ **Real hostnames or domain names** (except inventory group names in `hosts:` field)
 ❌ **Real passwords** (e.g., `myPassword123`, `secret456`)
 ❌ **API keys/tokens** (e.g., `sk-1234567890abcdef`, `ghp_xxxxxxxxx`)
 ❌ **SSH private keys** (e.g., `-----BEGIN RSA PRIVATE KEY-----`)
@@ -269,6 +269,7 @@ Always configure `.ansible-lint` with:
 - IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
 - Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`
 - Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
+- **Exception**: Inventory group names in `hosts:` field are allowed (e.g., `hosts: haproxy_servers`)
 - Passwords: `[your-password-here]`, `[sudo-password]`
 - API keys: `[your-api-key-here]`
 - Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
@@ -349,6 +350,7 @@ Before any commit, verify:
 - [ ] No API keys, tokens, or credentials in code or documentation
 - [ ] All secrets properly encrypted with ansible-vault or GPG
 - [ ] Sensitive files added to .gitignore
+- [ ] Note: Inventory group names in `hosts:` field are acceptable (e.g., `hosts: haproxy_servers`)
 
 ### Git Hooks for Security Validation
 
@@ -374,10 +376,11 @@ bash scripts/setup_hooks.sh
 
 The hooks automatically detect and block:
 
-- **Hardcoded IPs**: Real infrastructure IPs (`9.11.0.x`, `192.168.x.x`, `10.x.x.x`, etc.)
+- **Hardcoded IPs**: Real infrastructure IPs (`192.168.x.x`, `10.x.x.x`, etc.)
 - **Hardcoded ports**: Kubernetes API ports (`6443`, `7443`), WireGuard ports, custom SSH ports
 - **Hardcoded usernames**: Real usernames (`www`, `root`, `linroot`)
-- **Hardcoded hostnames**: Real hostnames (`haproxy_spb`, `bay_bgp`, `bay_plane1`, etc.)
+- **Hardcoded hostnames**: Real hostnames in variables or config (`[haproxy-hostname]`, `[bgp-hostname]`, `[control-plane-hostname]`, etc.)
+  - **Exception**: Inventory group names in `hosts:` field are acceptable (e.g., `hosts: haproxy_servers`)
 - **Sensitive keys**: SSH private keys, certificates, vault passwords, API keys, passwords
 
 #### Acceptable Patterns
@@ -395,7 +398,7 @@ All sensitive data must use placeholders:
 Test the pre-commit hook:
 
 ```bash
-echo "server_ip: 9.11.0.250" > test_sensitive.yaml
+echo "server_ip: 198.51.100.250" > test_sensitive.yaml
 git add test_sensitive.yaml
 git commit -m "test: should fail"
 # Hook should block commit with sensitive data

@@ -1,0 +1,18 @@
+- name: Check if HAProxy is listening on expected port
+  ansible.builtin.shell: ss -tlnp | grep '{{ haproxy_expected_port }}' | wc -l
+  register: haproxy_listening_count
+  changed_when: false
+  ignore_errors: true
+
+- name: Display HAProxy listening status
+  ansible.builtin.debug:
+    msg: "HAProxy listening on port {{ haproxy_expected_port }}: {{ 'YES' if haproxy_listening_count.stdout | int > 0 else 'NO' }}"
+
+- name: Display listening details
+  ansible.builtin.debug:
+    var: haproxy_listening_count.stdout_lines
+  when: haproxy_listening_count.stdout_lines is defined
+
+- name: Set listening check result
+  ansible.builtin.set_fact:
+    haproxy_listening_ok: "{{ haproxy_listening_count.stdout | int > 0 }}"

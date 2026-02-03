@@ -1,0 +1,47 @@
+---
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display UFW status
+  ansible.builtin.debug:
+    msg: "UFW status: {{ 'ACTIVE' if 'Status: active' in ufw_status.stdout else 'INACTIVE' }}"
+
+- name: Set UFW active flag
+  ansible.builtin.set_fact:
+    ufw_is_active: "{{ 'Status: active' in ufw_status.stdout if ufw_status.stdout is defined else false }}"
+
+- name: Check if HAProxy port is allowed from WireGuard network
+  ansible.builtin.shell: ufw status | grep -E "{{ haproxy_expected_port }}.*{{ vault_wg_network_cidr }}"
+  register: haproxy_port_wg_allowed
+  changed_when: false
+  ignore_errors: true
+  when: ufw_is_active and vault_wg_network_cidr is defined
+
+- name: Display WireGuard network firewall rule
+  ansible.builtin.debug:
+    msg: "HAProxy port {{ haproxy_expected_port }} from {{ vault_wg_network_cidr }}: {{ 'ALLOWED' if haproxy_port_wg_allowed.rc == 0 else 'NOT FOUND' }}"
+  when:
+    - ufw_is_active
+    - vault_wg_network_cidr is defined
+    - haproxy_port_wg_allowed.rc is defined
+
+- name: Check if HAProxy port is allowed from localhost
+  ansible.builtin.shell: ufw status | grep -E "{{ haproxy_expected_port }}.*127\\.0\\.0\\.1"
+  register: haproxy_port_local_allowed
+  changed_when: false
+  ignore_errors: true
+  when: ufw_is_active
+
+- name: Display localhost firewall rule
+  ansible.builtin.debug:
+    msg: "HAProxy port {{ haproxy_expected_port }} from 127.0.0.1: {{ 'ALLOWED' if haproxy_port_local_allowed.rc == 0 else 'NOT FOUND' }}"
+  when:
+    - ufw_is_active
+    - haproxy_port_local_allowed.rc is defined
+
+- name: Set firewall check result
+  ansible.builtin.set_fact:
+    haproxy_firewall_ok: "{{ (not ufw_is_active) or (haproxy_port_wg_allowed.rc == 0 if haproxy_port_wg_allowed.rc is defined else false) and (haproxy_port_local_allowed.rc == 0 if haproxy_port_local_allowed.rc is defined else false) }}"

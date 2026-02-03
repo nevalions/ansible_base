@@ -1,0 +1,37 @@
+---
+- name: Check if HAProxy service is active
+  ansible.builtin.command: systemctl is-active haproxy
+  register: haproxy_active
+  changed_when: false
+  ignore_errors: true
+
+- name: Display HAProxy service status
+  ansible.builtin.debug:
+    msg: "HAProxy service status: {{ 'ACTIVE' if haproxy_active.stdout == 'active' else 'INACTIVE' }}"
+
+- name: Check if HAProxy service is enabled
+  ansible.builtin.command: systemctl is-enabled haproxy
+  register: haproxy_enabled
+  changed_when: false
+  ignore_errors: true
+
+- name: Display HAProxy enabled status
+  ansible.builtin.debug:
+    msg: "HAProxy service enabled: {{ 'YES' if haproxy_enabled.stdout == 'enabled' else 'NO' }}"
+
+- name: Get HAProxy service detailed status
+  ansible.builtin.systemd:
+    name: haproxy
+  register: haproxy_service_status
+  ignore_errors: true
+
+- name: Display HAProxy service details
+  ansible.builtin.debug:
+    msg:
+      - "HAProxy ActiveState: {{ haproxy_service_status.status.ActiveState | default('unknown') }}"
+      - "HAProxy LoadState: {{ haproxy_service_status.status.LoadState | default('unknown') }}"
+      - "HAProxy Main PID: {{ haproxy_service_status.status.MainPID | default('none') }}"
+
+- name: Set service check results
+  ansible.builtin.set_fact:
+    haproxy_service_ok: "{{ haproxy_active.stdout == 'active' and haproxy_enabled.stdout == 'enabled' }}"

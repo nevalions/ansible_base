@@ -75,7 +75,7 @@ Checking 3 file(s)...
 
 File: roles/kuber_init/defaults/main.yaml
   HARDCODED_IP:
-    Line 23: Found hardcoded_ip: 9.11.0.250
+    Line 23: Found hardcoded_ip: 198.51.100.250
 
 File: CHANGELOG.md
   HARDCODED_PORT:
@@ -249,7 +249,7 @@ Commit: def5678
 **Sensitive patterns detected:**
 
 ### Hardcoded IPs
-- Real infrastructure IPs: `9.11.0.x`, `192.168.10.x`, `176.57.220.x`, etc.
+- Real infrastructure IPs: `192.168.10.x`, `176.57.220.x`, etc.
 - Kubernetes networks: `10.244.0.0/16`, `10.96.0.0/12`
 - Private networks: `10.x.x.x`, `172.16-31.x.x`
 
@@ -347,7 +347,7 @@ Commit: def5678
 
 1. Create a test file with sensitive data:
 ```bash
-echo "server_ip: 9.11.0.250" > test_sensitive.yaml
+echo "server_ip: 198.51.100.250" > test_sensitive.yaml
 ```
 
 2. Stage and try to commit:
@@ -386,7 +386,7 @@ git commit -m "test: verify commit message validation"
 
 1. Make a commit with sensitive data:
 ```bash
-echo "server_ip: 9.11.0.250" > test_push.yaml
+echo "server_ip: 198.51.100.250" > test_push.yaml
 git add test_push.yaml
 git commit --no-verify -m "test: bypass pre-commit"
 ```

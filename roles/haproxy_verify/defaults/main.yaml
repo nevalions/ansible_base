@@ -1,0 +1,14 @@
+---
+# HAProxy Verification Configuration
+# This role verifies HAProxy for Kubernetes API load balancing
+
+# Verification timing
+verify_timeout_seconds: 30
+verify_retry_count: 3
+verify_sleep_seconds: 2
+
+# Expected HAProxy settings
+haproxy_expected_port: "{{ haproxy_k8s_frontend_port | default('6443') }}"
+haproxy_expected_user: "haproxy"
+haproxy_expected_group: "haproxy"
+haproxy_config_path: "/etc/haproxy/haproxy.cfg"

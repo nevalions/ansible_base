@@ -44,7 +44,7 @@ backend k8s-api-backend
     option tcp-check
     timeout connect {{ haproxy_k8s_timeout_connect }}
     timeout server  {{ haproxy_k8s_timeout_server }}
-{% for host in haproxy_k8s_backend_hosts_dynamic | default(haproxy_k8s_backend_hosts) %}
-    server {{ host.name }} {{ host.ip }}:{{ host.port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
-{% endfor %}
+ {% for host in haproxy_k8s_backend_hosts_dynamic | default(haproxy_k8s_backend_hosts) %}
+     server {{ host.name }} {{ host.wireguard_ip }}:{{ host.backend_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+ {% endfor %}
 # END ANSIBLE MANAGED SECTION - Kubernetes API Backend

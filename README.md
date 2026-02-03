@@ -766,13 +766,13 @@ vault_k8s_control_planes:
 Manages Virtual IP (VIP) for Kubernetes API high availability.
 
 **Variables (from vault_secrets.yml):**
-- `keepalived_vip`: Virtual IP address
-- `keepalived_vip_cidr`: VIP CIDR (default: 32)
-- `keepalived_vip_interface`: Network interface (default: wg99)
-- `keepalived_vip_port`: VIP port for Kubernetes API (default: [k8s-api-port])
-- `keepalived_password`: VRRP authentication password
-- `keepalived_router_id`: VRRP router ID
-- `keepalived_control_planes`: List of control planes for DNAT rules
+- `vault_keepalived_vip`: Virtual IP address
+- `vault_keepalived_vip_cidr`: VIP CIDR (default: 32)
+- `vault_keepalived_vip_interface`: Network interface (default: wg99)
+- `vault_keepalived_password`: VRRP authentication password
+- `vault_keepalived_router_id`: VRRP router ID
+- `vault_k8s_api_port`: Kubernetes API port for VIP
+- `vault_k8s_control_planes`: List of control planes for DNAT rules
 
 **Features:**
 - Keepalived installation and configuration

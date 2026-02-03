@@ -1,0 +1,50 @@
+---
+- name: Get backend hosts to verify
+  ansible.builtin.set_fact:
+    haproxy_backend_hosts_to_verify: "{{ vault_k8s_control_planes | default([]) }}"
+
+- name: Display backends to verify
+  ansible.builtin.debug:
+    msg: "Backends to verify: {{ haproxy_backend_hosts_to_verify | length }}"
+
+- name: Initialize backend connectivity results
+  ansible.builtin.set_fact:
+    backend_connectivity_results: []
+
+- name: Check TCP connectivity to backend hosts
+  ansible.builtin.wait_for:
+    host: "{{ host.wireguard_ip }}"
+    port: "{{ host.backend_port }}"
+    timeout: 5
+  register: backend_tcp_check
+  loop: "{{ haproxy_backend_hosts_to_verify }}"
+  loop_control:
+    loop_var: host
+  changed_when: false
+  failed_when: false
+  when: haproxy_backend_hosts_to_verify | length > 0
+
+- name: Add backend check result to list
+  ansible.builtin.set_fact:
+    backend_connectivity_results: "{{ backend_connectivity_results + [{'name': host.name, 'ip': host.wireguard_ip, 'port': host.backend_port, 'reachable': backend_tcp_check is defined}] }}"
+  loop: "{{ haproxy_backend_hosts_to_verify }}"
+  loop_control:
+    loop_var: host
+  when: haproxy_backend_hosts_to_verify | length > 0
+
+- name: Display backend connectivity results
+  ansible.builtin.debug:
+    msg: "{% if backend_connectivity_results | length > 0 %}Backend connectivity:\n{% for backend in backend_connectivity_results %}  {{ backend.name }} ({{ backend.ip }}:{{ backend.port }}): {{ 'REACHABLE' if backend.reachable else 'UNREACHABLE' }}\n{% endfor %}{% else %}No backends configured or verify{% endif %}"
+
+- name: Count reachable backends
+  ansible.builtin.set_fact:
+    reachable_backends_count: "{{ backend_connectivity_results | selectattr('reachable', 'equalto', true) | list | length | default(0) }}"
+    total_backends_count: "{{ backend_connectivity_results | length | default(0) }}"
+
+- name: Display backend connectivity summary
+  ansible.builtin.debug:
+    msg: "Backends reachable: {{ reachable_backends_count }}/{{ total_backends_count }}"
+
+- name: Set backend connectivity check result
+  ansible.builtin.set_fact:
+    haproxy_backend_connectivity_ok: "{{ reachable_backends_count | default(0) == total_backends_count if total_backends_count | int > 0 else true }}"

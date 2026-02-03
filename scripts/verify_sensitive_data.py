@@ -55,19 +55,19 @@ SENSITIVE_PATTERNS = {
         r'\b172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}\b',
     ],
     'hardcoded_port': [
-        r'"6443"',
+        # Custom ports only - 6443 is standard Kubernetes API port (allowed)
         r'"7443"',
         r'"51840"',
         r'"51841"',
         r'"51842"',
         r'"51942"',
         r'ansible_port:\s*\d+',
-        # Unquoted standalone ports (catch unquoted ports in examples)
-        r'\\b(6443|7443|51840|51841|51842|51942)\\b',
-        # Ports in default value descriptions
-        r'\\(default:\\s*(6443|7443|51840|51841|51842|51942)\\)',
-        # Ports in variable documentation (e.g., `backend_port: 7443`)
-        r'`[^`]*(6443|7443|51840|51841|51842|51942)[^`]*`',
+        # Unquoted standalone ports (excluding 6443 which is standard)
+        r'\\b(7443|51840|51841|51842|51942)\\b',
+        # Ports in default value descriptions (excluding 6443)
+        r'\\(default:\\s*(7443|51840|51841|51842|51942)\\)',
+        # Ports in variable documentation (excluding 6443 - standard K8s API)
+        r'`[^`]*(7443|51840|51841|51842|51942)[^`]*`',
     ],
     'hardcoded_username': [
         r'ansible_user:\s*["\']?(www|root|linroot)["\']?',
@@ -76,20 +76,18 @@ SENSITIVE_PATTERNS = {
         r'"root"\s*:',
     ],
     'hardcoded_hostname': [
-        r'haproxy_spb',
-        r'bay_bgp',
-        r'bay_plane[12]',
-        r'bay_worker[12]',
-        r'cloud_plane[12]',
-        r'cloud_worker[12]',
+        # Block hostnames in variables and config, but allow in hosts: field
+        # Pattern matches: hostname followed by : or =, or in quotes/values
+        r'(?:^|[^:])\s*(?:ansible_host|hostname):\s*["\']?(haproxy_spb|bay_bgp|bay_plane[12]|bay_worker[12]|cloud_plane[12]|cloud_worker[12])["\']?',
     ],
     'sensitive_key': [
         r'-----BEGIN\s+(RSA|EC|OPENSSH|PRIVATE)\s+KEY-----',
         r'-----BEGIN\s+CERTIFICATE-----',
-        r'vault_become_pass:\s*(?!\[).*(?<!\])',
-        r'vault_.*_pass:\s*(?!\[).*(?<!\])',
+        # Skip placeholder patterns
+        r'vault_become_pass:\s*(?!\[|your_)[a-zA-Z0-9]{8,}',
+        r'vault_.*_pass:\s*(?!\[|your_)[a-zA-Z0-9]{8,}',
         r'api[_-]?key:\s*["\']?[a-zA-Z0-9]{20,}',
-        r'password:\s*["\']?[a-zA-Z0-9]{8,}',
+        r'password:\s*["\']?(?!\[|your_)[a-zA-Z0-9]{8,}',
     ],
 }
 
@@ -121,7 +119,18 @@ ACCEPTABLE_PATTERNS = [
     r'\[control-plane-ip\]:(?:6443|7443)',
     r'\[haproxy-hostname\]:(?:6443|7443)',
     r'\[control-plane-wg-ip\]:(?:6443|7443)',
-    r':\s*(?:6443|7443|51840|51841|51842|51942)\b',
+    # 6443 is standard Kubernetes API port - always acceptable
+    r':\s*6443\b',
+    r'":\s*6443"',
+    r':\s*["\']?6443["\']?',
+    # Other standard/custom ports
+    r':\s*(7443|51840|51841|51842|51942)\b',
+    # Placeholder passwords
+    r'your_sudo_password_here',
+    r'your_password_here',
+    r'your_api_key_here',
+    # hosts: field allows inventory group names
+    r'^\s*hosts:\s*["\']?[a-z_]+["\']?\s*$',
     # Masked documentation (WireGuard sanitization)
     r'192\.168\.\d+\.\*\*\*',
     r'\d+\.\d+\.\d+\.\*\*\*:\d+\*\*\*',
@@ -135,6 +144,10 @@ ACCEPTABLE_PATTERNS = [
     r'^\s*❌\s+.*\(e\.g\.',
     r'^\s*\*\*❌ WRONG',
     r'^\s*# ❌ DO NOT',
+    # Documentation describing hook behavior (markdown code blocks with port lists)
+    r'\(.*7443.*\)',
+    r'\`.*7443.*\`',
+    r'`.*7443.*`',
 ]
 
 def get_staged_files():

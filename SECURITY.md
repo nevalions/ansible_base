@@ -12,6 +12,7 @@ This repository follows a minimal hardening approach to balance security and usa
 - **Location**: All connection variables (ansible_user, ansible_port, ansible_become) are stored in inventory files (`hosts_*.ini`)
 - **Git Status**: Inventory files are excluded from git via `.gitignore`
 - **Rationale**: Connection details reveal infrastructure topology and user accounts, which should be private
+- **Playbook hosts field**: Inventory group names in playbooks' `hosts:` field are allowed (e.g., `hosts: haproxy_servers`), as they reference inventory groups, not actual hostnames
 
 ### SSH Key Management
 - **Authentication**: SSH key-based authentication with passphrases
@@ -138,6 +139,7 @@ This removes all keys from memory.
 - Group variable files with real connection details
 - Vault password files
 - SSH key passphrases
+- Real hostnames or domain names (except inventory group names in playbooks' `hosts:` field)
 
 ✅ **Safe to commit:**
 - Playbooks and roles
