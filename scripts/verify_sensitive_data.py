@@ -63,9 +63,9 @@ SENSITIVE_PATTERNS = {
         r'"51942"',
         r'ansible_port:\s*\d+',
         # Unquoted standalone ports (catch unquoted ports in examples)
-        r'\b(6443|7443|51840|51841|51842|51942)\b',
+        r'\\b(6443|7443|51840|51841|51842|51942)\\b',
         # Ports in default value descriptions
-        r'\(default:\s*(6443|7443|51840|51841|51842|51942)\)',
+        r'\\(default:\\s*(6443|7443|51840|51841|51842|51942)\\)',
         # Ports in variable documentation (e.g., `backend_port: 7443`)
         r'`[^`]*(6443|7443|51840|51841|51842|51942)[^`]*`',
     ],
