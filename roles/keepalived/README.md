@@ -30,9 +30,10 @@ keepalived_priority: 100
 keepalived_control_planes:
   - name: "[control-plane-hostname]"
     wireguard_ip: "[control-plane-wg-ip]"
-    api_port: 7443
-    backend_port: 7443
-```
+    api_port: [haproxy-backend-port]
+    backend_port: [haproxy-backend-port]
+    priority: 99
+  ```
 
 ## Features
 
