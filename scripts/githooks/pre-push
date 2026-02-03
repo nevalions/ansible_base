@@ -1,0 +1,113 @@
+#!/bin/bash
+# Git pre-push hook to perform final verification before pushing to remote
+# Runs security checks on all commits being pushed
+
+set -e
+
+# ANSI color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}=== PRE-PUSH SECURITY VERIFICATION ===${NC}\n"
+
+# Get the remote and refspec
+REMOTE="$1"
+URL="$2"
+
+# Get commits being pushed (from $3 to $4)
+while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
+    # Skip if pushing a new branch (REMOTE_SHA is all zeros)
+    if [ "$REMOTE_SHA" = "0000000000000000000000000000000000000000" ]; then
+        echo -e "${YELLOW}Pushing new branch: $LOCAL_REF${NC}"
+        COMMIT_RANGE="$LOCAL_SHA"
+    else
+        COMMIT_RANGE="$REMOTE_SHA..$LOCAL_SHA"
+    fi
+    
+    echo -e "${BLUE}Checking commits in $COMMIT_RANGE${NC}\n"
+    
+    # Get list of commits
+    COMMITS=$(git rev-list --reverse "$COMMIT_RANGE" 2>/dev/null || true)
+    
+    if [ -z "$COMMITS" ]; then
+        echo -e "${GREEN}No commits to check${NC}\n"
+        exit 0
+    fi
+    
+    # Check each commit
+    VIOLATION_FOUND=0
+    COMMIT_COUNT=0
+    
+    while IFS= read -r COMMIT_SHA; do
+        COMMIT_COUNT=$((COMMIT_COUNT + 1))
+        COMMIT_MSG=$(git log -1 --pretty=format:%s "$COMMIT_SHA")
+        COMMIT_AUTHOR=$(git log -1 --pretty=format:%an "$COMMIT_SHA")
+        COMMIT_DATE=$(git log -1 --pretty=format:%ad "$COMMIT_SHA")
+        
+        echo -e "${BLUE}Commit: $COMMIT_SHA${NC}"
+        echo -e "  Author: $COMMIT_AUTHOR"
+        echo -e "  Date: $COMMIT_DATE"
+        echo -e "  Message: $COMMIT_MSG"
+        
+        # Get files changed in this commit
+        FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r "$COMMIT_SHA" 2>/dev/null || true)
+        
+        if [ -n "$FILES_CHANGED" ]; then
+            # Check for sensitive files
+            SENSITIVE_FILES=$(echo "$FILES_CHANGED" | grep -E 'vault_secrets|wg_keys|\.vault|group_vars/.*\.yml$|hosts_' || true)
+            
+            if [ -n "$SENSITIVE_FILES" ]; then
+                echo -e "${RED}  ✗ Sensitive files detected:${NC}"
+                echo "$SENSITIVE_FILES" | while read -r file; do
+                    echo -e "    ${RED}$file${NC}"
+                done
+                VIOLATION_FOUND=1
+            fi
+            
+            # Check file contents for sensitive patterns
+            for FILE in $FILES_CHANGED; do
+                # Skip binary files
+                if git cat-file -e "$COMMIT_SHA:$FILE" 2>/dev/null; then
+                    CONTENT=$(git show "$COMMIT_SHA:$FILE" 2>/dev/null || true)
+                    
+                    if [ -n "$CONTENT" ]; then
+                        # Check for hardcoded IPs
+                        if echo "$CONTENT" | grep -qE '9\.11\.0\.|192\.168\.10\.|176\.57\.220\.'; then
+                            echo -e "${RED}  ✗ Found hardcoded IP in: $FILE${NC}"
+                            VIOLATION_FOUND=1
+                        fi
+                        
+                        # Check for hardcoded ports
+                        if echo "$CONTENT" | grep -qE '"6443"|"7443"|"51840"|"51841"'; then
+                            echo -e "${RED}  ✗ Found hardcoded port in: $FILE${NC}"
+                            VIOLATION_FOUND=1
+                        fi
+                        
+                        # Check for real hostnames
+                        if echo "$CONTENT" | grep -qE 'haproxy_spb|bay_bgp|bay_plane[12]|cloud_'; then
+                            echo -e "${RED}  ✗ Found real hostname in: $FILE${NC}"
+                            VIOLATION_FOUND=1
+                        fi
+                    fi
+                fi
+            done
+        fi
+        
+        echo ""
+    done <<< "$COMMITS"
+    
+    if [ $VIOLATION_FOUND -eq 1 ]; then
+        echo -e "${RED}🚨 SECURITY VIOLATIONS FOUND IN $COMMIT_COUNT COMMIT(S)${NC}"
+        echo -e "${YELLOW}Push blocked! Please fix violations before pushing.${NC}"
+        echo -e "${YELLOW}You can bypass this check with: git push --no-verify${NC}\n"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓ All $COMMIT_COUNT commit(s) verified successfully${NC}\n"
+done
+
+echo -e "${GREEN}✅ PRE-PUSH VERIFICATION PASSED${NC}\n"
+exit 0

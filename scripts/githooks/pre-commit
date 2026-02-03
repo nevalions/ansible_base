@@ -1,0 +1,31 @@
+#!/bin/bash
+# Git pre-commit hook to verify no sensitive data is being committed
+# Blocks commits with hardcoded IPs, ports, usernames, hostnames, and other sensitive patterns
+
+set -e
+
+# ANSI color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Get repository root directory
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Path to verification script
+VERIFY_SCRIPT="$REPO_ROOT/scripts/verify_sensitive_data.py"
+
+# Check if verification script exists
+if [ ! -f "$VERIFY_SCRIPT" ]; then
+    echo -e "${RED}✗ Error: Verification script not found at $VERIFY_SCRIPT${NC}"
+    echo -e "${YELLOW}Please ensure the hooks are properly installed${NC}"
+    exit 1
+fi
+
+# Run verification script
+python3 "$VERIFY_SCRIPT"
+
+# Exit with the verification script's exit code
+exit $?
