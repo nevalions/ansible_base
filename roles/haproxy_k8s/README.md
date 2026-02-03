@@ -50,7 +50,7 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 
 **Multi-Control Plane with VIP:**
 - Workers connect to VIP: `[vip-address]:6443`
-- Keepalived on haproxy_spb manages VIP failover
+- Keepalived on [haproxy-hostname] manages VIP failover
 - DNAT: VIP:6443 → active plane's HAProxy:7443
 - Each control plane has HAProxy:7443 → localhost:6443
 - All communication via WireGuard network

@@ -31,7 +31,7 @@ if [ ! -d "$TARGET_DIR" ]; then
 fi
 
 # List of hooks to install
-HOOKS=("pre-commit" "commit-msg" "pre-push")
+HOOKS=("pre-commit" "commit-msg" "pre-push" "post-merge" "post-checkout")
 
 # Install each hook
 echo -e "${BLUE}Installing Git hooks...${NC}\n"
@@ -95,6 +95,8 @@ echo -e "${YELLOW}They will automatically run on git operations:${NC}"
 echo -e "  ${BLUE}pre-commit${NC}   - Before committing changes"
 echo -e "  ${BLUE}commit-msg${NC}  - After writing commit message"
 echo -e "  ${BLUE}pre-push${NC}    - Before pushing to remote"
+echo -e "  ${BLUE}post-merge${NC}  - After pulling/merging changes (auto-updates hooks)"
+echo -e "  ${BLUE}post-checkout${NC} - After switching branches (auto-updates hooks)"
 echo ""
 echo -e "${YELLOW}To bypass a hook temporarily:${NC}"
 echo -e "  ${BLUE}git commit --no-verify${NC}"

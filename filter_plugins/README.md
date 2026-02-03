@@ -98,8 +98,8 @@ Output: "***.0.0.5"
 
 **Examples:**
 ```yaml
-Input:  "51840"
-Output: "***51840"
+Input:  "[vpn-port]"
+Output: "***[vpn-port]"
 
 Input:  "80"
 Output: "***80"

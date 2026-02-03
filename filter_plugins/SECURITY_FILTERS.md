@@ -149,8 +149,8 @@ Output: "***.0.0.5"
 
 **Examples:**
 ```yaml
-Input:  "51840"
-Output: "***51840"
+Input:  "[vpn-port]"
+Output: "***[vpn-port]"
 
 Input:  "80"
 Output: "***80"
@@ -282,7 +282,7 @@ Output: "this is a [more]"
 Input:  "API key: abc123def456"
 Output: "API key: [REDACTED]"
 
-Input:  "password: secret123"
+Input:  "password: [your-password-here]"
 Output: "password: [HIDDEN]"
 ```
 

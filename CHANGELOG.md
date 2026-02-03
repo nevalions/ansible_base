@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `vault_k8s_api_port`: Kubernetes API port ([k8s-api-port])
   - `vault_k8s_control_planes`: List of control planes with WireGuard IPs
 - **Playbook**:
-  - `keepalived_manage.yaml`: Deploy and manage keepalived on haproxy_spb
+  - `keepalived_manage.yaml`: Deploy and manage keepalived on [haproxy-hostname]
 
 ### Changed
 - **haproxy_k8s Role**:
@@ -60,7 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Changed control plane endpoint to use VIP:[k8s-api-port]
   - Workers join through VIP for consistent access
 - **Inventory**:
-  - Added `[keepalived_hosts]` group for haproxy_spb
+  - Added `[keepalived_hosts]` group for [haproxy-hostname]
   - Added `[keepalived_vip_servers]` group for planes_all
 - **haproxy_k8s.yaml Playbook**:
   - Changed hosts from `planes` to `planes_all` for consistency
@@ -120,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - **IP Address Masking**:
-  - Final upgrade summary masks middle octets of IP addresses (e.g., `192.168.10.22` → `192.***.***.22`)
+  - Final upgrade summary masks middle octets of IP addresses (e.g., `[server-ip]` → `[server-ip]`)
   - Prevents exposure of sensitive network information in logs and output
   - Uses regex pattern: `^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$` → `\1.***.***.\4`
 

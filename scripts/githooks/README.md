@@ -11,13 +11,39 @@ Hooks are automatically installed in `.git/hooks/` when you clone the repository
 To reinstall hooks:
 
 ```bash
+bash scripts/setup_hooks.sh
+```
+
+Or manually:
+
+```bash
 chmod +x .git/hooks/pre-commit
 chmod +x .git/hooks/commit-msg
 chmod +x .git/hooks/pre-push
-chmod +x scripts/.git/hooks/verify_sensitive_data.py
+chmod +x .git/hooks/post-merge
+chmod +x .git/hooks/post-checkout
+chmod +x scripts/verify_sensitive_data.py
 ```
 
+### Automatic Hook Updates
+
+The repository includes automatic hook synchronization:
+- **post-merge**: Automatically updates hooks after pulling/merging changes
+- **post-checkout**: Automatically updates hooks after switching branches
+
+This ensures all team members always have the latest version of hooks.
+
 ## Available Hooks
+
+### Summary
+
+| Hook | Purpose | Blocking |
+|------|---------|----------|
+| `pre-commit` | Blocks commits with sensitive data | Yes |
+| `commit-msg` | Validates commit message format and content | Yes |
+| `pre-push` | Final security check before push | Yes |
+| `post-merge` | Auto-updates hooks after pulling/merging | No |
+| `post-checkout` | Auto-updates hooks after branch switch | No |
 
 ### Pre-Commit Hook (`.git/hooks/pre-commit`)
 
@@ -275,6 +301,46 @@ Commit: def5678
 
 ---
 
+### Post-Merge Hook (`.git/hooks/post-merge`)
+
+**Purpose:** Automatically update hooks after pulling/merging changes from remote.
+
+**When it runs:** After `git pull` or `git merge` operations complete.
+
+**What it does:**
+- Automatically runs `scripts/setup_hooks.sh` to update all hooks
+- Ensures team members have the latest hook versions
+- Non-blocking (fails silently if setup script is missing)
+
+**Example output:**
+```
+=== Auto-updating Git hooks ===
+
+✓ Git hooks updated successfully
+```
+
+---
+
+### Post-Checkout Hook (`.git/hooks/post-checkout`)
+
+**Purpose:** Automatically update hooks after switching branches.
+
+**When it runs:** After `git checkout` operations when switching branches.
+
+**What it does:**
+- Automatically runs `scripts/setup_hooks.sh` to update all hooks
+- Ensures hooks are consistent across branches
+- Non-blocking (fails silently if setup script is missing)
+
+**Example output:**
+```
+=== Auto-updating Git hooks (branch switch) ===
+
+✓ Git hooks updated successfully
+```
+
+---
+
 ## Testing Hooks
 
 ### Test Pre-Commit Hook
@@ -492,5 +558,5 @@ For issues or questions about Git hooks:
 
 ---
 
-**Last Updated:** 2026-02-02
-**Version:** 1.0.0
+**Last Updated:** 2026-02-03
+**Version:** 2.0.0

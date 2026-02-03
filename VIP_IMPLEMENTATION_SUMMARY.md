@@ -121,7 +121,7 @@ kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip | default('[vip-address]')
 
 [keepalived_vip_servers:children]
 [plane-hostname]
-cloud_plane1
+[control-plane-hostname]
 ```
 
 ### 6. HAProxy Kubernetes Playbook
@@ -226,7 +226,7 @@ ssh [ansible-user]@[haproxy-spb-public-ip] "nc -zv [vip-address] [k8s-api-port]"
 
 ### Step 3: Deploy HAProxy on Control Plane
 ```bash
-ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit bay_plane1
+ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit [control-plane-hostname]
 ```
 
 **Expected Output:**
@@ -267,7 +267,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostnam
 [planes_all:children]
 [plane-hostname]
 [[second-plane-hostname]]
-cloud_plane1
+[control-plane-hostname]
 ```
 
 ### Step 2: Add WireGuard Peer Configuration

@@ -1,6 +1,6 @@
 ---
 - name: Configure Keepalived for Kubernetes API VIP
-  hosts: haproxy_spb
+  hosts: [haproxy-hostname]
   become: true
   gather_facts: true
   vars_files:
@@ -17,7 +17,7 @@
     - keepalived
 
 - name: Verify Keepalived VIP is active
-  hosts: haproxy_spb
+  hosts: [haproxy-hostname]
   become: true
   gather_facts: false
   tags:

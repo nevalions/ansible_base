@@ -261,7 +261,7 @@ Always configure `.ansible-lint` with:
 ❌ **API keys/tokens** (e.g., `sk-1234567890abcdef`, `ghp_xxxxxxxxx`)
 ❌ **SSH private keys** (e.g., `-----BEGIN RSA PRIVATE KEY-----`)
 ❌ **Certificates** (e.g., `-----BEGIN CERTIFICATE-----`)
-❌ **Network CIDRs** (e.g., `192.168.1.0/24`, `10.0.0.0/8`)
+❌ **Network CIDRs** (e.g., `[network-cidr]`)
 ❌ **Real domain names** (e.g., `mycompany.com`, `internal.domain.org`)
 
 **✅ MANDATORY: Use placeholders ONLY:**
@@ -289,7 +289,7 @@ dns_server: [dns-server-ip]
 ansible_user: some-real-username
 ansible_port: 12345
 ansible_host: [example-ip]
-vault_become_pass: some-real-password
+vault_become_pass: [example-password]
 ```
 
 ### Never Commit Secrets
@@ -349,6 +349,72 @@ Before any commit, verify:
 - [ ] No API keys, tokens, or credentials in code or documentation
 - [ ] All secrets properly encrypted with ansible-vault or GPG
 - [ ] Sensitive files added to .gitignore
+
+### Git Hooks for Security Validation
+
+The repository includes comprehensive Git hooks to automatically prevent commits with sensitive data:
+
+#### Available Hooks
+
+- **pre-commit**: Blocks commits containing hardcoded IPs, ports, usernames, hostnames, or other sensitive patterns
+- **commit-msg**: Validates commit messages and prevents sensitive data in commit messages
+- **pre-push**: Final security verification before pushing to remote repository
+- **post-merge**: Automatically updates hooks after pulling/merging changes
+- **post-checkout**: Automatically updates hooks after switching branches
+
+#### Hook Installation
+
+Hooks are automatically installed when cloning the repository. To reinstall:
+
+```bash
+bash scripts/setup_hooks.sh
+```
+
+#### Security Patterns Detected
+
+The hooks automatically detect and block:
+
+- **Hardcoded IPs**: Real infrastructure IPs (`9.11.0.x`, `192.168.x.x`, `10.x.x.x`, etc.)
+- **Hardcoded ports**: Kubernetes API ports (`6443`, `7443`), WireGuard ports, custom SSH ports
+- **Hardcoded usernames**: Real usernames (`www`, `root`, `linroot`)
+- **Hardcoded hostnames**: Real hostnames (`haproxy_spb`, `bay_bgp`, `bay_plane1`, etc.)
+- **Sensitive keys**: SSH private keys, certificates, vault passwords, API keys, passwords
+
+#### Acceptable Patterns
+
+All sensitive data must use placeholders:
+- IPs: `[server-ip]`, `[client-ip]`, `[internal-ip]`, `[vip-address]`
+- Ports: `[custom-ssh-port]`, `[server-port]`, `[k8s-api-port]`
+- Hostnames: `[cluster-hostname]`, `[server-hostname]`
+- Usernames: `[your-username]`
+- Passwords: `[your-password-here]`
+- API keys: `[your-api-key-here]`
+
+#### Testing Hooks
+
+Test the pre-commit hook:
+
+```bash
+echo "server_ip: 9.11.0.250" > test_sensitive.yaml
+git add test_sensitive.yaml
+git commit -m "test: should fail"
+# Hook should block commit with sensitive data
+git reset HEAD test_sensitive.yaml
+rm test_sensitive.yaml
+```
+
+#### Bypassing Hooks
+
+To bypass hooks temporarily (not recommended):
+
+```bash
+git commit --no-verify
+git push --no-verify
+```
+
+#### Documentation
+
+For detailed documentation, see: `scripts/githooks/README.md`
 - [ ] Documentation uses placeholders instead of real credentials
 
 ## Role Metadata

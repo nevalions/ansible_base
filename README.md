@@ -284,7 +284,7 @@ ansible-playbook -i hosts_bay.ini workstation.yaml
 ❌ **API keys/tokens** (e.g., `sk-1234567890abcdef`, `ghp_xxxxxxxxx`)
 ❌ **SSH private keys** (e.g., `-----BEGIN RSA PRIVATE KEY-----`)
 ❌ **Certificates** (e.g., `-----BEGIN CERTIFICATE-----`)
-❌ **Network CIDRs** (e.g., `192.168.1.0/24`, `10.0.0.0/8`)
+❌ **Network CIDRs** (e.g., `[network-cidr]`)
 ❌ **Real domain names** (e.g., `mycompany.com`, `internal.domain.org`)
 
 **✅ MANDATORY: Use placeholders ONLY:**

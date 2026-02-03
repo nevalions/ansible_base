@@ -105,8 +105,8 @@ print_result $? "[keepalived_hosts] group exists"
 grep -q "\[keepalived_vip_servers\]" hosts_bay.ini
 print_result $? "[keepalived_vip_servers] group exists"
 
-grep -q "haproxy_spb" hosts_bay.ini | grep -q "keepalived_hosts"
-print_result $? "haproxy_spb in keepalived_hosts group"
+grep -q "\[haproxy-hostname\]" hosts_bay.ini | grep -q "keepalived_hosts"
+print_result $? "[haproxy-hostname] in keepalived_hosts group"
 
 echo ""
 echo "6. Code Quality Checks"

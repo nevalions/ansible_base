@@ -1,0 +1,42 @@
+#!/bin/bash
+# Git post-checkout hook to automatically update hooks after switching branches
+# Ensures hooks are kept in sync when switching between branches
+
+set -e
+
+# ANSI color codes
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Only run when switching branches, not when checking out files
+# $1 = previous HEAD ref
+# $2 = new HEAD ref
+# $3 = flag (1 = branch checkout, 0 = file checkout)
+
+if [ "$3" = "0" ]; then
+    exit 0
+fi
+
+echo -e "${BLUE}=== Auto-updating Git hooks (branch switch) ===${NC}\n"
+
+# Get repository root directory
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SETUP_SCRIPT="$REPO_ROOT/scripts/setup_hooks.sh"
+
+# Check if setup script exists
+if [ ! -f "$SETUP_SCRIPT" ]; then
+    echo -e "${YELLOW}⚠ Setup script not found, skipping hook update${NC}"
+    exit 0
+fi
+
+# Run setup script silently
+if bash "$SETUP_SCRIPT" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ Git hooks updated successfully${NC}\n"
+else
+    echo -e "${RED}✗ Failed to update hooks (non-fatal)${NC}\n"
+fi
+
+exit 0

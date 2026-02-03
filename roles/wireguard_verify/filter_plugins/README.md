@@ -240,8 +240,8 @@ Output: "private key: [REDACTED]\npublic key: kdaFt..."
 **Example Output:**
 ```yaml
 Input:
-  endpoint: [internal-ip]:51840
-  allowed ips: 9.11.0.0/24
+  endpoint: [internal-ip]:[vpn-port]
+  allowed ips: [vpn-network-cidr]
 
 Output:
   endpoint: [IP]:[PORT]

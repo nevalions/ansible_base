@@ -28,8 +28,8 @@
       ansible.builtin.assert:
         that:
           - kuber_join_api_port is defined
-          - kuber_join_api_port == "6443"
+          - kuber_join_api_port == "[k8s-api-port]"
         success_msg: "kuber_join_api_port variable defined correctly"
         fail_msg: "kuber_join_api_port variable is missing or incorrect"
       vars:
-        kuber_join_api_port: "6443"
+        kuber_join_api_port: "[k8s-api-port]"

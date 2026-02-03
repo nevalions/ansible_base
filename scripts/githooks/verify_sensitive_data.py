@@ -80,8 +80,8 @@ SENSITIVE_PATTERNS = {
     'sensitive_key': [
         r'-----BEGIN\s+(RSA|EC|OPENSSH|PRIVATE)\s+KEY-----',
         r'-----BEGIN\s+CERTIFICATE-----',
-        r'vault_become_pass:',
-        r'vault_.*_pass:',
+        r'vault_become_pass:\s*(?!\[).*(?<!\])',
+        r'vault_.*_pass:\s*(?!\[).*(?<!\])',
         r'api[_-]?key:\s*["\']?[a-zA-Z0-9]{20,}',
         r'password:\s*["\']?[a-zA-Z0-9]{8,}',
     ],
@@ -102,6 +102,8 @@ ACCEPTABLE_PATTERNS = [
     r'\[cluster-hostname\]',
     r'\[server-hostname\]',
     r'\[your-username\]',
+    r'\[your-password-here\]',
+    r'\[your-api-key-here\]',
     r'\[network-cidr\]',
     r'\[vpn-network-cidr\]',
     r'\[pod-network-cidr\]',
@@ -121,6 +123,10 @@ ACCEPTABLE_PATTERNS = [
     r'^ansible_port:',
     # Google DNS in examples (very restrictive)
     r'dns_servers:\s*\["?8\.8\.8\.8"?,\s*"?1\.1\.1\.1"?\]',
+    # Documentation examples showing what NOT to do
+    r'^\s*❌\s+.*\(e\.g\.',
+    r'^\s*\*\*❌ WRONG',
+    r'^\s*# ❌ DO NOT',
 ]
 
 def get_staged_files():
@@ -195,6 +201,11 @@ def check_line_for_violations(line, line_num, filepath):
                 # Skip sensitive_key pattern definitions
                 if pattern_type == 'sensitive_key':
                     if 'vault_' in line and 'pass:' in line and ("r'" in line_content or 'r"' in line_content):
+                        continue
+                    # Skip if key is followed by placeholder pattern
+                    if re.search(r'vault_.*_pass:\s*\[', line):
+                        continue
+                    if re.search(r'password:\s*\[', line):
                         continue
                 
                 violations.append({
