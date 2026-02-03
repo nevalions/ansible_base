@@ -97,12 +97,14 @@ ansible/
 ├── kuber.yaml                  # Kubernetes package installation
 ├── kuber_plane_init.yaml        # Control plane initialization
 ├── kuber_worker_join.yaml       # Worker node joining
-├── kuber_verify.yaml            # Cluster health verification
-├── kuber_plane_reset.yaml       # Control plane cleanup
-├── kuber_worker_reset.yaml      # Worker node cleanup
-├── wireguard_manage.yaml        # WireGuard VPN management
-├── wireguard_rotate_keys.yaml   # WireGuard key rotation
-├── roles/
+ ├── kuber_verify.yaml            # Cluster health verification
+ ├── kuber_plane_reset.yaml       # Control plane cleanup
+ ├── kuber_worker_reset.yaml      # Worker node cleanup
+ ├── wireguard_manage.yaml        # WireGuard VPN management
+ ├── wireguard_rotate_keys.yaml   # WireGuard key rotation
+ ├── haproxy_k8s.yaml           # HAProxy load balancer for Kubernetes API
+ ├── keepalived_manage.yaml      # Virtual IP management for high availability
+ ├── roles/
 │   ├── common/                 # System package installation
 │   │   └── meta/              # Role metadata
 │   ├── docker/                 # Docker installation
@@ -143,10 +145,23 @@ ansible/
 │   │   ├── wireguard/              # WireGuard VPN configuration
 │   │   │   ├── tasks/             # WireGuard setup, key management, UFW
 │   │   │   ├── handlers/          # Service restart handlers
-│   │   │   ├── defaults/          # Network configuration variables
-│   │   │   └── templates/         # WireGuard config templates
-│   └── zsh/                    # Zsh shell setup
-└── tests/
+ │   │   │   ├── defaults/          # Network configuration variables
+ │   │   │   └── templates/         # WireGuard config templates
+ │   ├── haproxy_k8s/            # HAProxy load balancer for Kubernetes API
+ │   │   ├── meta/              # Role metadata and dependencies
+ │   │   ├── tasks/             # HAProxy install, configure, verify
+ │   │   ├── handlers/          # Service restart handlers
+ │   │   ├── defaults/          # Port, backend, network configuration
+ │   │   ├── templates/         # HAProxy config template
+ │   │   └── README.md           # Detailed role documentation
+ │   ├── keepalived/             # Virtual IP management for HA
+ │   │   ├── meta/              # Role metadata
+ │   │   ├── tasks/             # Keepalived install, configure, DNAT, verify
+ │   │   ├── handlers/          # Service restart handlers
+ │   │   ├── defaults/          # VIP, interface, router ID configuration
+ │   │   └── templates/         # Keepalived config template
+ │   └── zsh/                    # Zsh shell setup
+ └── tests/
     ├── integration/             # Integration tests
     ├── unit/                   # Unit tests
     └── README.md               # Testing documentation
@@ -704,6 +719,94 @@ Manages user dotfiles using GNU Stow.
     - dotfiles
 ```
 
+### HAProxy K8s
+Configures HAProxy load balancer for Kubernetes API server with VIP support.
+
+**Variables (from vault_secrets.yml):**
+- `vault_haproxy_k8s_frontend_port`: HAProxy frontend port (default: `[haproxy-frontend-port]`)
+- `vault_haproxy_k8s_backend_port`: HAProxy backend port (default: `[haproxy-backend-port]`)
+- `vault_haproxy_k8s_backend_ip`: Default backend IP (default: `127.0.0.1`)
+- `vault_wg_network_cidr`: WireGuard network for firewall rules (default: `[vpn-network-cidr]`)
+- `vault_k8s_control_planes`: List of control planes with WireGuard IPs and backend ports
+
+**Features:**
+- HAProxy installation and configuration
+- UFW firewall rules for WireGuard network access
+- Dynamic backend hosts from vault (multi-control plane support)
+- Health checks on backend hosts
+- Configuration validation and backup
+- Automatic restart on configuration changes
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml
+ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --tags haproxy
+ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit [control-plane-hostname]
+```
+
+**Multi-Control Plane Support:**
+```yaml
+# In vault_secrets.yml
+vault_k8s_control_planes:
+  - name: "control-plane-1"
+    wireguard_ip: "[control-plane-wg-ip]"
+    backend_port: 7443
+  - name: "control-plane-2"
+    wireguard_ip: "[control-plane-wg-ip-2]"
+    backend_port: 7443
+```
+
+**Security:**
+- All IPs, ports, and hostnames encrypted in `vault_secrets.yml`
+- No hardcoded values in playbooks
+- WireGuard network-only access to HAProxy frontend port
+- See `roles/haproxy_k8s/README.md` for detailed documentation
+
+### Keepalived
+Manages Virtual IP (VIP) for Kubernetes API high availability.
+
+**Variables (from vault_secrets.yml):**
+- `keepalived_vip`: Virtual IP address
+- `keepalived_vip_cidr`: VIP CIDR (default: 32)
+- `keepalived_vip_interface`: Network interface (default: wg99)
+- `keepalived_vip_port`: VIP port for Kubernetes API (default: 6443)
+- `keepalived_password`: VRRP authentication password
+- `keepalived_router_id`: VRRP router ID
+- `keepalived_control_planes`: List of control planes for DNAT rules
+
+**Features:**
+- Keepalived installation and configuration
+- VIP assignment and automatic failover
+- iptables DNAT: VIP:6443 → active plane:7443
+- iptables MASQUERADE for DNAT traffic
+- UFW firewall rules for VIP and WireGuard
+- Health checks on HAProxy and Kubernetes API
+- High availability across multiple control planes
+
+**Usage:**
+```bash
+# Deploy on HAProxy host
+ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+
+# With tags
+ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags keepalived
+ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags verify
+```
+
+**Architecture:**
+- VIP assigned to WireGuard interface
+- Keepalived manages VIP failover between control planes
+- DNAT maps VIP port to HAProxy backend port
+- Workers connect to VIP for consistent API endpoint
+- Automatic failover when active plane becomes unavailable
+
+**Security:**
+- All IPs, ports, and passwords encrypted in `vault_secrets.yml`
+- VRRP authentication with encrypted password
+- WireGuard network isolation
+- No hardcoded values in playbooks
+- See `VIP_IMPLEMENTATION_SUMMARY.md` for complete architecture guide
+
 ### Setup
 Orchestrates multiple roles based on configuration flags.
 
@@ -777,8 +880,10 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [host-or-group-name]
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
 | `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | masters |
-| `wireguard_manage.yaml` | Manage WireGuard VPN network | wireguard_servers |
-| `wireguard_rotate_keys.yaml` | Rotate WireGuard keys | wireguard_servers |
+ | `wireguard_manage.yaml` | Manage WireGuard VPN network | wireguard_servers |
+ | `wireguard_rotate_keys.yaml` | Rotate WireGuard keys | wireguard_servers |
+ | `haproxy_k8s.yaml` | Configure HAProxy for Kubernetes API load balancing | planes_all |
+ | `keepalived_manage.yaml` | Deploy Keepalived for Kubernetes API VIP high availability | [haproxy-hostname] |
 
 ### Subdirectory Playbooks
 
