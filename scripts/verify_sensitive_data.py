@@ -120,8 +120,7 @@ ACCEPTABLE_PATTERNS = [
     r'\[cluster-hostname\]:(?:6443|7443)',
     r'\[control-plane-ip\]:(?:6443|7443)',
     r'\[haproxy-hostname\]:(?:6443|7443)',
-    r'\[haproxy-backend-port\]:(?:6443|7443)',
-    r'\[k8s-api-port\]',
+    r'\[control-plane-wg-ip\]:(?:6443|7443)',
     r':\s*(?:6443|7443|51840|51841|51842|51942)\b',
     # Masked documentation (WireGuard sanitization)
     r'192\.168\.\d+\.\*\*\*',
@@ -130,9 +129,6 @@ ACCEPTABLE_PATTERNS = [
     r'^ansible_user:',
     r'^ansible_host:',
     r'^ansible_port:',
-    r'^kubeadm_control_plane_endpoint:',
-    r'^kuber_join_control_plane_host:',
-    r'^kuber_join_control_plane_ip:',
     # Google DNS in examples (very restrictive)
     r'dns_servers:\s*\["?8\.8\.8\.8"?,\s*"?1\.1\.1\.1"?\]',
     # Documentation examples showing what NOT to do
