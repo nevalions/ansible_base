@@ -1,20 +1,26 @@
 ---
-- name: Check if Kubernetes is already installed
+- name: Check if Kubernetes cluster is already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: k8s_cluster_initialized
+
+- name: Check if Kubernetes binaries exist
   ansible.builtin.command: kubectl version --client
   register: kubectl_check
   changed_when: false
   failed_when: false
 
-- name: Fail if Kubernetes is already installed
+- name: Fail if Kubernetes cluster is already initialized
   ansible.builtin.fail:
-    msg: "Kubernetes is already installed. If you want to reinstall, run kuber_plane_reset.yaml or kuber_worker_reset.yaml first."
-  when: kubectl_check.rc == 0
+    msg: "Kubernetes cluster is already initialized. If you want to reinstall, run kuber_plane_reset.yaml or kuber_worker_reset.yaml first."
+  when: k8s_cluster_initialized.stat.exists
 
 - name: Display Kubernetes installation start
   ansible.builtin.debug:
     msg:
       - "=== Kubernetes Installation Start ==="
-      - "Kubernetes client: Not installed"
+      - "Kubernetes cluster: {{ 'Initialized' if k8s_cluster_initialized.stat.exists else 'Not initialized' }}"
+      - "Kubernetes binaries: {{ 'Installed' if kubectl_check.rc == 0 else 'Not installed' }}"
       - "Proceeding with installation..."
 
 - name: Display pre-flight validation start
@@ -190,11 +196,34 @@
     state: present
     update_cache: true
 
+- name: Check installed Kubernetes version
+  ansible.builtin.slurp:
+    src: /opt/kubernetes_version
+  register: installed_k8s_version
+  failed_when: false
+
+- name: Check if crictl exists
+  ansible.builtin.stat:
+    path: /usr/local/bin/crictl
+  register: crictl_exists
+
+- name: Determine if binaries need to be installed
+  ansible.builtin.set_fact:
+    k8s_binaries_need_install: "{{ installed_k8s_version.content is not defined or (installed_k8s_version.content | b64decode | trim) != 'v' + kubernetes_version + '.0' or not crictl_exists.stat.exists }}"
+
+- name: Display binary installation decision
+  ansible.builtin.debug:
+    msg:
+      - "Installed version: {{ (installed_k8s_version.content | b64decode | trim) if installed_k8s_version.content is defined else 'Not installed' }}"
+      - "Target version: v{{ kubernetes_version }}.0"
+      - "Will install binaries: {{ k8s_binaries_need_install }}"
+
 - name: Create temporary directory for downloads
   ansible.builtin.tempfile:
     state: directory
     suffix: _k8s_install
   register: k8s_temp_dir
+  when: k8s_binaries_need_install
 
 - name: Download kubelet binary
   ansible.builtin.get_url:
@@ -202,6 +231,7 @@
     dest: "{{ k8s_temp_dir.path }}/kubelet"
     mode: "0755"
     timeout: 300
+  when: k8s_binaries_need_install
 
 - name: Download kubectl binary
   ansible.builtin.get_url:
@@ -209,6 +239,7 @@
     dest: "{{ k8s_temp_dir.path }}/kubectl"
     mode: "0755"
     timeout: 300
+  when: k8s_binaries_need_install
 
 - name: Download kubeadm binary
   ansible.builtin.get_url:
@@ -216,12 +247,29 @@
     dest: "{{ k8s_temp_dir.path }}/kubeadm"
     mode: "0755"
     timeout: 300
+  when: k8s_binaries_need_install
+
+- name: Download crictl binary archive
+  ansible.builtin.get_url:
+    url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{ crictl_version }}/crictl-v{{ crictl_version }}-linux-amd64.tar.gz"
+    dest: "{{ k8s_temp_dir.path }}/crictl.tar.gz"
+    mode: "0644"
+    timeout: 300
+  when: k8s_binaries_need_install
+
+- name: Extract crictl binary
+  ansible.builtin.unarchive:
+    src: "{{ k8s_temp_dir.path }}/crictl.tar.gz"
+    dest: "{{ k8s_temp_dir.path }}"
+    remote_src: true
+  when: k8s_binaries_need_install
 
 - name: Create version file to track installed version
   ansible.builtin.copy:
     content: "v{{ kubernetes_version }}.0\n"
     dest: /opt/kubernetes_version
     mode: "0644"
+  when: k8s_binaries_need_install
 
 - name: Copy kubelet to /usr/local/bin
   ansible.builtin.copy:
@@ -229,6 +277,7 @@
     dest: /usr/local/bin/kubelet
     mode: "0755"
     remote_src: true
+  when: k8s_binaries_need_install
 
 - name: Copy kubectl to /usr/local/bin
   ansible.builtin.copy:
@@ -236,6 +285,7 @@
     dest: /usr/local/bin/kubectl
     mode: "0755"
     remote_src: true
+  when: k8s_binaries_need_install
 
 - name: Copy kubeadm to /usr/local/bin
   ansible.builtin.copy:
@@ -243,6 +293,15 @@
     dest: /usr/local/bin/kubeadm
     mode: "0755"
     remote_src: true
+  when: k8s_binaries_need_install
+
+- name: Copy crictl to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ k8s_temp_dir.path }}/crictl"
+    dest: /usr/local/bin/crictl
+    mode: "0755"
+    remote_src: true
+  when: k8s_binaries_need_install
 
 - name: Create symbolic links for backward compatibility
   ansible.builtin.file:
@@ -253,6 +312,7 @@
     - kubelet
     - kubectl
     - kubeadm
+    - crictl
 
 - name: Verify kubelet version
   ansible.builtin.command: /usr/local/bin/kubelet --version
@@ -268,6 +328,21 @@
   ansible.builtin.command: /usr/local/bin/kubeadm version
   register: kubeadm_verify
   changed_when: false
+
+- name: Verify crictl version
+  ansible.builtin.command: /usr/local/bin/crictl --version
+  register: crictl_verify
+  changed_when: false
+
+- name: Create crictl configuration file
+  ansible.builtin.copy:
+    content: |
+      runtime-endpoint: unix:///var/run/containerd/containerd.sock
+      image-endpoint: unix:///var/run/containerd/containerd.sock
+      timeout: 10
+      debug: false
+    dest: /etc/crictl.yaml
+    mode: "0644"
 
 - name: Ensure containerd is installed via apt (not frozen)
   ansible.builtin.apt:
@@ -298,6 +373,7 @@
   ansible.builtin.file:
     path: "{{ k8s_temp_dir.path }}"
     state: absent
+  when: k8s_binaries_need_install and k8s_temp_dir.path is defined
 
 - name: Disable swap
   ansible.builtin.command: swapoff -a
@@ -358,15 +434,14 @@
 - name: Allow necessary ports and ranges
   community.general.ufw:
     rule: allow
-    port: "{{ item.port }}"
+    port: "{{ item.port | trim }}"
     proto: "{{ item.proto | default('tcp') }}"
   loop:
     - { port: "{{ ansible_port | default('22') }}" }
-    - { port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}" }
-    - { port: "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}" }
+    - { port: "{{ vault_k8s_api_port }}" }
+    - { port: "{{ vault_haproxy_k8s_frontend_port }}" }
     - { port: "80" }
     - { port: "443" }
-    - { port: "8443" }
     - { port: "32338" }
     - { port: "31575" }
     - { port: "30000:32767" }
@@ -379,15 +454,16 @@
     - { port: "5473" }
     - { port: "9443" }
     - { port: "3000,3100,9080,9090,9093,9095" }
-    - { port: "5432" }
+    - { port: "{{ vault_ssh_one | default('') }}" }
+    - { port: "{{ vault_ssh_two | default('') }}" }
     - { port: "4789" }
     - { port: "9099" }
-    - { port: "[custom-port]" }
     - { port: "8472" }
     - { port: "6081" }
     - { port: "9101" }
     - { port: "8100" }
     - { port: "9100" }
+  when: item.port | trim | length > 0
   ignore_errors: true
 
 - name: Enable UFW

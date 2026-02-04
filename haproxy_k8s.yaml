@@ -1,6 +1,6 @@
 ---
 - name: Configure HAProxy for Kubernetes API
-  hosts: planes_all
+  hosts: haproxy_spb
   become: true
   gather_facts: true
   vars_files:

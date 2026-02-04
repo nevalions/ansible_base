@@ -5,11 +5,18 @@ keepalived_vip_interface: "{{ vault_keepalived_vip_interface | default('wg99') }
 keepalived_password: "{{ vault_keepalived_password | default('changeme') }}"
 keepalived_router_id: "{{ vault_keepalived_router_id | default('51') }}"
 
+keepalived_garp_interval: 1
+keepalived_gna_interval: 1
+keepalived_unicast_src_ip: ""
+keepalived_wait_for_port: false
+keepalived_priority: 100
+keepalived_script_user: "[admin-username]"
+
 keepalived_check_interval: 2
 keepalived_check_rise: 2
 keepalived_check_fall: 3
 
 keepalived_control_planes: "{{ vault_k8s_control_planes }}"
 
-keepalived_vip_port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
-keepalived_plane_backend_port: "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}"
+keepalived_vip_port: "{{ vault_k8s_api_port }}"
+keepalived_plane_backend_port: "{{ vault_haproxy_k8s_frontend_port }}"

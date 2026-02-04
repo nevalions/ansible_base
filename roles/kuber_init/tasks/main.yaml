@@ -17,7 +17,7 @@
 
 - name: Configure containerd cgroup driver
   ansible.builtin.template:
-    src: /home/linroot/ansible/roles/kuber/templates/containerd-config.toml.j2
+    src: "{{ playbook_dir }}/roles/kuber/templates/containerd-config.toml.j2"
     dest: /etc/containerd/config.toml
     mode: "0644"
 
@@ -47,6 +47,27 @@
     dest: /etc/systemd/system/kubelet.service
     mode: "0644"
 
+- name: Create kubelet drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    mode: "0755"
+
+- name: Create kubeadm kubelet drop-in configuration
+  ansible.builtin.copy:
+    content: |
+      [Service]
+      Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+      Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+      # This is a file that "kubeadm init" and "kubeadm join" generate at runtime
+      EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+      # This is a file that the user can use for overrides of the kubelet args
+      EnvironmentFile=-/etc/default/kubelet
+      ExecStart=
+      ExecStart=/usr/local/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+    dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    mode: "0644"
+
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
@@ -63,12 +84,25 @@
 
 - name: Copy kubeadm config
   ansible.builtin.template:
-    src: /home/linroot/ansible/roles/kuber_init/templates/kubeadm-config.yaml.j2
+    src: kubeadm-config.yaml.j2
     dest: /tmp/kubeadm-config.yaml
     mode: "0644"
 
+- name: Check if Kubernetes API port is in use
+  ansible.builtin.command: ss -ltnp
+  register: k8s_api_port_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Kubernetes API port is already in use
+  ansible.builtin.fail:
+    msg:
+      - "Kubernetes API port {{ vault_k8s_api_port }} is already in use"
+      - "Stop the service using the port or run kuber_plane_reset.yaml before init"
+  when: k8s_api_port_check.stdout is search(':' ~ vault_k8s_api_port)
+
 - name: Initialize Kubernetes control plane
-  ansible.builtin.command: kubeadm init --pod-network-cidr={{ kubeadm_pod_subnet }} --service-cidr={{ kubeadm_service_subnet }} --apiserver-advertise-address={{ kubeadm_api_server_advertise_address }}
+  ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
   register: kubeadm_init
   changed_when: true
 
@@ -77,8 +111,8 @@
     path: "{{ kubeconfig_path | dirname }}"
     state: directory
     mode: "0755"
-    owner: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
-    group: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+    owner: "{{ kubeconfig_user }}"
+    group: "{{ kubeconfig_user }}"
 
 - name: Copy admin.conf to user's kubeconfig
   ansible.builtin.copy:
@@ -86,11 +120,13 @@
     dest: "{{ kubeconfig_path }}"
     remote_src: true
     mode: "0644"
-    owner: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
-    group: "{{ kubeconfig_user_home | dirname | split('/') | last }}"
+    owner: "{{ kubeconfig_user }}"
+    group: "{{ kubeconfig_user }}"
 
 - name: Install Calico Tigera Operator
   ansible.builtin.command: kubectl apply -f {{ calico_tigera_operator_url }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_operator
   changed_when: "'created' in calico_operator.stdout or 'configured' in calico_operator.stdout"
   until: calico_operator.rc == 0
@@ -99,42 +135,84 @@
 
 - name: Wait for Tigera Operator to be ready
   ansible.builtin.command: kubectl wait --for=condition=ready pod -l name=tigera-operator -n tigera-operator --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: operator_wait
   changed_when: false
   until: operator_wait.rc == 0
   retries: 10
   delay: 10
 
-- name: Check if Calico custom resources file exists
-  ansible.builtin.stat:
-    path: "{{ calico_custom_resources_src }}"
-  delegate_to: localhost
-  become: false
-  register: calico_custom
-
-- name: Copy Calico custom resources
-  ansible.builtin.copy:
-    src: "{{ calico_custom_resources_src }}"
+- name: Generate Calico custom resources from template
+  ansible.builtin.template:
+    src: calico-custom-resources.yaml.j2
     dest: /tmp/calico-custom-resources.yaml
     mode: "0644"
-  when: calico_custom.stat.exists
 
 - name: Apply Calico custom resources
   ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resources.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_custom_apply
   changed_when: "'created' in calico_custom_apply.stdout or 'configured' in calico_custom_apply.stdout"
-  when: calico_custom.stat.exists
+
+- name: Detect Calico node pods (k8s-app label)
+  ansible.builtin.command: kubectl get pods -A -l k8s-app=calico-node -o name
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_node_k8s_label
+  changed_when: false
+  failed_when: false
+  until: calico_node_k8s_label.stdout | length > 0
+  retries: 6
+  delay: 10
+
+- name: Detect Calico node pods (app label)
+  ansible.builtin.command: kubectl get pods -A -l app=calico-node -o name
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_node_app_label
+  changed_when: false
+  failed_when: false
+  until: calico_node_app_label.stdout | length > 0
+  retries: 6
+  delay: 10
+  when: calico_node_k8s_label.stdout | length == 0
+
+- name: Set Calico node label selector
+  ansible.builtin.set_fact:
+    calico_node_label_selector: >-
+      {{ 'k8s-app=calico-node'
+      if (calico_node_k8s_label.stdout | length > 0)
+      else 'app=calico-node' }}
+  when:
+    - calico_node_k8s_label.stdout | length > 0 or
+      (calico_node_app_label.stdout | default('') | length > 0)
+
+- name: Fail if Calico node pods not found
+  ansible.builtin.fail:
+    msg: >-
+      Calico node pods not found with labels k8s-app=calico-node or app=calico-node.
+  when:
+    - calico_node_k8s_label.stdout | length == 0
+    - calico_node_app_label.stdout | default('') | length == 0
 
 - name: Wait for Calico to be ready
-  ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=600s
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=ready pod -A -l {{ calico_node_label_selector }} --timeout=600s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_wait
   changed_when: false
   until: calico_wait.rc == 0
   retries: 20
   delay: 10
+  when: calico_node_label_selector is defined
 
 - name: Get cluster node status
   ansible.builtin.command: kubectl get nodes
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_status
   changed_when: false
   ignore_errors: true
@@ -145,6 +223,8 @@
 
 - name: Verify control plane node is Ready
   ansible.builtin.command: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: control_plane_ready
   changed_when: false
   ignore_errors: true
@@ -158,9 +238,12 @@
   when: control_plane_ready.stdout is defined
 
 - name: Get Calico node pods
-  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node
+  ansible.builtin.command: kubectl get pods -A -l {{ calico_node_label_selector }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_pods
   changed_when: false
+  when: calico_node_label_selector is defined
 
 - name: Display Calico pods
   ansible.builtin.debug:
@@ -168,6 +251,8 @@
 
 - name: Get Tigera Operator pods
   ansible.builtin.command: kubectl get pods -n tigera-operator
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_pods
   changed_when: false
 
@@ -177,6 +262,8 @@
 
 - name: Verify Tigera Operator is Running
   ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_phase
   changed_when: false
   ignore_errors: true
@@ -191,6 +278,8 @@
 
 - name: Get Calico IP pools
   ansible.builtin.command: kubectl get ippool -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: ippool_status
   changed_when: false
   ignore_errors: true
@@ -209,4 +298,3 @@
       - "Tigera Operator: Running"
       - "Next step: Run kuber_worker_join.yaml to join workers"
       - "Verification: Run kuber_verify.yaml for full cluster health check"
-

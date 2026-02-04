@@ -1,6 +1,8 @@
 ---
 - name: Create test namespace
   ansible.builtin.command: kubectl create namespace {{ verify_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: create_namespace
   changed_when: "'created' in create_namespace.stdout"
   ignore_errors: true
@@ -46,11 +48,15 @@
 
 - name: Apply test pods
   ansible.builtin.command: kubectl apply -f /tmp/test-pod.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: apply_test_pods
   changed_when: true
 
 - name: Wait for test pods to be Ready
   ansible.builtin.command: kubectl wait --for=condition=ready pod -l app=nginx -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: wait_test_pods
   changed_when: false
   until: wait_test_pods.rc == 0
@@ -60,6 +66,8 @@
 
 - name: Display test pods status
   ansible.builtin.command: kubectl get pods -n {{ verify_test_namespace }} -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: test_pods_status
   changed_when: false
 
@@ -69,6 +77,8 @@
 
 - name: Get pod IP addresses
   ansible.builtin.command: kubectl get pods -n {{ verify_test_namespace }} -o jsonpath='{.items[*].status.podIP}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: pod_ips
   changed_when: false
 
@@ -78,6 +88,8 @@
 
 - name: Test pod-to-pod connectivity (same namespace)
   ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- http://{{ pod_ips.stdout.split(' ')[1] }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: pod_connectivity
   changed_when: false
   ignore_errors: true
@@ -90,6 +102,8 @@
 
 - name: Test DNS resolution
   ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} dns-test-pod -- nslookup [k8s-service]
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: dns_resolution
   changed_when: false
   ignore_errors: true
@@ -99,7 +113,9 @@
     msg: "{{ 'DNS resolution: SUCCESS' if dns_resolution.rc == 0 else 'DNS resolution: FAILED' }}"
 
 - name: Test external connectivity
-  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://[your-username].google.com --timeout=5 --spider
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://[external-hostname] --timeout=5 --spider
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: external_connectivity
   changed_when: false
   ignore_errors: true
@@ -110,18 +126,24 @@
 
 - name: Get pod logs
   ansible.builtin.command: kubectl logs -n {{ verify_test_namespace }} test-pod-1
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: pod_logs
   changed_when: false
   ignore_errors: true
 
 - name: Describe pods for troubleshooting
   ansible.builtin.command: kubectl describe pod -n {{ verify_test_namespace }} test-pod-1
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: pod_describe
   changed_when: false
   ignore_errors: true
 
 - name: Clean up test namespace
   ansible.builtin.command: kubectl delete namespace {{ verify_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: delete_namespace
   changed_when: "'deleted' in delete_namespace.stdout"
   ignore_errors: true

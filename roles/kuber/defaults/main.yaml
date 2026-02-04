@@ -2,6 +2,14 @@
 install_kubernetes: true
 kubernetes_version: "{{ vault_kubernetes_version | default('1.35') }}"
 
+# Containerd configuration
+# Sandbox image tag should match Kubernetes version requirements
+# K8s 1.35 requires pause:3.10.1, K8s 1.30-1.34 uses pause:3.9
+containerd_sandbox_image_tag: "{{ vault_containerd_sandbox_image_tag | default('3.10.1') }}"
+
+# crictl version (CRI debugging tool)
+crictl_version: "{{ vault_crictl_version | default('1.32.0') }}"
+
 # Pre-flight Validation Settings
 k8s_preflight_skip_docker_check: "{{ vault_k8s_preflight_skip_docker_check | default(false) }}"
 k8s_preflight_skip_swap_check: "{{ vault_k8s_preflight_skip_swap_check | default(false) }}"
@@ -13,8 +21,8 @@ k8s_preflight_fail_on_warnings: "{{ vault_k8s_preflight_fail_on_warnings | defau
 
 # Ports to check for conflicts
 k8s_preflight_check_ports:
-  - "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
-  - "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}"
+  - "{{ vault_k8s_api_port }}"
+  - "{{ vault_haproxy_k8s_frontend_port }}"
   - "2379"
   - "2380"
   - "10250"
@@ -29,7 +37,6 @@ k8s_preflight_conflicting_runtimes:
   - docker
   - dockerd
   - cri-o
-  - crictl
 
 # CNI plugins/directories to check
 k8s_preflight_cni_paths:

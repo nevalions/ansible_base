@@ -3,6 +3,7 @@
   ansible.builtin.systemd:
     name: keepalived
     state: restarted
+  when: not ansible_check_mode
 
 - name: Reload iptables
   ansible.builtin.command: iptables-restore < /etc/iptables/rules.v4

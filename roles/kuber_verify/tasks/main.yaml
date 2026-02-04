@@ -1,4 +1,8 @@
 ---
+- name: Initialize verification status
+  ansible.builtin.set_fact:
+    calico_ready: false
+
 - name: Import control plane verification
   ansible.builtin.include_tasks: verify_control_plane.yaml
 
@@ -13,7 +17,7 @@
     msg:
       - "=== Kubernetes Cluster Verification Report ==="
       - "Control Plane: Ready"
-      - "Calico CNI: Operational"
+      - "Calico CNI: {{ 'Operational' if calico_ready else 'Issues detected' }}"
       - "Worker Nodes: {{ worker_node_count | default(0) }} joined"
       - "Networking: {{ 'Functional' if pod_connectivity.rc == 0 else 'Issues detected' }}"
       - "DNS: {{ 'Functional' if dns_resolution.rc == 0 else 'Issues detected' }}"

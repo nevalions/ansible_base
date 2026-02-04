@@ -1,6 +1,8 @@
 ---
 - name: Get all worker nodes
   ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: worker_nodes
   changed_when: false
 
@@ -22,6 +24,8 @@
 
 - name: Check if all worker nodes are Ready
   ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: workers_ready
   changed_when: false
   ignore_errors: true
@@ -40,7 +44,9 @@
   when: workers_ready.stdout is defined and workers_ready.stdout | length > 0
 
 - name: Get Calico pods on all nodes
-  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  ansible.builtin.command: kubectl get pods -n calico-system -l k8s-app=calico-node -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_pods_wide
   changed_when: false
 
@@ -62,6 +68,8 @@
 
 - name: Get node details for each worker
   ansible.builtin.command: kubectl describe node {{ item }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_details
   changed_when: false
   loop: "{{ worker_nodes.stdout_lines[1:] }}"

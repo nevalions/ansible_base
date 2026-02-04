@@ -1,0 +1,64 @@
+---
+- name: Verify Keepalived VIP connectivity
+  hosts: keepalived_cluster
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../vault_secrets.yml
+  vars:
+    keepalived_vip: "{{ vault_keepalived_vip }}"
+    keepalived_vip_port: "{{ vault_k8s_api_port }}"
+    keepalived_vip_interface: "{{ vault_keepalived_vip_interface | default('wg99') }}"
+  tags:
+    - keepalived
+    - verify
+    - loadbalancer
+  tasks:
+    - name: Check if VIP is assigned to interface
+      ansible.builtin.command: ip addr show {{ keepalived_vip_interface }}
+      register: vip_check
+      changed_when: false
+      failed_when: false
+
+    - name: Record VIP assignment status
+      ansible.builtin.set_fact:
+        vip_active: "{{ vip_check.stdout is search(keepalived_vip) }}"
+
+    - name: Display VIP assignment status
+      ansible.builtin.debug:
+        msg: "VIP {{ keepalived_vip }} on {{ keepalived_vip_interface }}: {{ 'ACTIVE' if vip_active else 'INACTIVE' }}"
+
+    - name: Assert VIP is active on at least one plane
+      ansible.builtin.assert:
+        that:
+          - vip_active_count | int > 0
+        success_msg: "VIP {{ keepalived_vip }} is active on at least one plane"
+        fail_msg: "VIP {{ keepalived_vip }} is not active on any plane"
+      run_once: true
+      delegate_to: localhost
+      vars:
+        vip_active_count: "{{ ansible_play_hosts | map('extract', hostvars, 'vip_active') | select('equalto', true) | list | length }}"
+
+    - name: Verify VIP port is reachable
+      ansible.builtin.wait_for:
+        host: "{{ keepalived_vip }}"
+        port: "{{ keepalived_vip_port }}"
+        timeout: 5
+      when:
+        - vip_active
+        - keepalived_wait_for_port | default(false)
+
+- name: Verify HAProxy for Kubernetes API
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../vault_secrets.yml
+    - ../roles/haproxy_k8s/defaults/main.yaml
+    - ../roles/haproxy_verify/defaults/main.yaml
+  tags:
+    - haproxy
+    - verify
+    - loadbalancer
+  roles:
+    - haproxy_verify

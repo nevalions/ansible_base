@@ -1,6 +1,6 @@
 ---
 - name: Configure Keepalived for Kubernetes API VIP
-  hosts: [haproxy-hostname]
+  hosts: planes_all
   become: true
   gather_facts: true
   vars_files:
@@ -17,15 +17,22 @@
     - keepalived
 
 - name: Verify Keepalived VIP is active
-  hosts: [haproxy-hostname]
+  hosts: planes_all
   become: true
   gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+    - vars/packages.yaml
+  vars:
+    keepalived_vip: "{{ vault_keepalived_vip }}"
+    keepalived_vip_port: "{{ vault_k8s_api_port }}"
+    keepalived_vip_interface: "{{ vault_keepalived_vip_interface | default('wg99') }}"
   tags:
     - keepalived
     - verify
   tasks:
     - name: Check if VIP is assigned
-      ansible.builtin.command: ip addr show {{ keepalived_vip_interface }} | grep {{ keepalived_vip }}
+      ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep {{ keepalived_vip }}
       register: vip_check
       changed_when: false
       failed_when: false

@@ -53,15 +53,29 @@
   ansible.builtin.systemd:
     name: kubelet
     state: stopped
+    enabled: false
   failed_when: false
-  notify: restart kubelet
 
-- name: Stop containerd service
+- name: Stop containerd service temporarily for cleanup
   ansible.builtin.systemd:
     name: containerd
     state: stopped
   failed_when: false
-  notify: restart containerd
+
+- name: Remove Kubernetes static pod manifests
+  ansible.builtin.file:
+    path: /etc/kubernetes/manifests
+    state: absent
+  failed_when: false
+
+- name: Stop remaining control plane processes
+  ansible.builtin.shell: |
+    pkill -f kube-apiserver || true
+    pkill -f kube-controller-manager || true
+    pkill -f kube-scheduler || true
+    pkill -f etcd || true
+  failed_when: false
+  changed_when: false
 
 - name: Check if kubeadm reset is available
   ansible.builtin.command: which kubeadm
@@ -241,11 +255,11 @@
   loop:
     - /var/lib/calico
     - /run/calico
+  failed_when: false
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
-  notify: reload systemd
 
 - name: Verify CNI directories are removed (before containerd starts)
   ansible.builtin.stat:
@@ -270,7 +284,6 @@
     name: containerd
     state: started
     enabled: true
-  notify: restart containerd
 
 - name: Verify Kubernetes directories are removed
   ansible.builtin.stat:
@@ -289,7 +302,12 @@
   failed_when: false
   loop:
     - /var/lib/calico
-    - /run/calico
+
+- name: Check if /run/calico still exists
+  ansible.builtin.stat:
+    path: /run/calico
+  register: calico_run_dir
+  failed_when: false
 
 - name: Verify CNI directories are removed
   ansible.builtin.stat:
@@ -317,14 +335,19 @@
     fail_msg: "{{ item.item }} still exists after reset"
   loop: "{{ calico_dirs_removed.results }}"
 
+- name: Warn if /run/calico persists
+  ansible.builtin.debug:
+    msg: "/run/calico still exists (tmpfs/active runtime files). This is safe to ignore; reboot clears it."
+  when: calico_run_dir.stat.exists | default(false)
+
 - name: Display CNI recreation note
   ansible.builtin.debug:
     msg: "NOTE: Containerd may recreate empty /etc/cni/net.d directory on startup - this is expected behavior"
 
-- name: Verify kubelet is running
+- name: Verify kubelet is stopped
   ansible.builtin.systemd:
     name: kubelet
-  register: kubelet_running
+  register: kubelet_status
   failed_when: false
 
 - name: Verify containerd is running
@@ -341,8 +364,8 @@
       - "Calico directories: Removed"
       - "CNI directories: Verified removed (before containerd start)"
       - "CNI network namespaces: {{ 'Cleaned' if orphaned_netns_count.stdout | int == 0 else 'Warning - see above' }}"
-      - "Kubelet status: {{ 'Running' if kubelet_running.status.ActiveState == 'active' else 'Not running' }}"
+      - "Kubelet status: {{ 'Stopped (expected)' if kubelet_status.status.ActiveState != 'active' else 'WARNING: Still running!' }}"
       - "Containerd status: {{ 'Running' if containerd_running.status.ActiveState == 'active' else 'Not running' }}"
       - "Container images: {{ 'Removed' if remove_container_images | default(false) else 'Preserved' }}"
       - "Note: Containerd recreates /etc/cni/net.d on startup (expected)"
-      - "Next step: Run kuber_plane_init.yaml or kuber_worker_join.yaml"
+      - "Next step: Run kuber.yaml then kuber_plane_init.yaml or kuber_worker_join.yaml"

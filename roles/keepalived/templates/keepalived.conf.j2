@@ -6,8 +6,10 @@ global_defs {
     vrrp_garp_master_delay 1
     vrrp_garp_master_repeat 5
     vrrp_garp_master_refresh 600
-    vrrp_garp_interval 0
-    vrrp_gna_interval 0
+    vrrp_garp_interval {{ keepalived_garp_interval | default(1) }}
+    vrrp_gna_interval {{ keepalived_gna_interval | default(1) }}
+    enable_script_security
+    script_user {{ keepalived_script_user | default('[admin-username]') }}
 }
 
 # Health check script for HAProxy on control planes
@@ -34,11 +36,22 @@ vrrp_script k8s_api_check_{{ plane.name }} {
 vrrp_instance k8s_api {
     interface {{ keepalived_vip_interface }}
     virtual_router_id {{ keepalived_router_id }}
-    priority 100
+    priority {{ keepalived_priority | default(100) }}
     advert_int 1
+{% set use_unicast = keepalived_use_unicast | default((keepalived_vip_interface | regex_search('^wg')) is not none) %}
+{% if use_unicast %}
+    unicast_src_ip {{ keepalived_unicast_src_ip }}
+    unicast_peer {
+{% for plane in keepalived_control_planes %}
+{% if plane.name != inventory_hostname %}
+        {{ plane.wireguard_ip }}
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
     authentication {
         auth_type PASS
-        auth_pass {{ keepalived_password }}
+        auth_pass {{ keepalived_password | regex_replace('\\s+', '') | regex_replace('^(.{0,8}).*$', '\\1') }}
     }
     
     virtual_ipaddress {

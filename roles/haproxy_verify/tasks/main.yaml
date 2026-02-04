@@ -64,7 +64,7 @@
     msg:
       - "Configuration:"
       - "  Config file: {{ 'EXISTS' if haproxy_config_stat.stat.exists else 'NOT FOUND' }}"
-      - "  Config syntax: {{ 'VALID' if haproxy_config_check.rc == 0 else 'INVALID' if haproxy_config_check.rc is defined else 'UNKNOWN' }}"
+      - "  Config syntax: {{ 'VALID' if haproxy_config_check.rc | default(1) == 0 else 'INVALID' if haproxy_config_check.rc is defined else 'UNKNOWN' }}"
       - "  Frontend port {{ haproxy_expected_port }}: {{ 'CONFIGURED' if frontend_port_configured | default(false) else 'NOT FOUND' if frontend_port_configured is defined else 'UNKNOWN' }}"
       - "  Configured backends: {{ backend_count | default(0) | int }}"
 
@@ -74,8 +74,8 @@
       - "Network:"
       - "  Listening on port {{ haproxy_expected_port }}: {{ 'YES' if haproxy_listening_ok | default(false) else 'NO' }}"
       - "  UFW status: {{ 'ACTIVE' if ufw_is_active else 'INACTIVE' }}"
-      - "  Port {{ haproxy_expected_port }} from {{ vault_wg_network_cidr | default('WireGuard') }}: {{ 'ALLOWED' if haproxy_port_wg_allowed.rc == 0 else 'NOT FOUND' if haproxy_port_wg_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
-      - "  Port {{ haproxy_expected_port }} from localhost: {{ 'ALLOWED' if haproxy_port_local_allowed.rc == 0 else 'NOT FOUND' if haproxy_port_local_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
+      - "  Port {{ haproxy_expected_port }} from {{ vault_wg_network_cidr | default('WireGuard') }}: {{ 'ALLOWED' if haproxy_port_wg_allowed.rc | default(1) == 0 else 'NOT FOUND' if haproxy_port_wg_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
+      - "  Port {{ haproxy_expected_port }} from localhost: {{ 'ALLOWED' if haproxy_port_local_allowed.rc | default(1) == 0 else 'NOT FOUND' if haproxy_port_local_allowed.rc is defined else 'UNKNOWN' if ufw_is_active else 'N/A' }}"
 
 - name: Display backend connectivity status
   ansible.builtin.debug:

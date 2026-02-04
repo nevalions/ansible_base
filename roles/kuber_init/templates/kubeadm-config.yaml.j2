@@ -8,11 +8,18 @@ networking:
 ---
 apiVersion: kubeadm.k8s.io/{{ kubeadm_api_version }}
 kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "{{ kubeadm_api_server_advertise_address }}"
 nodeRegistration:
   kubeletExtraArgs:
 {% if kubeadm_kubelet_extra_args is defined %}
 {% for key, value in kubeadm_kubelet_extra_args.items() %}
   - name: {{ key }}
-    value: {{ value }}
+    value: "{{ value }}"
 {% endfor %}
 {% endif %}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+containerRuntimeEndpoint: unix:///var/run/containerd/containerd.sock

@@ -12,7 +12,7 @@
         success_msg: "kubeadm_pod_subnet variable defined correctly"
         fail_msg: "kubeadm_pod_subnet variable is missing or empty"
       vars:
-        kubeadm_pod_subnet: "[internal-ip]/16"
+        kubeadm_pod_subnet: "[pod-network-cidr]"
 
     - name: Verify kubeadm_service_subnet variable exists
       ansible.builtin.assert:
@@ -22,7 +22,7 @@
         success_msg: "kubeadm_service_subnet variable defined correctly"
         fail_msg: "kubeadm_service_subnet variable is missing or empty"
       vars:
-        kubeadm_service_subnet: "[internal-ip]/16"
+        kubeadm_service_subnet: "[service-network-cidr]"
 
     - name: Verify calico_tigera_operator_url is valid URL
       ansible.builtin.assert:
@@ -34,3 +34,35 @@
         fail_msg: "calico_tigera_operator_url is invalid or missing"
       vars:
         calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/v3.31.3/manifests/tigera-operator.yaml"
+
+    - name: Verify calico_encapsulation has valid value
+      ansible.builtin.assert:
+        that:
+          - calico_encapsulation is defined
+          - calico_encapsulation in ['VXLANCrossSubnet', 'VXLAN', 'IPIPCrossSubnet', 'IPIP', 'None']
+        success_msg: "calico_encapsulation is valid"
+        fail_msg: "calico_encapsulation has invalid value"
+      vars:
+        calico_encapsulation: "VXLANCrossSubnet"
+
+    - name: Verify calico_block_size is valid
+      ansible.builtin.assert:
+        that:
+          - calico_block_size is defined
+          - calico_block_size | int >= 20
+          - calico_block_size | int <= 32
+        success_msg: "calico_block_size is valid ({{ calico_block_size }})"
+        fail_msg: "calico_block_size must be between 20 and 32"
+      vars:
+        calico_block_size: 26
+
+    - name: Verify calico_ippool_cidr uses pod subnet
+      ansible.builtin.assert:
+        that:
+          - calico_ippool_cidr is defined
+          - calico_ippool_cidr == kubeadm_pod_subnet
+        success_msg: "calico_ippool_cidr correctly uses kubeadm_pod_subnet"
+        fail_msg: "calico_ippool_cidr should match kubeadm_pod_subnet"
+      vars:
+        kubeadm_pod_subnet: "[pod-network-cidr]"
+        calico_ippool_cidr: "[pod-network-cidr]"

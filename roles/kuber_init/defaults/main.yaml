@@ -1,19 +1,32 @@
 ---
-kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet | default('[pod-subnet]') }}"
-kubeadm_service_subnet: "{{ vault_k8s_service_subnet | default('[service-subnet]') }}"
+# Kubernetes Network Configuration (from vault)
+kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet }}"
+kubeadm_service_subnet: "{{ vault_k8s_service_subnet }}"
 
 # Use VIP as control plane endpoint for worker joins
-kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip | default('[vip-address]') }}:{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
+kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip }}:{{ vault_k8s_api_port }}"
 
 # Advertise WireGuard IP for internal communication (from vault_k8s_control_planes)
 kubeadm_api_server_advertise_address: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
 kubeadm_kubelet_extra_args:
   node-ip: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
-kubeadm_api_version: "v1beta3"
+kubeadm_api_version: "v1beta4"
 
-calico_version: "v3.31.3"
+# Calico CNI Configuration (from vault with sensible defaults)
+calico_version: "{{ vault_calico_version | default('v3.31.3') }}"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
-calico_custom_resources_src: "/path/to/calico/2-custom-resources.yaml"
 
-kubeconfig_user_home: "/root"
+# Calico IP Pool Configuration
+# Uses pod subnet from kubeadm configuration for consistency
+calico_ippool_name: "{{ vault_calico_ippool_name | default('default-ipv4-ippool') }}"
+calico_ippool_cidr: "{{ kubeadm_pod_subnet }}"
+calico_encapsulation: "{{ vault_calico_encapsulation | default('VXLANCrossSubnet') }}"
+calico_nat_outgoing: "{{ vault_calico_nat_outgoing | default(true) }}"
+calico_node_selector: "{{ vault_calico_node_selector | default('all()') }}"
+calico_block_size: "{{ vault_calico_block_size | default(26) }}"
+calico_mtu: "{{ vault_calico_mtu | default(1440) }}"
+
+# Kubeconfig Configuration
+kubeconfig_user: "{{ ansible_user_id }}"
+kubeconfig_user_home: "{{ ansible_user_dir | default(ansible_env.HOME | default('/home/' ~ kubeconfig_user)) }}"
 kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"

@@ -10,6 +10,18 @@
     state: present
     update_cache: true
 
+- name: Check if UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_bin
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  failed_when: false
+  when: ufw_bin.stat.exists
+
 - name: Configure UFW to allow WireGuard network access to HAProxy
   community.general.ufw:
     rule: allow
@@ -20,7 +32,10 @@
   loop: "{{ haproxy_k8s_allowed_networks }}"
   loop_control:
     loop_var: net
-  when: ansible_facts['os_family'] == 'Debian'
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_bin.stat.exists
+    - ufw_status.stdout is search('Status: active')
 
 - name: Check if HAProxy config exists
   ansible.builtin.stat:

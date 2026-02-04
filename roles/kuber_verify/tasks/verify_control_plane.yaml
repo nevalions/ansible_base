@@ -1,6 +1,8 @@
 ---
 - name: Verify control plane is running
   ansible.builtin.command: kubectl get nodes
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: kubectl_nodes
   changed_when: false
   ignore_errors: true
@@ -11,6 +13,8 @@
 
 - name: Check if control plane node is Ready
   ansible.builtin.command: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: control_plane_ready
   changed_when: false
   ignore_errors: true
@@ -24,7 +28,9 @@
   when: control_plane_ready.stdout is defined
 
 - name: Get all Calico node pods
-  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  ansible.builtin.command: kubectl get pods -n calico-system -l k8s-app=calico-node -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_node_pods
   changed_when: false
 
@@ -34,6 +40,8 @@
 
 - name: Get Tigera Operator pods
   ansible.builtin.command: kubectl get pods -n tigera-operator
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_operator_pods
   changed_when: false
 
@@ -43,6 +51,8 @@
 
 - name: Verify Tigera Operator is running
   ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_operator_phase
   changed_when: false
   ignore_errors: true
@@ -56,7 +66,9 @@
   when: tigera_operator_phase.stdout is defined
 
 - name: Wait for all Calico node pods to be Running
-  ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout={{ verify_timeout_seconds }}s
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n calico-system --timeout={{ verify_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_wait
   changed_when: false
   until: calico_wait.rc == 0
@@ -64,12 +76,18 @@
   delay: "{{ verify_sleep_seconds }}"
   ignore_errors: true
 
+- name: Set Calico readiness status
+  ansible.builtin.set_fact:
+    calico_ready: "{{ calico_wait.rc == 0 }}"
+
 - name: Display Calico readiness status
   ansible.builtin.debug:
     msg: "{{ 'All Calico node pods are Ready' if calico_wait.rc == 0 else 'Some Calico node pods are not Ready' }}"
 
 - name: Get cluster info
   ansible.builtin.command: kubectl cluster-info
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: cluster_info
   changed_when: false
 
@@ -79,6 +97,8 @@
 
 - name: Get Calico Installation status
   ansible.builtin.command: kubectl get installation -o yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_installation
   changed_when: false
   ignore_errors: true
@@ -90,6 +110,8 @@
 
 - name: Get Calico FelixConfiguration
   ansible.builtin.command: kubectl get felixconfiguration default -o yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_felix
   changed_when: false
   ignore_errors: true
@@ -101,6 +123,8 @@
 
 - name: Get Calico IP pools
   ansible.builtin.command: kubectl get ippool -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_ippool
   changed_when: false
   ignore_errors: true
