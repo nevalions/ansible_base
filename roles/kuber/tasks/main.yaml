@@ -17,55 +17,287 @@
       - "Kubernetes client: Not installed"
       - "Proceeding with installation..."
 
-- name: Update package lists (Ubuntu/Debian)
-  ansible.builtin.apt:
-    update_cache: true
-  when: ansible_facts['os_family'] == "Debian"
+- name: Display pre-flight validation start
+  ansible.builtin.debug:
+    msg:
+      - "=== Pre-flight Validation Start ==="
+      - "Running system checks before installation..."
 
-- name: Install required packages
+- name: Check swap status
+  ansible.builtin.command: swapon --show
+  register: preflight_swap
+  changed_when: false
+  failed_when: false
+
+- name: Warn about swap enabled
+  ansible.builtin.debug:
+    msg:
+      - "⚠️ WARNING: Swap is enabled"
+      - "Swap must be disabled for Kubernetes to work properly"
+      - "Swap will be disabled during installation"
+  when: preflight_swap.rc == 0 and not k8s_preflight_skip_swap_check
+
+- name: Check if Docker is installed
+  ansible.builtin.command: dpkg -l | grep docker-engine
+  register: preflight_docker
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Docker is installed
+  ansible.builtin.fail:
+    msg:
+      - "❌ CRITICAL: Docker is installed on this system"
+      - "Docker conflicts with containerd (Kubernetes container runtime)"
+      - "Please remove Docker before installing Kubernetes:"
+      - "  sudo apt-get remove docker docker-engine docker.io containerd runc"
+      - "  sudo apt-get purge -y docker-ce docker-ce-cli containerd.io"
+      - "To skip this check, set vault_k8s_preflight_skip_docker_check: true"
+  when: preflight_docker.rc == 0 and not k8s_preflight_skip_docker_check
+
+- name: Check if Docker daemon is running
+  ansible.builtin.systemd:
+    name: docker
+  register: preflight_docker_service
+  failed_when: false
+
+- name: Fail if Docker daemon is running
+  ansible.builtin.fail:
+    msg:
+      - "❌ CRITICAL: Docker daemon is running"
+      - "Docker conflicts with containerd (Kubernetes container runtime)"
+      - "Please stop and disable Docker:"
+      - "  sudo systemctl stop docker"
+      - "  sudo systemctl disable docker"
+      - "To skip this check, set vault_k8s_preflight_skip_docker_check: true"
+  when: preflight_docker_service.status is defined and preflight_docker_service.status.ActiveState == 'active' and not k8s_preflight_skip_docker_check
+
+- name: Check for conflicting container runtimes
+  ansible.builtin.command: "pgrep -f '{{ item }}'"
+  register: preflight_runtimes
+  changed_when: false
+  failed_when: false
+  loop: "{{ k8s_preflight_conflicting_runtimes }}"
+  when: not k8s_preflight_skip_container_runtime_check
+
+- name: Fail if conflicting container runtime is running
+  ansible.builtin.fail:
+    msg:
+      - "❌ CRITICAL: Conflicting container runtime detected: {{ item.item }}"
+      - "Running process: {{ item.stdout_lines | default([]) }}"
+      - "Kubernetes requires containerd as the container runtime"
+      - "Please stop the conflicting runtime before installation"
+      - "To skip this check, set vault_k8s_preflight_skip_container_runtime_check: true"
+  when: item.rc == 0 and not k8s_preflight_skip_container_runtime_check
+  loop: "{{ preflight_runtimes.results }}"
+
+- name: Check if ports are in use
+  ansible.builtin.command: "ss -tlnp | grep -E ':({{ k8s_preflight_check_ports | join('|') }})'"
+  register: preflight_ports
+  changed_when: false
+  failed_when: false
+  when: not k8s_preflight_skip_port_check
+
+- name: Warn about ports in use
+  ansible.builtin.debug:
+    msg:
+      - "⚠️ WARNING: The following ports are already in use:"
+      - "{{ preflight_ports.stdout_lines }}"
+      - "These ports are required by Kubernetes:"
+      - "  API Server: {{ vault_k8s_api_port | default('[k8s-api-port]') }}"
+      - "  HAProxy Frontend: {{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}"
+      - "  Etcd: 2379, 2380"
+      - "  Kubelet: 10250, 10255"
+      - "  Scheduler: 10251"
+      - "  Controller Manager: 10252"
+      - "Please stop the conflicting services or release these ports"
+      - "To skip this check, set vault_k8s_preflight_skip_port_check: true"
+  when: preflight_ports.rc == 0 and not k8s_preflight_skip_port_check
+
+- name: Fail if ports are in use
+  ansible.builtin.fail:
+    msg: "Ports in use. See warnings above."
+  when: preflight_ports.rc == 0 and k8s_preflight_fail_on_warnings and not k8s_preflight_skip_port_check
+
+- name: Check for existing CNI plugins
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: preflight_cni
+  loop: "{{ k8s_preflight_cni_paths }}"
+  when: not k8s_preflight_skip_cni_check
+
+- name: Warn about existing CNI configuration
+  ansible.builtin.debug:
+    msg:
+      - "⚠️ WARNING: Existing CNI configuration found: {{ item.item }}"
+      - "Existing CNI plugins may conflict with Calico"
+      - "These will be cleaned up during installation"
+      - "To skip this check, set vault_k8s_preflight_skip_cni_check: true"
+  when: item.stat.exists and not k8s_preflight_skip_cni_check
+  loop: "{{ preflight_cni.results }}"
+
+- name: Check for existing Kubernetes processes
+  ansible.builtin.command: "pgrep -f '{{ item }}'"
+  register: preflight_k8s_procs
+  changed_when: false
+  failed_when: false
+  loop: "{{ k8s_preflight_k8s_processes }}"
+  when: not k8s_preflight_skip_process_check
+
+- name: Warn about existing Kubernetes processes
+  ansible.builtin.debug:
+    msg:
+      - "⚠️ WARNING: Existing Kubernetes process found: {{ item.item }}"
+      - "Process IDs: {{ item.stdout_lines | default([]) }}"
+      - "This may indicate a previous installation"
+      - "Please use kuber_plane_reset.yaml or kuber_worker_reset.yaml to clean up"
+      - "To skip this check, set vault_k8s_preflight_skip_process_check: true"
+  when: item.rc == 0 and not k8s_preflight_skip_process_check
+  loop: "{{ preflight_k8s_procs.results }}"
+
+- name: Fail if Kubernetes processes are running
+  ansible.builtin.fail:
+    msg: "Kubernetes processes are running. Please run kuber_plane_reset.yaml or kuber_worker_reset.yaml first."
+  when: item.rc == 0 and k8s_preflight_fail_on_warnings and not k8s_preflight_skip_process_check
+  loop: "{{ preflight_k8s_procs.results }}"
+
+- name: Check kernel modules
+  ansible.builtin.shell: |
+    lsmod | grep -E "^(overlay|br_netfilter)"
+  register: preflight_modules
+  changed_when: false
+  failed_when: false
+
+- name: Warn if required kernel modules not loaded
+  ansible.builtin.debug:
+    msg:
+      - "⚠️ WARNING: Required kernel modules not loaded:"
+      - "{{ preflight_modules.stdout }}"
+      - "These modules will be loaded during installation"
+  when: preflight_modules.rc != 0
+
+- name: Display pre-flight validation complete
+  ansible.builtin.debug:
+    msg:
+      - "=== Pre-flight Validation Complete ==="
+      - "All checks passed (see warnings above)"
+      - "Proceeding with installation..."
+
+- name: Ensure required packages are installed
   ansible.builtin.apt:
     name:
-      - apt-transport-https
-      - ca-certificates
       - curl
+      - ca-certificates
     state: present
-
-- name: Add Kubernetes GPG key
-  ansible.builtin.get_url:
-    url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
-    dest: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    mode: "0644"
-  when: ansible_facts['os_family'] == "Debian"
-
-- name: Add Kubernetes repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
-    state: present
-    filename: kubernetes
-  when: ansible_facts['os_family'] == "Debian"
-
-- name: Update package lists (Ubuntu/Debian)
-  ansible.builtin.apt:
     update_cache: true
-  when: ansible_facts['os_family'] == "Debian"
 
-- name: Install Kubernetes components
-  ansible.builtin.apt:
-    name:
-      - kubelet
-      - kubeadm
-      - kubectl
-      - containerd
-    state: present
+- name: Create temporary directory for downloads
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: _k8s_install
+  register: k8s_temp_dir
 
-- name: Hold Kubernetes packages
-  ansible.builtin.dpkg_selections:
-    name: "{{ item }}"
-    selection: hold
+- name: Download kubelet binary
+  ansible.builtin.get_url:
+    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubelet"
+    dest: "{{ k8s_temp_dir.path }}/kubelet"
+    mode: "0755"
+    timeout: 300
+
+- name: Download kubectl binary
+  ansible.builtin.get_url:
+    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubectl"
+    dest: "{{ k8s_temp_dir.path }}/kubectl"
+    mode: "0755"
+    timeout: 300
+
+- name: Download kubeadm binary
+  ansible.builtin.get_url:
+    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubeadm"
+    dest: "{{ k8s_temp_dir.path }}/kubeadm"
+    mode: "0755"
+    timeout: 300
+
+- name: Create version file to track installed version
+  ansible.builtin.copy:
+    content: "v{{ kubernetes_version }}.0\n"
+    dest: /opt/kubernetes_version
+    mode: "0644"
+
+- name: Copy kubelet to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ k8s_temp_dir.path }}/kubelet"
+    dest: /usr/local/bin/kubelet
+    mode: "0755"
+    remote_src: true
+
+- name: Copy kubectl to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ k8s_temp_dir.path }}/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+    remote_src: true
+
+- name: Copy kubeadm to /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ k8s_temp_dir.path }}/kubeadm"
+    dest: /usr/local/bin/kubeadm
+    mode: "0755"
+    remote_src: true
+
+- name: Create symbolic links for backward compatibility
+  ansible.builtin.file:
+    src: "/usr/local/bin/{{ item }}"
+    dest: "/usr/bin/{{ item }}"
+    state: link
   loop:
     - kubelet
-    - kubeadm
     - kubectl
+    - kubeadm
+
+- name: Verify kubelet version
+  ansible.builtin.command: /usr/local/bin/kubelet --version
+  register: kubelet_verify
+  changed_when: false
+
+- name: Verify kubectl version
+  ansible.builtin.command: /usr/local/bin/kubectl version --client
+  register: kubectl_verify
+  changed_when: false
+
+- name: Verify kubeadm version
+  ansible.builtin.command: /usr/local/bin/kubeadm version
+  register: kubeadm_verify
+  changed_when: false
+
+- name: Ensure containerd is installed via apt (not frozen)
+  ansible.builtin.apt:
+    name: containerd
+    state: present
+
+- name: Remove Kubernetes apt repository if exists
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/kubernetes.list
+    state: absent
+
+- name: Remove Kubernetes apt keyring if exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    state: absent
+
+- name: Create kubernetes hold file marker
+  ansible.builtin.copy:
+    content: |
+       # Kubernetes packages installed manually from binaries
+       # Version: v{{ kubernetes_version }}.0
+       # Do NOT install from apt to prevent accidental updates
+       # Check /opt/kubernetes_version for installed version
+    dest: /etc/kubernetes_manual_install
+    mode: "0644"
+
+- name: Clean up temporary directory
+  ansible.builtin.file:
+    path: "{{ k8s_temp_dir.path }}"
+    state: absent
 
 - name: Disable swap
   ansible.builtin.command: swapoff -a
@@ -97,6 +329,12 @@
     - { name: "net.ipv4.ip_forward", value: "1" }
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
 
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
 - name: Configure containerd cgroup driver
   ansible.builtin.template:
     src: containerd-config.toml.j2
@@ -124,8 +362,8 @@
     proto: "{{ item.proto | default('tcp') }}"
   loop:
     - { port: "{{ ansible_port | default('22') }}" }
-    - { port: "[k8s-api-port]" }
-    - { port: "[haproxy-frontend-port]" }
+    - { port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}" }
+    - { port: "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}" }
     - { port: "80" }
     - { port: "443" }
     - { port: "8443" }
@@ -141,12 +379,22 @@
     - { port: "5473" }
     - { port: "9443" }
     - { port: "3000,3100,9080,9090,9093,9095" }
-    - { port: "5432,4789,9099,51840,8472,6081,9101,8100,51840,4789,9101,9100" }
+    - { port: "5432" }
+    - { port: "4789" }
+    - { port: "9099" }
+    - { port: "[custom-port]" }
+    - { port: "8472" }
+    - { port: "6081" }
+    - { port: "9101" }
+    - { port: "8100" }
+    - { port: "9100" }
+  ignore_errors: true
 
 - name: Enable UFW
   community.general.ufw:
     state: enabled
     policy: deny
+  ignore_errors: true
 
 - name: Verify kubelet is installed
   ansible.builtin.command: kubelet --version
@@ -202,7 +450,7 @@
   when: swap_status.stdout is defined
 
 - name: Verify overlay module is loaded
-  ansible.builtin.command: lsmod | grep overlay
+  ansible.builtin.shell: lsmod | grep overlay
   register: overlay_module
   changed_when: false
   failed_when: false
@@ -213,10 +461,9 @@
       - overlay_module.rc == 0
     success_msg: "Overlay kernel module is loaded"
     fail_msg: "Overlay kernel module is not loaded"
-  when: overlay_module.stdout is defined
 
 - name: Verify br_netfilter module is loaded
-  ansible.builtin.command: lsmod | grep br_netfilter
+  ansible.builtin.shell: lsmod | grep br_netfilter
   register: br_netfilter_module
   changed_when: false
   failed_when: false

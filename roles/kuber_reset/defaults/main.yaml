@@ -1,2 +1,2 @@
 ---
-remove_container_images: false
+remove_container_images: true

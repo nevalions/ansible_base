@@ -39,6 +39,20 @@ Kubernetes API server (port [haproxy-backend-port])
 **Tags:** `kubernetes`, `k8s`, `install`, `cluster`
 
 **What it does:**
+
+**Pre-flight Validation (NEW):**
+- Checks if Kubernetes is already installed (fails if detected)
+- Validates system is ready for installation
+- Checks for Docker installation (fails if Docker is installed - conflicts with containerd)
+- Checks for Docker daemon running (fails if active)
+- Checks for conflicting container runtimes (dockerd, cri-o, crictl)
+- Validates port availability (API server, etcd, kubelet, scheduler, controller manager)
+- Detects existing CNI configurations (warns if found)
+- Checks for running Kubernetes processes from previous installations
+- Validates kernel module availability (overlay, br_netfilter)
+- Warns about swap status (swap will be disabled during install)
+
+**Installation:**
 - Updates package lists
 - Adds Kubernetes GPG key and repository
 - Installs kubelet, kubeadm, kubectl, containerd
@@ -50,10 +64,38 @@ Kubernetes API server (port [haproxy-backend-port])
 - Configures UFW firewall with required ports
 - Enables UFW
 
+**Pre-flight Variables** (roles/kuber/defaults/main.yaml):
+```yaml
+k8s_preflight_skip_docker_check: false
+k8s_preflight_skip_swap_check: false
+k8s_preflight_skip_port_check: false
+k8s_preflight_skip_cni_check: false
+k8s_preflight_skip_container_runtime_check: false
+k8s_preflight_skip_process_check: false
+k8s_preflight_fail_on_warnings: false
+```
+
+Configure in `vault_secrets.yml`:
+```yaml
+vault_k8s_preflight_skip_docker_check: false
+vault_k8s_preflight_skip_swap_check: false
+vault_k8s_preflight_skip_port_check: false
+vault_k8s_preflight_skip_cni_check: false
+vault_k8s_preflight_skip_container_runtime_check: false
+vault_k8s_preflight_skip_process_check: false
+vault_k8s_preflight_fail_on_warnings: false
+```
+
 **Usage:**
 ```bash
 ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 ```
+
+**Pre-flight Validation Behavior:**
+- Critical errors (Docker installed/running, conflicting runtimes) will fail by default
+- Warnings (swap enabled, existing CNI, existing K8s processes) will be displayed but won't fail
+- Set `k8s_preflight_fail_on_warnings: true` to fail on warnings
+- Skip individual checks by setting the corresponding `vault_k8s_preflight_skip_*_check: true`
 
 ---
 

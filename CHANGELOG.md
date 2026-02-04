@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-02-03
+
+### Added
+- **kuber Role**:
+  - Comprehensive pre-flight validation before Kubernetes installation
+  - Docker detection and conflict prevention
+  - Container runtime conflict detection (dockerd, cri-o, crictl)
+  - Port availability checks for Kubernetes components
+  - Existing CNI plugin detection
+  - Running Kubernetes process detection
+  - Kernel module availability validation
+  - Swap status validation
+  - **Vault Variables**:
+  - `vault_k8s_preflight_skip_docker_check`: Skip Docker conflict check
+  - `vault_k8s_preflight_skip_swap_check`: Skip swap status check
+  - `vault_k8s_preflight_skip_port_check`: Skip port availability check
+  - `vault_k8s_preflight_skip_cni_check`: Skip CNI plugin check
+  - `vault_k8s_preflight_skip_container_runtime_check`: Skip container runtime check
+  - `vault_k8s_preflight_skip_process_check`: Skip Kubernetes process check
+  - `vault_k8s_preflight_fail_on_warnings`: Fail playbook on warnings (default: false)
+  - **Role Variables** (roles/kuber/defaults/main.yaml):
+  - `k8s_preflight_check_ports`: List of ports to check for conflicts
+  - `k8s_preflight_conflicting_runtimes`: List of conflicting container runtimes
+  - `k8s_preflight_cni_paths`: List of CNI directories to check
+  - `k8s_preflight_k8s_processes`: List of Kubernetes processes to detect
+- **Unit Tests**:
+  - `tests/unit/test_kuber_variables.yaml`: Validate pre-flight validation variables
+
+### Documentation
+- **KUBERNETES_SETUP.md**:
+  - Added pre-flight validation section to kuber.yaml documentation
+  - Documented all pre-flight variables and their purposes
+  - Added usage examples for skipping individual checks
+
 ## [1.3.0] - 2026-01-30
 
 ### Fixed

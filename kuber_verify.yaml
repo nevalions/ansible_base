@@ -1,6 +1,6 @@
 ---
 - name: Verify Kubernetes Cluster Health
-  hosts: planes
+  hosts: bay_plane1
   become: true
   gather_facts: true
   serial: 1

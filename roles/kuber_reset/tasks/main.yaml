@@ -15,6 +15,40 @@
       - "Kubernetes admin.conf exists: {{ k8s_config_exists.results[0].stat.exists }}"
       - "Kubernetes kubelet.conf exists: {{ k8s_config_exists.results[1].stat.exists }}"
 
+- name: Check if Kubernetes packages are installed
+  ansible.builtin.apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: absent
+  check_mode: yes
+  register: k8s_packages_installed
+  changed_when: false
+  failed_when: false
+
+- name: Unhold Kubernetes packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+  failed_when: false
+
+- name: Remove Kubernetes packages
+  ansible.builtin.apt:
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
+    state: absent
+    purge: yes
+    autoremove: yes
+  register: pkg_removal
+  failed_when: false
+
 - name: Stop kubelet service
   ansible.builtin.systemd:
     name: kubelet

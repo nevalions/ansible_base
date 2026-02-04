@@ -1,0 +1,138 @@
+---
+- name: Test kuber installation pre-flight validation variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  vars_files:
+    - ../../vault_secrets.example.yml
+  tasks:
+    - name: Load kuber role defaults
+      ansible.builtin.include_vars:
+        file: ../../roles/kuber/defaults/main.yaml
+      failed_when: false
+
+    - name: Verify kubernetes_version variable exists
+      ansible.builtin.assert:
+        that:
+          - kubernetes_version is defined
+        success_msg: "kubernetes_version variable exists: {{ kubernetes_version }}"
+        fail_msg: "kubernetes_version variable is missing"
+
+    - name: Verify install_kubernetes variable exists
+      ansible.builtin.assert:
+        that:
+          - install_kubernetes is defined
+        success_msg: "install_kubernetes variable exists: {{ install_kubernetes }}"
+        fail_msg: "install_kubernetes variable is missing"
+
+    - name: Verify pre-flight skip checks variables exist
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_skip_docker_check is defined
+          - k8s_preflight_skip_swap_check is defined
+          - k8s_preflight_skip_port_check is defined
+          - k8s_preflight_skip_cni_check is defined
+          - k8s_preflight_skip_container_runtime_check is defined
+          - k8s_preflight_skip_process_check is defined
+        success_msg: "All pre-flight skip check variables exist"
+        fail_msg: "One or more pre-flight skip check variables are missing"
+
+    - name: Verify k8s_preflight_fail_on_warnings variable exists
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_fail_on_warnings is defined
+        success_msg: "k8s_preflight_fail_on_warnings variable exists: {{ k8s_preflight_fail_on_warnings }}"
+        fail_msg: "k8s_preflight_fail_on_warnings variable is missing"
+
+    - name: Verify k8s_preflight_check_ports is a list
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_check_ports is defined
+          - k8s_preflight_check_ports is iterable
+        success_msg: "k8s_preflight_check_ports is a list"
+        fail_msg: "k8s_preflight_check_ports is not a list or is missing"
+
+    - name: Verify k8s_preflight_check_ports contains required ports
+      ansible.builtin.assert:
+        that:
+          - "'2379' in k8s_preflight_check_ports"
+          - "'2380' in k8s_preflight_check_ports"
+          - "'10250' in k8s_preflight_check_ports"
+          - "'10251' in k8s_preflight_check_ports"
+          - "'10252' in k8s_preflight_check_ports"
+        success_msg: "Required ports are in k8s_preflight_check_ports"
+        fail_msg: "Required ports are missing from k8s_preflight_check_ports"
+
+    - name: Verify k8s_preflight_conflicting_runtimes is a list
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_conflicting_runtimes is defined
+          - k8s_preflight_conflicting_runtimes is iterable
+        success_msg: "k8s_preflight_conflicting_runtimes is a list"
+        fail_msg: "k8s_preflight_conflicting_runtimes is not a list or is missing"
+
+    - name: Verify k8s_preflight_conflicting_runtimes contains docker
+      ansible.builtin.assert:
+        that:
+          - "'docker' in k8s_preflight_conflicting_runtimes"
+          - "'dockerd' in k8s_preflight_conflicting_runtimes"
+          - "'cri-o' in k8s_preflight_conflicting_runtimes"
+        success_msg: "Conflicting container runtimes are defined"
+        fail_msg: "Conflicting container runtimes are missing from k8s_preflight_conflicting_runtimes"
+
+    - name: Verify k8s_preflight_cni_paths is a list
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_cni_paths is defined
+          - k8s_preflight_cni_paths is iterable
+        success_msg: "k8s_preflight_cni_paths is a list"
+        fail_msg: "k8s_preflight_cni_paths is not a list or is missing"
+
+    - name: Verify k8s_preflight_cni_paths contains standard CNI paths
+      ansible.builtin.assert:
+        that:
+          - "'/etc/cni/net.d' in k8s_preflight_cni_paths"
+          - "'/opt/cni/bin' in k8s_preflight_cni_paths"
+          - "'/var/lib/cni' in k8s_preflight_cni_paths"
+        success_msg: "Standard CNI paths are in k8s_preflight_cni_paths"
+        fail_msg: "Standard CNI paths are missing from k8s_preflight_cni_paths"
+
+    - name: Verify k8s_preflight_k8s_processes is a list
+      ansible.builtin.assert:
+        that:
+          - k8s_preflight_k8s_processes is defined
+          - k8s_preflight_k8s_processes is iterable
+        success_msg: "k8s_preflight_k8s_processes is a list"
+        fail_msg: "k8s_preflight_k8s_processes is not a list or is missing"
+
+    - name: Verify k8s_preflight_k8s_processes contains required processes
+      ansible.builtin.assert:
+        that:
+          - "'kubelet' in k8s_preflight_k8s_processes"
+          - "'kube-apiserver' in k8s_preflight_k8s_processes"
+          - "'kube-controller-manager' in k8s_preflight_k8s_processes"
+          - "'kube-scheduler' in k8s_preflight_k8s_processes"
+          - "'kube-proxy' in k8s_preflight_k8s_processes"
+        success_msg: "Required Kubernetes processes are in k8s_preflight_k8s_processes"
+        fail_msg: "Required Kubernetes processes are missing from k8s_preflight_k8s_processes"
+
+    - name: Display pre-flight validation configuration
+      ansible.builtin.debug:
+        msg:
+          - "=== Pre-flight Validation Configuration ==="
+          - "Skip Docker check: {{ k8s_preflight_skip_docker_check }}"
+          - "Skip Swap check: {{ k8s_preflight_skip_swap_check }}"
+          - "Skip Port check: {{ k8s_preflight_skip_port_check }}"
+          - "Skip CNI check: {{ k8s_preflight_skip_cni_check }}"
+          - "Skip Container Runtime check: {{ k8s_preflight_skip_container_runtime_check }}"
+          - "Skip Process check: {{ k8s_preflight_skip_process_check }}"
+          - "Fail on warnings: {{ k8s_preflight_fail_on_warnings }}"
+          - "Check ports: {{ k8s_preflight_check_ports }}"
+          - "Conflicting runtimes: {{ k8s_preflight_conflicting_runtimes }}"
+          - "CNI paths: {{ k8s_preflight_cni_paths }}"
+          - "K8s processes: {{ k8s_preflight_k8s_processes }}"
+
+    - name: Assert all tests passed
+      ansible.builtin.assert:
+        that: true
+        success_msg: "All kuber pre-flight validation variables tests passed"

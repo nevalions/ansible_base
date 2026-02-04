@@ -1,15 +1,15 @@
 ---
-kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet | default('[pod-network-cidr]') }}"
-kubeadm_service_subnet: "{{ vault_k8s_service_subnet | default('[service-network-cidr]') }}"
+kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet | default('[pod-subnet]') }}"
+kubeadm_service_subnet: "{{ vault_k8s_service_subnet | default('[service-subnet]') }}"
 
 # Use VIP as control plane endpoint for worker joins
 kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip | default('[vip-address]') }}:{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
 
-# Advertise local IP for internal communication
-kubeadm_api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
+# Advertise WireGuard IP for internal communication (from vault_k8s_control_planes)
+kubeadm_api_server_advertise_address: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
 kubeadm_kubelet_extra_args:
-  node-ip: "{{ ansible_default_ipv4.address }}"
-kubeadm_api_version: "v1beta4"
+  node-ip: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
+kubeadm_api_version: "v1beta3"
 
 calico_version: "v3.31.3"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"

@@ -1,3 +1,46 @@
 ---
 install_kubernetes: true
-kubernetes_version: "1.35"
+kubernetes_version: "{{ vault_kubernetes_version | default('1.35') }}"
+
+# Pre-flight Validation Settings
+k8s_preflight_skip_docker_check: "{{ vault_k8s_preflight_skip_docker_check | default(false) }}"
+k8s_preflight_skip_swap_check: "{{ vault_k8s_preflight_skip_swap_check | default(false) }}"
+k8s_preflight_skip_port_check: "{{ vault_k8s_preflight_skip_port_check | default(false) }}"
+k8s_preflight_skip_cni_check: "{{ vault_k8s_preflight_skip_cni_check | default(false) }}"
+k8s_preflight_skip_container_runtime_check: "{{ vault_k8s_preflight_skip_container_runtime_check | default(false) }}"
+k8s_preflight_skip_process_check: "{{ vault_k8s_preflight_skip_process_check | default(false) }}"
+k8s_preflight_fail_on_warnings: "{{ vault_k8s_preflight_fail_on_warnings | default(false) }}"
+
+# Ports to check for conflicts
+k8s_preflight_check_ports:
+  - "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
+  - "{{ vault_haproxy_k8s_frontend_port | default('[haproxy-frontend-port]') }}"
+  - "2379"
+  - "2380"
+  - "10250"
+  - "10251"
+  - "10252"
+  - "10255"
+  - "10259"
+  - "10257"
+
+# Container runtimes that conflict with containerd
+k8s_preflight_conflicting_runtimes:
+  - docker
+  - dockerd
+  - cri-o
+  - crictl
+
+# CNI plugins/directories to check
+k8s_preflight_cni_paths:
+  - /etc/cni/net.d
+  - /opt/cni/bin
+  - /var/lib/cni
+
+# K8s processes that indicate existing installation
+k8s_preflight_k8s_processes:
+  - kubelet
+  - kube-apiserver
+  - kube-controller-manager
+  - kube-scheduler
+  - kube-proxy

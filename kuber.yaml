@@ -1,6 +1,6 @@
 ---
 - name: Setup Kubernetes Cluster
-  hosts: workers_super
+  hosts: bay_plane1
   become: true
   gather_facts: true
   serial: 1
