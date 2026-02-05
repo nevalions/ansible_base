@@ -6,10 +6,25 @@ kubeadm_service_subnet: "{{ vault_k8s_service_subnet }}"
 # Use VIP as control plane endpoint for worker joins
 kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip }}:{{ vault_k8s_api_port }}"
 
-# Advertise WireGuard IP for internal communication (from vault_k8s_control_planes)
-kubeadm_api_server_advertise_address: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
+# Advertise WireGuard IP for internal communication
+# Dynamically finds current host's IP from vault_k8s_control_planes list
+# Falls back to ansible_default_ipv4.address if not found
+kubeadm_api_server_advertise_address: >-
+  {{
+    (vault_k8s_control_planes
+      | selectattr('name', 'equalto', inventory_hostname)
+      | map(attribute='wireguard_ip')
+      | list
+      | first)
+    | default(
+        ansible_facts.get(vault_keepalived_vip_interface | default('wg99'), {}).get('ipv4', {}).get('address', '')
+      )
+    | default(ansible_default_ipv4.address)
+  }}
+
 kubeadm_kubelet_extra_args:
-  node-ip: "{{ vault_k8s_control_planes[0].wireguard_ip if vault_k8s_control_planes is defined and vault_k8s_control_planes | length > 0 else ansible_default_ipv4.address }}"
+  node-ip: "{{ kubeadm_api_server_advertise_address }}"
+
 kubeadm_api_version: "v1beta4"
 
 # Calico CNI Configuration (from vault with sensible defaults)
@@ -25,8 +40,9 @@ calico_nat_outgoing: "{{ vault_calico_nat_outgoing | default(true) }}"
 calico_node_selector: "{{ vault_calico_node_selector | default('all()') }}"
 calico_block_size: "{{ vault_calico_block_size | default(26) }}"
 calico_mtu: "{{ vault_calico_mtu | default(1440) }}"
+calico_node_address_interface: "{{ vault_interface | default('wg99') }}"
 
 # Kubeconfig Configuration
-kubeconfig_user: "{{ ansible_user_id }}"
-kubeconfig_user_home: "{{ ansible_user_dir | default(ansible_env.HOME | default('/home/' ~ kubeconfig_user)) }}"
+kubeconfig_user: "{{ vault_admin_user | default(ansible_user | default(ansible_user_id)) }}"
+kubeconfig_user_home: "{{ ansible_env.HOME | default(ansible_user_dir | default('/home/' ~ kubeconfig_user)) }}"
 kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"

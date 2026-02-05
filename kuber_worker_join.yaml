@@ -1,6 +1,6 @@
 ---
 - name: Join Worker Nodes to Kubernetes Cluster
-  hosts: workers_all
+  hosts: "[worker-hostname]"
   become: true
   gather_facts: true
   serial: 1

@@ -10,7 +10,6 @@ discovery:
 nodeRegistration:
   name: "{{ ansible_hostname }}"
   kubeletExtraArgs:
-    node-ip: "{{ kuber_join_kubelet_extra_args.node_ip }}"
 {% if kuber_join_kubelet_extra_args is defined %}
 {% for key, value in kuber_join_kubelet_extra_args.items() %}
     {{ key }}: "{{ value }}"

@@ -1,5 +1,9 @@
 # Keepalived Configuration for Kubernetes API VIP
 # Managed by Ansible - DO NOT EDIT MANUALLY
+#
+# Architecture: VIP floats between control planes via VRRP
+# Workers connect to VIP -> traffic goes directly to kube-apiserver on MASTER node
+# No HAProxy or DNAT required - simplified HA design
 
 global_defs {
     router_id {{ keepalived_router_id }}
@@ -12,57 +16,64 @@ global_defs {
     script_user {{ keepalived_script_user | default('[admin-username]') }}
 }
 
-# Health check script for HAProxy on control planes
-{% for plane in keepalived_control_planes %}
-vrrp_script haproxy_check_{{ plane.name }} {
-    script "/bin/bash -c 'timeout 2 /usr/bin/nc -z {{ plane.wireguard_ip }} {{ plane.backend_port }}'"
-    interval {{ keepalived_check_interval }}
-    rise {{ keepalived_check_rise }}
-    fall {{ keepalived_check_fall }}
-    weight 20
+# Health check for local Kubernetes API server
+# Checks /healthz endpoint via HTTPS (skip cert verification for internal use)
+vrrp_script chk_apiserver {
+    script "/usr/bin/curl -sk --max-time 2 https://localhost:{{ keepalived_vip_port }}/healthz -o /dev/null"
+    interval {{ keepalived_check_interval | default(2) }}
+    weight {{ keepalived_check_weight | default(-20) }}
+    fall {{ keepalived_check_fall | default(3) }}
+    rise {{ keepalived_check_rise | default(2) }}
 }
-
-# Health check script for Kubernetes API on control planes
-vrrp_script k8s_api_check_{{ plane.name }} {
-    script "/bin/bash -c 'timeout 2 /usr/bin/nc -z {{ plane.wireguard_ip }} {{ plane.api_port }}'"
-    interval {{ keepalived_check_interval }}
-    rise {{ keepalived_check_rise }}
-    fall {{ keepalived_check_fall }}
-    weight 10
-}
-{% endfor %}
 
 # VRRP instance for Kubernetes API VIP
-vrrp_instance k8s_api {
+vrrp_instance K8S_VIP {
+    state {{ keepalived_state | default('BACKUP') }}
     interface {{ keepalived_vip_interface }}
     virtual_router_id {{ keepalived_router_id }}
     priority {{ keepalived_priority | default(100) }}
-    advert_int 1
+    advert_int {{ keepalived_advert_int | default(1) }}
+    
+    # Preemption: higher priority node takes over when it comes back online
+{% if keepalived_nopreempt | default(false) %}
+    nopreempt
+{% endif %}
+
 {% set use_unicast = keepalived_use_unicast | default((keepalived_vip_interface | regex_search('^wg')) is not none) %}
-{% if use_unicast %}
-    unicast_src_ip {{ keepalived_unicast_src_ip }}
-    unicast_peer {
+{% set unicast_peers = [] %}
 {% for plane in keepalived_control_planes %}
-{% if plane.name != inventory_hostname %}
-        {{ plane.wireguard_ip }}
+{% if plane.wireguard_ip != keepalived_unicast_src_ip %}
+{%   set _ = unicast_peers.append(plane.wireguard_ip) %}
 {% endif %}
 {% endfor %}
+
+{% if use_unicast and unicast_peers | length > 0 %}
+    # Unicast mode for WireGuard/overlay networks (multicast doesn't work)
+    unicast_src_ip {{ keepalived_unicast_src_ip }}
+    unicast_peer {
+{% for peer_ip in unicast_peers %}
+        {{ peer_ip }}
+{% endfor %}
     }
+{% elif use_unicast and unicast_peers | length == 0 %}
+    # Single control plane - no unicast peers needed
+    # VIP will be assigned directly to this node as permanent MASTER
+    # When adding more control planes, re-run this playbook to enable VRRP failover
 {% endif %}
+
     authentication {
         auth_type PASS
         auth_pass {{ keepalived_password | regex_replace('\\s+', '') | regex_replace('^(.{0,8}).*$', '\\1') }}
     }
     
     virtual_ipaddress {
-        {{ keepalived_vip }}/{{ keepalived_vip_cidr }}
+        {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}
     }
     
-    # Track health checks for all control planes
-    {% for plane in keepalived_control_planes %}
+{% if unicast_peers | length > 0 %}
+    # Track local apiserver health (only when multiple planes exist)
     track_script {
-        haproxy_check_{{ plane.name }}
-        k8s_api_check_{{ plane.name }}
+        chk_apiserver
     }
-    {% endfor %}
+{% endif %}
 }

@@ -4,8 +4,23 @@
     msg:
       - "Configuring WireGuard client for {{ peer_config.name }}"
       - "Interface: {{ vault_wg_interface }}"
-      - "Allowed IPs: {{ peer_config.allowed_ips }}"
+      - "Address: {{ peer_config.address | default(peer_config.allowed_ips) }}"
       - "Listen port: {{ peer_config.client_listen_port | default(vault_wg_client_default_port) }}"
+
+- name: Check if resolvconf is available
+  ansible.builtin.command: command -v resolvconf
+  register: resolvconf_check
+  changed_when: false
+  failed_when: false
+
+- name: Set DNS usage for WireGuard client config
+  ansible.builtin.set_fact:
+    wg_use_dns: "{{ wg_dns_enabled and (resolvconf_check.rc == 0) }}"
+
+- name: Warn when DNS configuration is skipped
+  ansible.builtin.debug:
+    msg: "resolvconf not found; skipping DNS in WireGuard client config"
+  when: not wg_use_dns
 
 - name: Check if peer WireGuard config exists
   ansible.builtin.stat:

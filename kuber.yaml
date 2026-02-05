@@ -1,6 +1,12 @@
 ---
+# Install Kubernetes binaries on all cluster nodes (planes + workers)
+# Usage:
+#   ansible-playbook kuber.yaml                    # All nodes
+#   ansible-playbook kuber.yaml -l planes_all     # Only control planes
+#   ansible-playbook kuber.yaml -l workers_all    # Only workers
+#   ansible-playbook kuber.yaml -l [worker-hostname]  # Specific node
 - name: Setup Kubernetes Cluster
-  hosts: bay_plane1
+  hosts: "[cluster-group]"
   become: true
   gather_facts: true
   serial: 1
@@ -11,7 +17,6 @@
     - cluster
   vars_files:
     - vault_secrets.yml
-    - vars/packages.yaml
   vars:
     common: false
     zsh: false

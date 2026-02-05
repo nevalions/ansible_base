@@ -1,22 +1,44 @@
 ---
+# Keepalived defaults for Kubernetes API VIP
+# Simplified architecture: VIP floats between control planes, no HAProxy/DNAT needed
+
+# VIP Configuration (from vault)
 keepalived_vip: "{{ vault_keepalived_vip }}"
 keepalived_vip_cidr: "{{ vault_keepalived_vip_cidr | default('32') }}"
 keepalived_vip_interface: "{{ vault_keepalived_vip_interface | default('wg99') }}"
+keepalived_vip_port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
+
+# VRRP Configuration
 keepalived_password: "{{ vault_keepalived_password | default('changeme') }}"
 keepalived_router_id: "{{ vault_keepalived_router_id | default('51') }}"
-
-keepalived_garp_interval: 1
-keepalived_gna_interval: 1
-keepalived_unicast_src_ip: ""
-keepalived_wait_for_port: false
-keepalived_priority: 100
 keepalived_script_user: "{{ vault_keepalived_script_user | default('[admin-username]') }}"
 
-keepalived_check_interval: 2
-keepalived_check_rise: 2
-keepalived_check_fall: 3
+# GARP (Gratuitous ARP) settings
+keepalived_garp_interval: 1
+keepalived_gna_interval: 1
 
+# Unicast settings (auto-detected for wg* interfaces)
+keepalived_unicast_src_ip: ""
+
+# Default priority (overridden per-host from control_planes list)
+keepalived_priority: 100
+
+# VRRP advertisement interval (seconds)
+keepalived_advert_int: 1
+
+# Preemption: if true, lower priority node won't take VIP back when higher comes online
+keepalived_nopreempt: false
+
+# Health check settings for kube-apiserver
+keepalived_check_interval: 2
+keepalived_check_weight: -20
+keepalived_check_fall: 3
+keepalived_check_rise: 2
+
+# Control planes list (from vault)
+# Each entry should have: name, wireguard_ip, api_port, priority
 keepalived_control_planes: "{{ vault_k8s_control_planes }}"
 
-keepalived_vip_port: "{{ vault_k8s_api_port }}"
-keepalived_plane_backend_port: "{{ vault_haproxy_k8s_frontend_port }}"
+# Network access control
+keepalived_vrrp_allowed_network: "{{ vault_wg_network_cidr | default('any') }}"
+keepalived_api_allowed_network: "{{ vault_wg_network_cidr | default('any') }}"

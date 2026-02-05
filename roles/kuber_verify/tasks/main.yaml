@@ -19,6 +19,6 @@
       - "Control Plane: Ready"
       - "Calico CNI: {{ 'Operational' if calico_ready else 'Issues detected' }}"
       - "Worker Nodes: {{ worker_node_count | default(0) }} joined"
-      - "Networking: {{ 'Functional' if pod_connectivity.rc == 0 else 'Issues detected' }}"
-      - "DNS: {{ 'Functional' if dns_resolution.rc == 0 else 'Issues detected' }}"
+      - "Networking: {{ 'Functional' if ((pod_connectivity | default({})).get('rc', 1) == 0) else 'Issues detected' }}"
+      - "DNS: {{ 'Functional' if ((dns_resolution | default({})).get('rc', 1) == 0) else 'Issues detected' }}"
       - "============================================"

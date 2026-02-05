@@ -4,5 +4,10 @@ kuber_join_control_plane_ip: "{{ vault_k8s_api_vip | default('[vip-address]') }}
 kuber_join_api_port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
 kuber_join_token_ttl: "0"
 kuber_join_kubelet_extra_args:
-  node-ip: "{{ ansible_default_ipv4.address }}"
+  node-ip: >-
+    {{
+      ansible_facts.get(vault_interface | default('wg99'), {})
+      .get('ipv4', {})
+      .get('address', ansible_default_ipv4.address)
+    }}
 kubeadm_api_version: "v1beta4"

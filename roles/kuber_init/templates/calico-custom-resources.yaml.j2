@@ -10,6 +10,8 @@ metadata:
 spec:
   calicoNetwork:
     mtu: {{ calico_mtu }}
+    nodeAddressAutodetectionV4:
+      interface: "{{ calico_node_address_interface }}"
     ipPools:
     - name: {{ calico_ippool_name }}
       cidr: {{ calico_ippool_cidr }}

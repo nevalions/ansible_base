@@ -78,7 +78,7 @@
   when: preflight_docker_service.status is defined and preflight_docker_service.status.ActiveState == 'active' and not k8s_preflight_skip_docker_check
 
 - name: Check for conflicting container runtimes
-  ansible.builtin.command: "pgrep -f '{{ item }}'"
+  ansible.builtin.command: "pgrep -x '{{ item }}'"
   register: preflight_runtimes
   changed_when: false
   failed_when: false

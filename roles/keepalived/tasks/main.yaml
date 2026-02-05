@@ -1,9 +1,13 @@
 ---
+# Keepalived role for Kubernetes API VIP management
+# Simplified architecture: VIP floats between control planes, no HAProxy/DNAT needed
+# Workers connect to VIP -> traffic goes directly to kube-apiserver on MASTER node
+
 - name: Ensure keepalived is installed
   ansible.builtin.apt:
     name:
       - keepalived
-      - iptables-persistent
+      - curl
     state: present
     update_cache: true
 
@@ -54,14 +58,9 @@
     that:
       - keepalived_unicast_src_ip is defined
       - keepalived_unicast_src_ip | length > 0
-    success_msg: "Keepalived unicast source IP is set"
+    success_msg: "Keepalived unicast source IP is set: {{ keepalived_unicast_src_ip }}"
     fail_msg: "Keepalived unicast source IP is required for {{ keepalived_vip_interface }}. Set keepalived_unicast_src_ip."
   when: keepalived_use_unicast
-
-- name: Determine active control plane (for iptables DNAT)
-  ansible.builtin.set_fact:
-    keepalived_active_plane: "{{ keepalived_control_planes[0] }}"
-  when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
 
 - name: Determine keepalived priority for this host
   ansible.builtin.set_fact:
@@ -94,62 +93,116 @@
       }}
   when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
 
-- name: Configure iptables DNAT rules for VIP
+- name: Determine keepalived state for this host
+  ansible.builtin.set_fact:
+    keepalived_state: >-
+      {{
+        'MASTER'
+        if (keepalived_control_planes | length == 1)
+        else (
+          'MASTER'
+          if keepalived_priority | int
+             == (keepalived_control_planes | map(attribute='priority') | list | max)
+          else 'BACKUP'
+        )
+      }}
+  when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
+
+- name: Check if UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_installed
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  failed_when: false
+  when: ufw_installed.stat.exists
+
+- name: Set UFW active fact
+  ansible.builtin.set_fact:
+    ufw_is_active: "{{ ufw_installed.stat.exists and ufw_status.stdout is defined and 'Status: active' in ufw_status.stdout }}"
+
+- name: Configure UFW to allow VRRP protocol (via iptables - UFW doesn't support proto 112)
   ansible.builtin.iptables:
-    table: nat
-    chain: PREROUTING
-    in_interface: "{{ keepalived_vip_interface }}"
-    protocol: tcp
-    destination: "{{ keepalived_vip }}"
-    destination_port: "{{ keepalived_vip_port }}"
-    jump: DNAT
-    to_destination: "{{ keepalived_active_plane.wireguard_ip }}:{{ keepalived_active_plane.backend_port }}"
-    comment: "DNAT VIP:[k8s-api-port] to {{ keepalived_active_plane.name }}:[haproxy-frontend-port]"
-  when: keepalived_active_plane is defined
+    chain: INPUT
+    protocol: vrrp
+    source: "{{ keepalived_vrrp_allowed_network | default(vault_wg_network_cidr | default('[network-cidr]')) }}"
+    jump: ACCEPT
+    comment: "Allow VRRP for Keepalived"
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - not (keepalived_vip_interface | regex_search('^wg'))
+  ignore_errors: true
 
-- name: Configure iptables MASQUERADE for DNAT
-  ansible.builtin.iptables:
-    table: nat
-    chain: POSTROUTING
-    destination: "{{ keepalived_active_plane.wireguard_ip }}"
-    destination_port: "{{ keepalived_active_plane.backend_port }}"
-    protocol: tcp
-    jump: MASQUERADE
-    comment: "MASQUERADE for VIP DNAT to {{ keepalived_active_plane.name }}"
-  when: keepalived_active_plane is defined
-
-- name: Save iptables rules (persist across reboots)
-  ansible.builtin.shell:
-    cmd: iptables-save > /etc/iptables/rules.v4
-  args:
-    creates: /etc/iptables/rules.v4
-  when: ansible_facts['os_family'] == 'Debian'
-
-- name: Ensure UFW is installed
-  ansible.builtin.apt:
-    name: ufw
-    state: present
-    update_cache: true
-  when: ansible_facts['os_family'] == 'Debian'
-
-- name: Configure UFW to allow VIP access
+- name: Configure UFW to allow Kubernetes API on VIP
   community.general.ufw:
     rule: allow
     proto: tcp
     port: "{{ keepalived_vip_port }}"
-    from: any
+    from: "{{ keepalived_api_allowed_network | default(vault_wg_network_cidr | default('any')) }}"
     direction: in
-  when: ansible_facts['os_family'] == 'Debian'
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_is_active
 
-- name: Configure UFW to allow WireGuard traffic
-  community.general.ufw:
-    rule: allow
-    proto: udp
-    port: "{{ vault_wg_server_port | default('51840') }}"
-    from: any
-    direction: in
-  when: ansible_facts['os_family'] == 'Debian'
+# Determine if we have multiple control planes for VRRP
+- name: Count unicast peers
+  ansible.builtin.set_fact:
+    keepalived_unicast_peers: >-
+      {{ keepalived_control_planes 
+         | rejectattr('wireguard_ip', 'equalto', keepalived_unicast_src_ip) 
+         | list }}
+  when: keepalived_use_unicast
 
+- name: Set single node mode
+  ansible.builtin.set_fact:
+    keepalived_single_node: "{{ (keepalived_unicast_peers | default([]) | length) == 0 }}"
+
+# For single control plane on WireGuard: assign VIP directly (no VRRP needed)
+- name: Check if VIP already assigned (single node mode)
+  ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep -q "{{ keepalived_vip }}"
+  register: vip_exists
+  changed_when: false
+  failed_when: false
+  when:
+    - keepalived_single_node
+    - keepalived_state == 'MASTER'
+    - not ansible_check_mode
+
+- name: Add VIP to interface (single node mode)
+  ansible.builtin.command:
+    cmd: ip addr add {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}
+  register: vip_add_result
+  changed_when: vip_add_result.rc == 0
+  failed_when: vip_add_result.rc != 0 and 'File exists' not in (vip_add_result.stderr | default(''))
+  when:
+    - keepalived_single_node
+    - keepalived_state == 'MASTER'
+    - not ansible_check_mode
+    - vip_exists.rc != 0
+
+- name: Make VIP persistent across reboots (single node mode)
+  ansible.builtin.lineinfile:
+    path: /etc/network/interfaces.d/{{ keepalived_vip_interface }}-vip
+    line: "post-up ip addr add {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}"
+    create: true
+    mode: "0644"
+  when:
+    - keepalived_single_node
+    - keepalived_state == 'MASTER'
+    - not ansible_check_mode
+  ignore_errors: true
+
+- name: Report VIP assignment (single node mode)
+  ansible.builtin.debug:
+    msg: "VIP {{ keepalived_vip }} assigned to {{ keepalived_vip_interface }} (single node mode - no VRRP)"
+  when:
+    - keepalived_single_node
+    - not ansible_check_mode
+
+# For multiple control planes: use Keepalived with VRRP
 - name: Deploy keepalived configuration
   ansible.builtin.template:
     src: keepalived.conf.j2
@@ -157,54 +210,64 @@
     mode: "0644"
     validate: "keepalived -t -f %s"
   notify: Restart keepalived
+  when: not keepalived_single_node
 
 - name: Ensure keepalived is enabled and started
   ansible.builtin.systemd:
     name: keepalived
     state: started
     enabled: true
-  when: not ansible_check_mode
-
-- name: Wait for VIP to be assigned
-  ansible.builtin.wait_for:
-    host: "{{ keepalived_vip }}"
-    port: "{{ keepalived_vip_port }}"
-    delay: 3
-    timeout: 30
   when:
     - not ansible_check_mode
-    - keepalived_wait_for_port | default(false)
+    - not keepalived_single_node
 
-- name: Verify VIP is active
-  ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep {{ keepalived_vip }}
-  register: vip_check
-  changed_when: false
+- name: Stop keepalived in single node mode (VIP managed directly)
+  ansible.builtin.systemd:
+    name: keepalived
+    state: stopped
+    enabled: false
+  when:
+    - not ansible_check_mode
+    - keepalived_single_node
+  ignore_errors: true
+
+- name: Wait for VIP to stabilize
+  ansible.builtin.pause:
+    seconds: 2
   when: not ansible_check_mode
 
-- name: Assert VIP is active
+- name: Verify VIP is active on this host
+  ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep -q {{ keepalived_vip }}
+  register: vip_check
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Report VIP status
+  ansible.builtin.debug:
+    msg: "VIP {{ keepalived_vip }} on {{ keepalived_vip_interface }}: {{ 'ACTIVE (this is MASTER)' if vip_check.rc == 0 else 'INACTIVE (this is BACKUP)' }}"
+  when: not ansible_check_mode
+
+- name: Assert VIP is active on MASTER node
   ansible.builtin.assert:
     that:
       - vip_check.rc == 0
-    success_msg: "VIP {{ keepalived_vip }} is active on {{ keepalived_vip_interface }}"
-    fail_msg: "VIP {{ keepalived_vip }} is NOT active"
-  when: not ansible_check_mode
-
-- name: Test connectivity to VIP
-  ansible.builtin.wait_for:
-    host: "{{ keepalived_vip }}"
-    port: "{{ keepalived_vip_port }}"
-    timeout: 5
+    success_msg: "VIP {{ keepalived_vip }} is active on {{ keepalived_vip_interface }} (MASTER)"
+    fail_msg: "VIP {{ keepalived_vip }} is NOT active - expected on MASTER node"
   when:
     - not ansible_check_mode
-    - keepalived_wait_for_port | default(false)
+    - keepalived_state == 'MASTER'
 
-- name: Log VIP configuration
+- name: Log VIP configuration summary
   ansible.builtin.debug:
     msg: |
-      VIP Configuration:
+      Keepalived Configuration:
       - VIP: {{ keepalived_vip }}/{{ keepalived_vip_cidr }}
       - Interface: {{ keepalived_vip_interface }}
-      - Port: {{ keepalived_vip_port }}
-      - Active Plane: {{ keepalived_active_plane.name | default('N/A') }}
-      - DNAT: {{ keepalived_vip }}:{{ keepalived_vip_port }} → {{ keepalived_active_plane.wireguard_ip | default('N/A') }}:{{ keepalived_active_plane.backend_port | default('N/A') }}
+      - API Port: {{ keepalived_vip_port }}
+      - Mode: {{ 'Single Node (VIP direct)' if keepalived_single_node else 'Multi-Node (VRRP)' }}
+      - State: {{ keepalived_state }}
+      - Priority: {{ keepalived_priority }}
+      - Unicast Peers: {{ keepalived_unicast_peers | default([]) | map(attribute='wireguard_ip') | list | join(', ') | default('None') }}
+      - Control Planes: {{ keepalived_control_planes | map(attribute='name') | list | join(', ') }}
   when: not ansible_check_mode

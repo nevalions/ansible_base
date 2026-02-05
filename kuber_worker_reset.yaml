@@ -1,6 +1,6 @@
 ---
 - name: Clean Kubernetes Worker Node for Fresh Join
-  hosts: workers_all
+  hosts: "[worker-hostname]"
   become: true
   gather_facts: false
   serial: 1

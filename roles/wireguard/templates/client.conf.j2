@@ -3,14 +3,16 @@
 # Last updated: {{ ansible_date_time.iso8601 }}
 
 [Interface]
-Address = {{ peer_config.allowed_ips }}
+Address = {{ peer_config.address | default(peer_config.allowed_ips) }}
 PrivateKey = {{ peer_private_key }}
 {% if peer_config.client_listen_port is defined %}
 ListenPort = {{ peer_config.client_listen_port }}
 {% else %}
 ListenPort = {{ vault_wg_client_default_port }}
 {% endif %}
-DNS = {{ vault_wg_dns_primary | default(vault_dns_server_primary | default('1.1.1.1')) }}
+{% if wg_use_dns | default(true) %}
+DNS = {{ vault_wg_dns_primary | default(vault_dns_server_primary | default('[dns-server-ip]')) }}
+{% endif %}
 
 # BEGIN ANSIBLE MANAGED PEERS
 {% for server_peer in vault_wg_peers %}
@@ -19,7 +21,7 @@ DNS = {{ vault_wg_dns_primary | default(vault_dns_server_primary | default('1.1.
 # {{ server_peer.name }} - {{ server_peer.host_group | default('unknown') }}
 PublicKey = {{ vault_wg_peer_public_keys[server_peer.name] }}
 Endpoint = {{ server_peer.endpoint }}
-AllowedIPs = {{ server_peer.allowed_ips }}
+AllowedIPs = {{ server_peer.allowed_ips | default(server_peer.address) }}
 PersistentKeepalive = 25
 {%   endif %}
 {% endfor %}

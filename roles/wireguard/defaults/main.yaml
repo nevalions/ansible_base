@@ -12,6 +12,7 @@ vault_wg_client_default_port: "[client-default-port]"
 vault_wg_client_port_start: "[port-range-start]"
 vault_wg_client_port_end: "[port-range-end]"
 vault_wg_dns_primary: "[dns-server-ip]"
+wg_dns_enabled: true
 
 # Keys (stored in vault_secrets.yml)
 vault_wg_server_private_key: null

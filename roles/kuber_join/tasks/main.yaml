@@ -9,11 +9,26 @@
     msg: "Node is already joined to a cluster. Use kuber_worker_reset.yaml to reset first."
   when: kubelet_conf.stat.exists
 
+- name: Assert control plane inventory group exists when using VIP
+  ansible.builtin.assert:
+    that:
+      - groups['planes_all'] is defined
+      - groups['planes_all'] | length > 0
+    success_msg: "Control plane inventory group found for VIP delegation"
+    fail_msg: "VIP is set, but no control plane hosts found. Set kuber_join_control_plane_host to a control plane inventory host/group."
+  when: kuber_join_control_plane_host == 'VIP'
+
+- name: Set delegate host for control plane tasks
+  ansible.builtin.set_fact:
+    kuber_join_delegate_host: "{{ groups['planes_all'][0] if kuber_join_control_plane_host == 'VIP' else kuber_join_control_plane_host }}"
+
 - name: Generate kubeadm join token from control plane
   ansible.builtin.command: kubeadm token create --print-join-command
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: join_command
   changed_when: true
-  delegate_to: "{{ kuber_join_control_plane_host }}"
+  delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
 
 - name: Parse join command to extract token and CA cert hash
@@ -54,8 +69,10 @@
 
 - name: Verify node is visible from control plane
   ansible.builtin.command: kubectl get nodes {{ ansible_hostname }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_check
-  delegate_to: "{{ kuber_join_control_plane_host }}"
+  delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
   changed_when: false
   ignore_errors: true
@@ -67,8 +84,10 @@
 
 - name: Wait for node to be Ready
   ansible.builtin.command: kubectl wait --for=condition=ready node {{ ansible_hostname }} --timeout=600s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_ready
-  delegate_to: "{{ kuber_join_control_plane_host }}"
+  delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
   changed_when: false
   until: node_ready.rc == 0
@@ -84,10 +103,21 @@
     fail_msg: "Worker node {{ ansible_hostname }} is not Ready after 600s"
   when: node_ready.rc is defined
 
+- name: Label worker node role
+  ansible.builtin.command: kubectl label node {{ ansible_hostname }} node-role.kubernetes.io/worker= --overwrite
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  run_once: true
+  changed_when: true
+  ignore_errors: true
+
 - name: Get Calico pod on this worker
   ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_pod_check
-  delegate_to: "{{ kuber_join_control_plane_host }}"
+  delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
   changed_when: false
   ignore_errors: true
@@ -105,4 +135,3 @@
       - "Status: Ready"
       - "Calico CNI: Active"
       - "Next step: Run kuber_verify.yaml for full cluster health check"
-

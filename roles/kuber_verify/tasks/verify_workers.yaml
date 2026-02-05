@@ -1,18 +1,18 @@
 ---
-- name: Get all worker nodes
-  ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane'
+- name: Get all worker node names
+  ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].metadata.name}'
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: worker_nodes
+  register: worker_node_names
   changed_when: false
 
 - name: Display worker nodes
   ansible.builtin.debug:
-    var: worker_nodes.stdout_lines
+    msg: "{{ worker_node_names.stdout.split() }}"
 
 - name: Get worker node count
   ansible.builtin.set_fact:
-    worker_node_count: "{{ worker_nodes.stdout_lines[1:] | length if worker_nodes.stdout_lines is defined and worker_nodes.stdout_lines | length > 1 else 0 }}"
+    worker_node_count: "{{ worker_node_names.stdout.split() | length if worker_node_names.stdout is defined and worker_node_names.stdout | length > 0 else 0 }}"
 
 - name: Assert workers are joined
   ansible.builtin.assert:
@@ -72,6 +72,6 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_details
   changed_when: false
-  loop: "{{ worker_nodes.stdout_lines[1:] }}"
-  when: worker_nodes.stdout_lines is defined
+  loop: "{{ worker_node_names.stdout.split() }}"
+  when: worker_node_names.stdout is defined
   ignore_errors: true

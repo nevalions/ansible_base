@@ -110,7 +110,7 @@
   ansible.builtin.file:
     path: "{{ kubeconfig_path | dirname }}"
     state: directory
-    mode: "0755"
+    mode: "0700"
     owner: "{{ kubeconfig_user }}"
     group: "{{ kubeconfig_user }}"
 
@@ -119,9 +119,24 @@
     src: /etc/kubernetes/admin.conf
     dest: "{{ kubeconfig_path }}"
     remote_src: true
-    mode: "0644"
+    mode: "0600"
     owner: "{{ kubeconfig_user }}"
     group: "{{ kubeconfig_user }}"
+
+- name: Ensure kubeconfig ownership and mode
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: "{{ item.state }}"
+    owner: "{{ kubeconfig_user }}"
+    group: "{{ kubeconfig_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ kubeconfig_path | dirname }}"
+      state: directory
+      mode: "0700"
+    - path: "{{ kubeconfig_path }}"
+      state: file
+      mode: "0600"
 
 - name: Install Calico Tigera Operator
   ansible.builtin.command: kubectl apply -f {{ calico_tigera_operator_url }}

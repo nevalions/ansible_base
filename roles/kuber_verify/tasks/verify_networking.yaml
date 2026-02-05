@@ -16,6 +16,8 @@
       metadata:
         name: test-pod-1
         namespace: {{ verify_test_namespace }}
+        labels:
+          app: nginx
       spec:
         containers:
         - name: nginx
@@ -28,6 +30,8 @@
       metadata:
         name: test-pod-2
         namespace: {{ verify_test_namespace }}
+        labels:
+          app: nginx
       spec:
         containers:
         - name: nginx
@@ -40,6 +44,8 @@
       metadata:
         name: dns-test-pod
         namespace: {{ verify_test_namespace }}
+        labels:
+          app: dns-test
       spec:
         containers:
         - name: dns-test
@@ -101,28 +107,38 @@
   when: pod_connectivity.rc is defined
 
 - name: Test DNS resolution
-  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} dns-test-pod -- nslookup [k8s-service]
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} dns-test-pod -- nslookup {{ verify_dns_service }}
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: dns_resolution
   changed_when: false
   ignore_errors: true
+  when:
+    - verify_dns_service is defined
+    - verify_dns_service | length > 0
+    - verify_dns_service is not match('^\[.*\]$')
 
 - name: Display DNS result
   ansible.builtin.debug:
     msg: "{{ 'DNS resolution: SUCCESS' if dns_resolution.rc == 0 else 'DNS resolution: FAILED' }}"
+  when: dns_resolution.rc is defined
 
 - name: Test external connectivity
-  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://[external-hostname] --timeout=5 --spider
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://{{ verify_external_hostname }} --timeout=5 --spider
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: external_connectivity
   changed_when: false
   ignore_errors: true
+  when:
+    - verify_external_hostname is defined
+    - verify_external_hostname | length > 0
+    - verify_external_hostname is not match('^\[.*\]$')
 
 - name: Display external connectivity result
   ansible.builtin.debug:
     msg: "{{ 'External connectivity: SUCCESS' if external_connectivity.rc == 0 else 'External connectivity: FAILED' }}"
+  when: external_connectivity.rc is defined
 
 - name: Get pod logs
   ansible.builtin.command: kubectl logs -n {{ verify_test_namespace }} test-pod-1

@@ -74,16 +74,12 @@ ansible/
 ├── AGENTS.md                    # Coding guidelines and conventions
 ├── ansible.cfg                  # Project-wide Ansible configuration
 ├── .ansible-lint                # Linting rules and configuration
-├── hosts_bay.ini                # Main inventory (Bay cluster)
-├── hosts_haproxy.ini            # HAProxy inventory
-├── hosts_restream.ini           # Restream inventory
+ ├── hosts_bay.ini                # Main inventory (Bay cluster)
  ├── KUBERNETES_SETUP.md         # Kubernetes setup guide
  ├── KUBERNETES_QUICKREF.md      # Kubernetes quick reference
  ├── SSH_AGENT_QUICKREF.md       # SSH agent usage guide
  ├── SSH_PASSPHRASE_IMPLEMENTATION.md  # SSH key passphrase implementation
  ├── ansible_with_agent.sh       # Automated SSH agent with preflight/postflight
- ├── ssh-agent-setup.sh          # SSH agent setup script (manual)
- ├── ssh-agent-stop.sh           # SSH agent stop script (manual)
  ├── vars/
 │   └── packages.yaml            # Package definitions by OS
 ├── group_vars/                  # Group-specific variables (templates and local config)
@@ -196,8 +192,9 @@ Available templates:
 - **planes**: Kubernetes control plane configuration
 - **workers_super**: Super worker configuration
 - **workers_vas**: VAS worker configuration
- - **remote_workers**: Remote worker configuration
- - **remote_planes**: Remote plane configuration
+- **cloud_planes**: Cloud control plane configuration
+- **cloud_workers**: Cloud worker configuration
+- **bay_cluster_all**: Bay cluster all hosts configuration
 - **bay_cluster_all**: Common cluster variables
 
 To use templates:
@@ -269,13 +266,6 @@ cd ..
 **Option A: Automated (Recommended)**
 ```bash
 ./ansible_with_agent.sh playbook.yaml
-```
-Automatically manages SSH agent lifecycle (start, add key, cleanup).
-
-**Option B: Manual**
-```bash
-./ssh-agent-setup.sh
-./ssh-agent-stop.sh
 ```
 See [SSH_PASSPHRASE_IMPLEMENTATION.md](SSH_PASSPHRASE_IMPLEMENTATION.md) for complete implementation details.
 See [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) for manual SSH agent commands.
@@ -379,7 +369,7 @@ cp *.example.yml *.yml
 cd ..
 
 # 2. Configure inventory (not in git)
-# Edit hosts_bay.ini, hosts_haproxy.ini, hosts_restream.ini with your servers
+# Edit hosts_bay.ini with your servers
 
 # 3. Start SSH agent
 ./ssh-agent-setup.sh
@@ -503,7 +493,7 @@ vault_dns_records:
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_dns.ini dns_server_manage.yaml
+ansible-playbook -i hosts_bay.ini dns_server_manage.yaml
 ```
 
 **Security:**
@@ -861,33 +851,43 @@ ansible-playbook -i hosts_bay.ini upgrade_deb.yaml --limit [host-or-group-name]
 | Playbook | Purpose | Hosts |
 |----------|---------|-------|
 | `workstation.yaml` | Full workstation setup | workers |
-| `docker.yaml` | Install Docker only | workers |
-| `kuber.yaml` | Setup Kubernetes packages | workers |
-| `kuber_plane_init.yaml` | Initialize control plane with Calico | planes |
-| `kuber_worker_join.yaml` | Join workers to cluster | workers_all |
-| `kuber_verify.yaml` | Verify cluster health | planes |
-| `kuber_plane_reset.yaml` | Reset control plane nodes | masters |
-| `kuber_worker_reset.yaml` | Reset worker nodes | workers_all |
-| `haproxy.yaml` | Install HAProxy | haproxy |
-| `common_install.yaml` | Setup common tools, zsh, dotfiles | workers |
+| `docker.yaml` | Install Docker only | all |
+| `kuber.yaml` | Setup Kubernetes packages | [cluster-group] |
+| `kuber_plane_init.yaml` | Initialize control plane with Calico | bay_plane1 |
+| `kuber_worker_join.yaml` | Join workers to cluster | [worker-hostname] |
+| `kuber_verify.yaml` | Verify cluster health | bay_plane1 |
+| `kuber_plane_reset.yaml` | Reset control plane nodes | bay_plane1 |
+| `kuber_worker_reset.yaml` | Reset worker nodes | [worker-hostname] |
+| `haproxy.yaml` | Install HAProxy | all |
+| `haproxy_k8s.yaml` | Configure HAProxy for K8s API | haproxy_spb |
+| `common_install.yaml` | Setup common tools, zsh, dotfiles | workers_super |
 | `nfs_server_manage.yaml` | Manage NFS exports | nfs_servers |
 | `nfs_client_manage.yaml` | Manage NFS mounts | nfs_clients |
 | `dns_server_manage.yaml` | Manage Unbound DNS servers | dns_servers |
 | `dns_client_manage.yaml` | Configure DNS clients | dns_clients |
 | `dns_verify.yaml` | Verify DNS infrastructure health | wireguard_cluster |
 | `dns_full_deployment.yaml` | Deploy and verify DNS servers and infrastructure | localhost |
-| `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster |
+| `upgrade_deb.yaml` | Upgrade Debian packages | bay_cluster_all |
 | `longhorn_remove_workers.yaml` | Remove Longhorn folders and data | workers_all |
 | `longhorn_verify_cleanup.yaml` | Verify Longhorn data cleanup | workers_all |
 | `longhorn_master_cleanup.yaml` | Clean and verify Longhorn data (master playbook) | masters |
  | `wireguard_manage.yaml` | Manage WireGuard VPN network | wireguard_servers |
- | `wireguard_rotate_keys.yaml` | Rotate WireGuard keys | wireguard_servers |
- | `haproxy_k8s.yaml` | Configure HAProxy for Kubernetes API load balancing | planes_all |
- | `keepalived_manage.yaml` | Deploy Keepalived for Kubernetes API VIP high availability | [haproxy-hostname] |
+  | `wireguard_rotate_keys.yaml` | Rotate WireGuard keys | wireguard_servers |
+  | `haproxy_k8s.yaml` | Configure HAProxy for Kubernetes API load balancing | planes_all |
+  | `keepalived_manage.yaml` | Deploy Keepalived for Kubernetes API VIP high availability | [haproxy-hostname] |
+  | `apt_cleanup.yaml` | Clean up stale APT locks and processes | all |
+  | `test_ssh_only.yaml` | Test SSH connection without sudo | wireguard_cluster |
+  | `test_vault_connectivity.yaml` | Test vault secrets connectivity | wireguard_cluster |
+  | `test_vault_vars.yaml` | Verify vault variables are accessible | localhost |
+  | `test_verification.yaml` | Basic verification test | localhost |
 
 ### Subdirectory Playbooks
 
-`playbooks/disk/create_config_mount_new_disk.yaml` - Disk partitioning and mounting
+- `playbooks/disk/create_config_mount_new_disk.yaml` - Disk partitioning and mounting
+- `playbooks/haproxy_spb_k8s.yaml` - Configure HAProxy for K8s on haproxy_spb
+- `playbooks/haproxy_start_and_verify.yaml` - Start HAProxy and verify configuration
+- `playbooks/haproxy_verify.yaml` - Verify HAProxy configuration
+- `playbooks/k8s_lb_verify.yaml` - Verify K8s load balancer (Keepalived VIP + HAProxy)
 
 ### Using Tags
 
@@ -989,7 +989,11 @@ Cluster playbooks use rolling updates with `serial` parameter:
 
 ### Run All Tests
 ```bash
-./run_tests.sh
+# Run unit tests (validate variables)
+ansible-playbook tests/unit/test_*.yaml --check
+
+# Run integration tests (validate role execution)
+ansible-playbook tests/integration/test_*.yaml --check
 ```
 
 ### Test Categories
@@ -1126,8 +1130,8 @@ ssh ansible_user@target_host
 # Check inventory
 ansible-inventory -i hosts_bay.ini --list
 
-# Start SSH agent if needed
-./ssh-agent-setup.sh
+# Start SSH agent
+./ansible_with_agent.sh --preflight
 ```
 
 **Could not open a connection to your authentication agent:**
@@ -1136,8 +1140,16 @@ ansible-inventory -i hosts_bay.ini --list
 eval "$(ssh-agent -s)"
 
 # Add SSH keys
-ssh-add ~/.ssh/id_rsa
-ssh-add ~/.ssh/id_ed25519
+ssh-add ~/.ssh/ansible/ansible_id_ed25519
+```
+
+**Could not open a connection to your authentication agent:**
+```bash
+# Start SSH agent
+eval "$(ssh-agent -s)"
+
+# Add SSH keys
+ssh-add ~/.ssh/ansible/ansible_id_ed25519
 ```
 
 **Playbook hangs on package installation:**
