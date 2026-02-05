@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Join additional control plane nodes to an existing Kubernetes HA cluster
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - kubeadm
+    - control-plane
+    - ha
+    - cluster
+
+dependencies: []

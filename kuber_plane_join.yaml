@@ -1,0 +1,244 @@
+---
+# ============================================================================
+# Add New Control Plane Node to Existing Kubernetes Cluster
+# ============================================================================
+#
+# This playbook handles the complete setup for adding a new control plane:
+#   1. WireGuard VPN configuration (mesh connectivity)
+#   2. Keepalived VRRP configuration (VIP failover)
+#   3. Kubernetes control plane join
+#
+# PREREQUISITES:
+#   1. New host added to inventory in appropriate groups:
+#      - wireguard_servers (for WG mesh server role)
+#      - planes_all (for Keepalived and K8s control plane)
+#
+#   2. WireGuard peer configuration added to vault_secrets.yml:
+#      vault_wg_peers:
+#        - name: "[new-plane-name]"
+#          host_group: "[new-plane-inventory-group]"
+#          allowed_ips: "[new-plane-wg-ip]/32"
+#          endpoint: "[new-plane-public-ip]:[port]"
+#          client_listen_port: "[unique-port]"
+#
+#      vault_wg_server_ips:
+#        [new-plane-inventory-group]: "[new-plane-wg-ip]"
+#
+#      vault_wg_server_ports:
+#        [new-plane-inventory-group]: "[unique-server-port]"
+#
+#      vault_wg_peer_private_keys:
+#        [new-plane-name]: "[generated-private-key]"
+#
+#      vault_wg_peer_public_keys:
+#        [new-plane-name]: "[generated-public-key]"
+#
+#   3. Keepalived control plane entry added to vault_secrets.yml:
+#      vault_k8s_control_planes:
+#        - name: "[new-plane-hostname]"
+#          wireguard_ip: "[new-plane-wg-ip]"
+#          api_port: "[k8s-api-port]"
+#          priority: 100  # Lower than existing MASTER
+#
+#   4. Kubernetes prerequisites installed on new node (kuber.yaml)
+#
+# USAGE:
+#   1. Edit hosts: field below to target new control plane host
+#   2. ansible-playbook kuber_plane_join.yaml --check  # Dry run
+#   3. ansible-playbook kuber_plane_join.yaml          # Execute
+#
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Play 1: Configure WireGuard on ALL cluster members
+# ----------------------------------------------------------------------------
+# WireGuard requires mesh update - all nodes need peer configs
+- name: "Play 1/4: Update WireGuard mesh for new control plane"
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - vpn
+    - plane_join
+  vars:
+    wg_operation: "install"
+
+  tasks:
+    - name: Display WireGuard mesh update
+      ansible.builtin.debug:
+        msg: "Updating WireGuard mesh configuration on {{ inventory_hostname }}"
+
+    - name: Ensure WireGuard peer keys are defined in vault
+      ansible.builtin.assert:
+        that:
+          - vault_wg_peer_private_keys is defined
+          - vault_wg_peer_private_keys | length > 0
+          - vault_wg_peer_public_keys is defined
+          - vault_wg_peer_public_keys | length > 0
+        fail_msg: "WireGuard peer keys not defined. See WIREGUARD_SETUP.md"
+        success_msg: "WireGuard peer keys found in vault"
+
+    - name: Apply WireGuard role
+      ansible.builtin.include_role:
+        name: wireguard
+
+# ----------------------------------------------------------------------------
+# Play 2: Verify WireGuard connectivity to new plane
+# ----------------------------------------------------------------------------
+- name: "Play 2/4: Verify WireGuard connectivity"
+  hosts: "[plane-hostname]"
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - verify
+    - plane_join
+  vars:
+    wg_interface: "{{ vault_wg_interface | default('wg99') }}"
+
+  tasks:
+    - name: Check WireGuard interface is up
+      ansible.builtin.command: wg show {{ wg_interface }}
+      register: wg_status
+      changed_when: false
+      failed_when: wg_status.rc != 0
+
+    - name: Display WireGuard status
+      ansible.builtin.debug:
+        var: wg_status.stdout_lines
+
+    - name: Ping existing control plane via WireGuard
+      ansible.builtin.command: ping -c 3 {{ vault_k8s_api_vip }}
+      register: ping_result
+      changed_when: false
+      failed_when: ping_result.rc != 0
+
+    - name: Display ping result
+      ansible.builtin.debug:
+        msg: "Successfully reached VIP {{ vault_k8s_api_vip }} via WireGuard"
+
+# ----------------------------------------------------------------------------
+# Play 3: Configure Keepalived on ALL control planes
+# ----------------------------------------------------------------------------
+# Keepalived VRRP needs reconfiguration on all planes for failover
+- name: "Play 3/4: Configure Keepalived VRRP on control planes"
+  hosts: planes_all
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+    - vars/packages.yaml
+  tags:
+    - keepalived
+    - vrrp
+    - plane_join
+  pre_tasks:
+    - name: Ensure required system facts are collected
+      ansible.builtin.setup:
+
+  roles:
+    - keepalived
+
+  post_tasks:
+    - name: Verify Keepalived service is running
+      ansible.builtin.systemd:
+        name: keepalived
+        state: started
+        enabled: true
+
+# ----------------------------------------------------------------------------
+# Play 4: Join new node as Kubernetes control plane
+# ----------------------------------------------------------------------------
+- name: "Play 4/4: Join Kubernetes control plane"
+  hosts: "[plane-hostname]"
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - kubernetes
+    - k8s
+    - join
+    - control-plane
+    - plane_join
+
+  roles:
+    - kuber_plane_join
+
+# ----------------------------------------------------------------------------
+# Play 5: Verify cluster health
+# ----------------------------------------------------------------------------
+- name: "Play 5/5: Verify cluster health after join"
+  hosts: "[plane-hostname]"
+  become: true
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - verify
+    - plane_join
+
+  tasks:
+    - name: Get cluster nodes
+      ansible.builtin.command: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: cluster_nodes
+      changed_when: false
+
+    - name: Display cluster nodes
+      ansible.builtin.debug:
+        var: cluster_nodes.stdout_lines
+
+    - name: Verify all control planes are Ready
+      ansible.builtin.command: >-
+        kubectl get nodes -l node-role.kubernetes.io/control-plane
+        -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: control_plane_status
+      changed_when: false
+
+    - name: Display control plane status
+      ansible.builtin.debug:
+        var: control_plane_status.stdout_lines
+
+    - name: Check Keepalived VIP assignment
+      ansible.builtin.shell: |
+        for host in {{ groups['planes_all'] | join(' ') }}; do
+          echo "Checking VIP on $host..."
+        done
+        ip addr show {{ vault_keepalived_vip_interface | default('wg99') }} | grep {{ vault_keepalived_vip }} || true
+      register: vip_check
+      changed_when: false
+
+    - name: Display VIP status
+      ansible.builtin.debug:
+        var: vip_check.stdout_lines
+
+    - name: Final summary
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "    Control Plane Join Complete"
+          - "=============================================="
+          - ""
+          - "New control plane: {{ inventory_hostname }}"
+          - "Cluster VIP: {{ vault_k8s_api_vip }}"
+          - ""
+          - "Components configured:"
+          - "  [OK] WireGuard VPN mesh"
+          - "  [OK] Keepalived VRRP failover"
+          - "  [OK] Kubernetes control plane"
+          - ""
+          - "Next steps:"
+          - "  1. Run kuber_verify.yaml for full health check"
+          - "  2. Test VIP failover by stopping keepalived on MASTER"
+          - "=============================================="

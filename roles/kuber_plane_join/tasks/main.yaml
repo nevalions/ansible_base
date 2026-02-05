@@ -1,0 +1,270 @@
+---
+- name: Check if node is already joined
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Fail if node is already joined
+  ansible.builtin.fail:
+    msg: "Node is already joined to a cluster. Use kuber_plane_reset.yaml to reset first."
+  when: kubelet_conf.stat.exists
+
+- name: Assert control plane inventory group exists when using VIP
+  ansible.builtin.assert:
+    that:
+      - groups['planes_all'] is defined
+      - groups['planes_all'] | length > 0
+    success_msg: "Control plane inventory group found for VIP delegation"
+    fail_msg: "VIP is set, but no control plane hosts found. Set kuber_plane_join_control_plane_host to a control plane inventory host/group."
+  when: kuber_plane_join_control_plane_host == 'VIP'
+
+- name: Set delegate host for control plane tasks
+  ansible.builtin.set_fact:
+    kuber_plane_join_delegate_host: "{{ groups['planes_all'][0] if kuber_plane_join_control_plane_host == 'VIP' else kuber_plane_join_control_plane_host }}"
+
+- name: Upload certificates to enable control plane join
+  ansible.builtin.command: kubeadm init phase upload-certs --upload-certs
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: upload_certs
+  changed_when: true
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+
+- name: Extract certificate key
+  ansible.builtin.set_fact:
+    kuber_plane_join_cert_key: "{{ upload_certs.stdout_lines | last | trim }}"
+
+- name: Display certificate key
+  ansible.builtin.debug:
+    msg: "Certificate key: {{ kuber_plane_join_cert_key }}"
+
+- name: Generate kubeadm join token from control plane
+  ansible.builtin.command: kubeadm token create --print-join-command
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: join_command
+  changed_when: true
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+
+- name: Parse join command to extract token and CA cert hash
+  ansible.builtin.set_fact:
+    kuber_plane_join_token: "{{ join_command.stdout | regex_search('--token\\s+[a-z0-9]+\\.[a-z0-9]+') | regex_replace('--token\\s+', '') }}"
+    kuber_plane_join_ca_cert_hash: "{{ join_command.stdout | regex_search('sha256:[a-f0-9]{64}') | regex_replace('sha256:', '') }}"
+
+- name: Display join information
+  ansible.builtin.debug:
+    msg:
+      - "Control Plane Endpoint: {{ kuber_plane_join_control_plane_ip }}:{{ kuber_plane_join_api_port }}"
+      - "Token: {{ kuber_plane_join_token }}"
+      - "CA Cert Hash: sha256:{{ kuber_plane_join_ca_cert_hash }}"
+      - "Certificate Key: {{ kuber_plane_join_cert_key }}"
+
+- name: Create containerd config directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: Configure containerd cgroup driver
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/roles/kuber/templates/containerd-config.toml.j2"
+    dest: /etc/containerd/config.toml
+    mode: "0644"
+
+- name: Restart containerd
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    enabled: true
+
+- name: Create kubelet systemd service file
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=kubelet: The Kubernetes Node Agent
+      Documentation=https://kubernetes.io/docs/
+      After=containerd.service
+      Requires=containerd.service
+
+      [Service]
+      ExecStart=/usr/local/bin/kubelet
+      Restart=always
+      StartLimitInterval=0
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/kubelet.service
+    mode: "0644"
+
+- name: Create kubelet drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    mode: "0755"
+
+- name: Create kubeadm kubelet drop-in configuration
+  ansible.builtin.copy:
+    content: |
+      [Service]
+      Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+      Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+      # This is a file that "kubeadm init" and "kubeadm join" generate at runtime
+      EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+      # This is a file that the user can use for overrides of the kubelet args
+      EnvironmentFile=-/etc/default/kubelet
+      ExecStart=
+      ExecStart=/usr/local/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+    dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    mode: "0644"
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Stop kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+  ignore_errors: true
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: true
+
+- name: Copy kubeadm control plane join config
+  ansible.builtin.template:
+    src: kube-plane-join.yaml.j2
+    dest: /tmp/kube-plane-join.yaml
+    mode: "0644"
+
+- name: Join as control plane node
+  ansible.builtin.command: kubeadm join --config=/tmp/kube-plane-join.yaml
+  register: kubeadm_join
+  changed_when: true
+
+- name: Wait for kubelet to be ready
+  ansible.builtin.command: systemctl is-active kubelet
+  register: kubelet_status
+  until: kubelet_status.rc == 0
+  retries: 10
+  delay: 5
+  changed_when: false
+
+- name: Display join success message
+  ansible.builtin.debug:
+    msg: "Control plane node {{ inventory_hostname }} successfully joined to cluster"
+
+- name: Create .kube directory for current user
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: "0700"
+    owner: "{{ ansible_user_uid | default(0) }}"
+    group: "{{ ansible_user_gid | default(0) }}"
+
+- name: Copy admin.conf to current user's kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: true
+    mode: "0600"
+    owner: "{{ ansible_user_uid | default(0) }}"
+    group: "{{ ansible_user_gid | default(0) }}"
+
+- name: Verify node is visible from existing control plane
+  ansible.builtin.command: kubectl get nodes {{ ansible_hostname }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: node_check
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display node status
+  ansible.builtin.debug:
+    var: node_check.stdout_lines
+  when: node_check.rc == 0
+
+- name: Wait for node to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready node {{ ansible_hostname }} --timeout=600s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: node_ready
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+  changed_when: false
+  until: node_ready.rc == 0
+  retries: 30
+  delay: 10
+  ignore_errors: true
+
+- name: Assert node is Ready
+  ansible.builtin.assert:
+    that:
+      - node_ready.rc == 0
+    success_msg: "Control plane node {{ ansible_hostname }} is Ready"
+    fail_msg: "Control plane node {{ ansible_hostname }} is not Ready after 600s"
+  when: node_ready.rc is defined
+
+- name: Verify control plane components
+  ansible.builtin.command: kubectl get pods -n kube-system -l tier=control-plane -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: control_plane_pods
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display control plane pods
+  ansible.builtin.debug:
+    var: control_plane_pods.stdout_lines
+  when: control_plane_pods.rc == 0
+
+- name: Get Calico pod on this control plane
+  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_pod_check
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico pods
+  ansible.builtin.debug:
+    var: calico_pod_check.stdout_lines
+  when: calico_pod_check.rc == 0
+
+- name: Get all cluster nodes
+  ansible.builtin.command: kubectl get nodes -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: all_nodes
+  delegate_to: "{{ kuber_plane_join_delegate_host }}"
+  run_once: true
+  changed_when: false
+  ignore_errors: true
+
+- name: Display all cluster nodes
+  ansible.builtin.debug:
+    var: all_nodes.stdout_lines
+  when: all_nodes.rc == 0
+
+- name: Display control plane join summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Control Plane Join Complete ==="
+      - "Node: {{ ansible_hostname }}"
+      - "Status: Ready"
+      - "Role: control-plane"
+      - "Calico CNI: Active"
+      - "Next steps:"
+      - "  1. Update vault_k8s_control_planes list in vault_secrets.yml"
+      - "  2. Run keepalived_manage.yaml to reconfigure VRRP failover"
+      - "  3. Run kuber_verify.yaml for full cluster health check"

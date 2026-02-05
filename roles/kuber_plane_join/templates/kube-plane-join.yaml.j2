@@ -1,0 +1,27 @@
+---
+apiVersion: kubeadm.k8s.io/{{ kubeadm_api_version }}
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: "{{ kuber_plane_join_control_plane_ip }}:{{ kuber_plane_join_api_port }}"
+    token: "{{ kuber_plane_join_token }}"
+    caCertHashes:
+      - "sha256:{{ kuber_plane_join_ca_cert_hash }}"
+controlPlane:
+  certificateKey: "{{ kuber_plane_join_cert_key }}"
+  localAPIEndpoint:
+    advertiseAddress: >-
+      {{
+        ansible_facts.get(vault_interface | default('wg99'), {})
+        .get('ipv4', {})
+        .get('address', ansible_default_ipv4.address)
+      }}
+    bindPort: {{ kuber_plane_join_api_port }}
+nodeRegistration:
+  name: "{{ ansible_hostname }}"
+  kubeletExtraArgs:
+{% if kuber_plane_join_kubelet_extra_args is defined %}
+{% for key, value in kuber_plane_join_kubelet_extra_args.items() %}
+    {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
