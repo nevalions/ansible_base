@@ -1,28 +1,42 @@
-# Ansible Repository Guidelines for Agentic Coding
+# OpenCode Worker Guide for Ansible Repository
 
-## ⚠️ SECURITY WARNING - READ BEFORE EDITING
+This document explains what the OpenCode worker does in this repo and the Ansible best practices we follow. It is the authoritative workflow for edits, reviews, and automation.
 
-### 🚨 CRITICAL: NEVER COMMIT SENSITIVE DATA
+## What is the OpenCode worker?
 
-**STRICTLY PROHIBITED in ALL files (docs, playbooks, examples):**
+The OpenCode worker is an automated coding agent that:
+- Reads and edits files in this repo using the same rules as human contributors.
+- Applies Ansible best practices, security policies, and repository conventions.
+- Avoids destructive operations and never commits secrets or sensitive data.
+- Prefers small, safe changes with clear reasoning and documentation updates.
 
-❌ **NEVER** include real usernames
-❌ **NEVER** include real IP addresses (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
-❌ **NEVER** include real SSH ports (e.g., `22`, custom SSH ports)
-❌ **NEVER** include real hostnames or domain names (except in `hosts:` field)
-❌ **NEVER** include real passwords or API keys
-❌ **NEVER** include SSH private keys or certificates
-❌ **NEVER** include network CIDRs or network identifiers
+The OpenCode worker is not allowed to add real infrastructure data. It must use placeholders in all examples and docs.
 
-**✅ ALWAYS use placeholders instead:**
-- Usernames: `[your-username]`
-- IP addresses: `[internal-ip]`, `[server-ip]`, `[client-ip]`
-- Ports: `[custom-ssh-port]`, `[server-port]`
-- Hostnames: `[cluster-hostname]`, `[server-hostname]`
-- Passwords: `[your-password-here]`
+---
+
+## SECURITY WARNING - READ BEFORE EDITING
+
+### CRITICAL: NEVER COMMIT SENSITIVE DATA
+
+STRICTLY PROHIBITED in ALL files (docs, playbooks, examples):
+- Real usernames
+- Real IP addresses
+- Real SSH ports
+- Real hostnames or domain names (except inventory group names in `hosts:` field)
+- Real passwords or API keys
+- SSH private keys or certificates
+- Network CIDRs or network identifiers
+
+ALWAYS use placeholders instead:
+- Usernames: `[your-username]`, `[admin-username]`
+- IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
+- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`, `[k8s-api-port]`
+- Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
+- Passwords: `[your-password-here]`, `[sudo-password]`
 - API keys: `[your-api-key-here]`
+- Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
 
-**Violation of this policy will immediately fail code review.**
+Violation of this policy will immediately fail code review.
 
 ---
 
@@ -70,6 +84,8 @@ ansible-playbook -i inventory <playbook>.yaml --tags <tag_name>
 ansible-playbook -i inventory <playbook>.yaml -v
 ```
 
+---
+
 ## Code Style Guidelines
 
 ### File Extensions and Structure
@@ -93,18 +109,18 @@ ansible-playbook -i inventory <playbook>.yaml -v
 - Wrap long lines at ~100 characters for readability
 
 ### Naming Conventions
-- **Task names**: Use descriptive, action-oriented names in lowercase with underscores
-  - Good: `"Install Docker packages"`
-  - Good: `"Check if folder exists"`
-- **Variables**: Use lowercase with underscores
+- Task names: descriptive, action-oriented names in lowercase with underscores
+  - Good: "install docker packages"
+  - Good: "check if folder exists"
+- Variables: lowercase with underscores
   - Good: `nfs_exports`, `skip_folder_check`, `docker_check`
-- **Handlers**: Use lowercase describing the action
+- Handlers: lowercase describing the action
   - Good: `restart nfs`, `reload exports`
-- **Playbooks**: Use lowercase with underscores, descriptive of purpose
+- Playbooks: lowercase with underscores, descriptive of purpose
   - Good: `nfs_server_manage.yaml`, `workstation.yaml`
 
 ### Module Usage
-- Use FQCN (fully qualified collection name) for clarity:
+- Use FQCN (fully qualified collection name):
   ```yaml
   ansible.builtin.get_url:
   ansible.builtin.stat:
@@ -122,7 +138,7 @@ ansible-playbook -i inventory <playbook>.yaml -v
 
 ### Conditionals
 - Use `when` clauses for conditional execution
-- Use `ansible_facts['os_family']` for OS detection (Debian, Archlinux, etc.)
+- Use `ansible_facts['os_family']` for OS detection
 - Use `ansible_os_family` for broader checks
 - Support `skip_folder_check` pattern with defaults: `skip_folder_check | default(false)`
 
@@ -132,7 +148,7 @@ ansible-playbook -i inventory <playbook>.yaml -v
 - Use `| select()`, `| list()`, `| difference()` filters for data manipulation
 
 ### Task Organization
-- Group related tasks with comments
+- Group related tasks with comments where it improves clarity
 - Use `import_tasks` for static file inclusion
 - Use `include_role` or `include_tasks` for dynamic inclusion
 - Define handlers in `handlers/main.yaml` and notify with same name
@@ -144,7 +160,7 @@ ansible-playbook -i inventory <playbook>.yaml -v
   # BEGIN ANSIBLE MANAGED SECTION
   # END ANSIBLE MANAGED SECTION
   ```
-- Preserve custom sections that shouldn't be overwritten
+- Preserve custom sections that should not be overwritten
 - Use `{% if custom_exports | length > 0 %}` for conditional sections
 
 ### Variable Management
@@ -179,6 +195,8 @@ ansible-playbook -i inventory <playbook>.yaml -v
 - Arch/Manjaro: Use `pacman`
 - Always condition OS-specific tasks with `when: ansible_facts['os_family'] == "<family>"`
 
+---
+
 ## Configuration Management
 
 ### ansible.cfg
@@ -195,12 +213,12 @@ Always create an `ansible.cfg` file in project root with:
 ### group_vars and host_vars
 - Use `group_vars/` for group-level inventory variables (non-sensitive only)
 - Use `host_vars/` for host-specific variables
-- **Security**: Store connection details (ansible_user, ansible_port, ansible_become) in inventory files' `:vars` sections, not in group_vars
-- **Security**: Create `group_vars/*.example.yml` templates and keep actual `group_vars/*.yml` files gitignored
+- Security: store connection details (`ansible_user`, `ansible_port`, `ansible_become`) in inventory files `:vars` sections, not in `group_vars`
+- Security: create `group_vars/*.example.yml` templates and keep actual `group_vars/*.yml` files gitignored
 - Organize variables by function and purpose
 - Use `.yml` extension for variable files
 - Keep sensitive data separate (consider ansible-vault for passwords, API keys)
-- See SECURITY.md for comprehensive security guidelines
+- See `SECURITY.md` for comprehensive security guidelines
 
 ### ansible-lint
 Always configure `.ansible-lint` with:
@@ -216,11 +234,13 @@ Always configure `.ansible-lint` with:
 - Ensure `ansible_id_ed25519` has correct permissions: `chmod 600 ansible/ansible_id_ed25519`
 - Example SSH config entry:
   ```
-  Host my-server
+  Host [server-hostname]
       HostName [server-ip]
-      User ansible
+      User [your-username]
       IdentityFile ~/.ssh/ansible/ansible_id_ed25519
   ```
+
+---
 
 ## Playbook Best Practices
 
@@ -243,40 +263,39 @@ Always configure `.ansible-lint` with:
 - Use `serial:` for cluster operations
 - `serial: 1` for critical operations (one host at a time)
 - `serial: "30%"` for rolling updates across 30% of hosts
-- `serial: "50%"` for updates across half the hosts
+- `serial: "50%"` for updates across half of hosts
 - Ensures service availability during updates
 - Important for Kubernetes, NFS, and multi-node deployments
 
+---
+
 ## Security Guidelines
 
-### ⚠️ CRITICAL: NEVER COMMIT SENSITIVE DATA
+### CRITICAL: NEVER COMMIT SENSITIVE DATA
 
-**STRICTLY PROHIBITED in ALL commits (code, docs, examples):**
+STRICTLY PROHIBITED in ALL commits (code, docs, examples):
+- Real usernames
+- Real IP addresses
+- Real SSH ports
+- Real hostnames or domain names (except inventory group names in `hosts:` field)
+- Real passwords
+- API keys/tokens
+- SSH private keys
+- Certificates
+- Network CIDRs
 
-❌ **Real usernames** (use placeholders instead)
-❌ **Real IP addresses** (e.g., `192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
-❌ **Real SSH ports** (e.g., `22`, custom SSH ports)
-❌ **Real hostnames or domain names** (except inventory group names in `hosts:` field)
-❌ **Real passwords** (e.g., `myPassword123`, `secret456`)
-❌ **API keys/tokens** (e.g., `sk-1234567890abcdef`, `ghp_xxxxxxxxx`)
-❌ **SSH private keys** (e.g., `-----BEGIN RSA PRIVATE KEY-----`)
-❌ **Certificates** (e.g., `-----BEGIN CERTIFICATE-----`)
-❌ **Network CIDRs** (e.g., `[network-cidr]`)
-❌ **Real domain names** (e.g., `mycompany.com`, `internal.domain.org`)
-
-**✅ MANDATORY: Use placeholders ONLY:**
+MANDATORY: Use placeholders ONLY:
 - Usernames: `[your-username]`, `[admin-username]`
 - IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
-- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`
+- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`, `[k8s-api-port]`
 - Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
-- **Exception**: Inventory group names in `hosts:` field are allowed (e.g., `hosts: haproxy_servers`)
+- Exception: inventory group names in `hosts:` field are allowed
 - Passwords: `[your-password-here]`, `[sudo-password]`
 - API keys: `[your-api-key-here]`
 - Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
 
-**Examples of CORRECT placeholder usage:**
+Examples of correct placeholder usage:
 ```yaml
-# ✅ CORRECT - Uses placeholders
 ansible_user: [your-username]
 ansible_port: [custom-ssh-port]
 ansible_host: [server-ip]
@@ -284,108 +303,60 @@ vault_become_pass: [your-password-here]
 dns_server: [dns-server-ip]
 ```
 
-**❌ WRONG - Never use real data in examples (even "wrong" examples):**
-```yaml
-# ❌ DO NOT use real values even in examples
-ansible_user: some-real-username
-ansible_port: 12345
-ansible_host: [example-ip]
-vault_become_pass: [example-password]
-```
+Never use real values in examples, even in "wrong" examples.
 
 ### Never Commit Secrets
-- **CRITICAL**: Never commit plaintext passwords, API keys, tokens, or any sensitive data
-- **CRITICAL**: Never put logins or passwords in documentation files (even in examples)
-- **CRITICAL**: Never include SSH private keys, certificates, or encrypted secrets in git
+- Never commit plaintext passwords, API keys, tokens, or sensitive data
+- Never put logins or passwords in documentation files
+- Never include SSH private keys, certificates, or encrypted secrets in git
 - Use `[redacted]`, `[REDACTED]`, or placeholder text in documentation examples
-- Reference SECURITY.md for comprehensive security practices
+- Reference `SECURITY.md` for comprehensive security practices
 
 ### Secret Management
 - Use `ansible-vault` for encrypting sensitive variables in playbooks
-- Use GPG or password managers for vault password storage (see SECURITY.md)
-- **Vault Password File**: Use `.vault_pass` file in project root for automated vault encryption/decryption
+- Use GPG or password managers for vault password storage (see `SECURITY.md`)
+- Vault password file: use `.vault_pass` in project root for automation
   - Ensure `.vault_pass` has correct permissions: `chmod 600 .vault_pass`
   - Add `.vault_pass` to `.gitignore` to prevent committing passwords
   - Configure in `ansible.cfg`: `vault_password_file = .vault_pass`
   - Example: `ansible-vault encrypt secrets.yaml` (reads password from `.vault_pass`)
 - Store secrets in environment variables only when absolutely necessary
-- Consider using external secret management systems (HashiCorp Vault, AWS Secrets Manager)
+- Consider external secret managers (HashiCorp Vault, AWS Secrets Manager)
 
 ### Documentation Security
-
-**⚠️ CRITICAL: DOCUMENTATION MUST USE PLACEHOLDERS**
-
-**NEVER include in ANY documentation files (README.md, guides, examples):**
-❌ Real usernames, IPs, ports, hostnames, passwords, API keys, tokens, SSH keys, certificates, or network CIDRs
-
-**ALWAYS use placeholders:**
-```yaml
-# ✅ CORRECT - Uses placeholders
-username: [your-username]
-password: [your-password-here]
-api_key: [your-api-key-here]
-ip_address: [internal-ip]
-port: [custom-ssh-port]
-hostname: [cluster-hostname]
-```
-
-**❌ WRONG - Never use real data even in examples (even "wrong" examples):**
-```yaml
-# ❌ DO NOT use real values even in examples
-username: some-real-username
-password: "some-real-password"
-api_key: "some-real-api-key"
-ip_address: [example-ip]
-```
-
-- Documentation files must use placeholders for all credentials
-- Use `[redacted]`, `[REDACTED]`, `[your-username]`, `[your-password-here]`, `[your-api-key-here]` patterns
-- NEVER use real values even in examples or comments
-- Review ALL documentation files before committing with `git diff`
-- Use git hooks to prevent accidental secret commits if possible
+Documentation must use placeholders only. Never include real data in README files, guides, or examples.
 
 ### Pre-Commit Security Checklist
 Before any commit, verify:
 - [ ] No plaintext passwords in any files (use `git diff` to review)
 - [ ] No API keys, tokens, or credentials in code or documentation
 - [ ] All secrets properly encrypted with ansible-vault or GPG
-- [ ] Sensitive files added to .gitignore
-- [ ] Note: Inventory group names in `hosts:` field are acceptable (e.g., `hosts: haproxy_servers`)
+- [ ] Sensitive files added to `.gitignore`
+- [ ] Inventory group names in `hosts:` field are acceptable
 
 ### Git Hooks for Security Validation
+The repository includes Git hooks to prevent commits with sensitive data.
 
-The repository includes comprehensive Git hooks to automatically prevent commits with sensitive data:
+Available hooks:
+- `pre-commit`: blocks commits containing hardcoded IPs, ports, usernames, hostnames, or other sensitive patterns
+- `commit-msg`: validates commit messages and prevents sensitive data in commit messages
+- `pre-push`: final security verification before pushing to remote repository
+- `post-merge`: automatically updates hooks after pulling/merging changes
+- `post-checkout`: automatically updates hooks after switching branches
 
-#### Available Hooks
-
-- **pre-commit**: Blocks commits containing hardcoded IPs, ports, usernames, hostnames, or other sensitive patterns
-- **commit-msg**: Validates commit messages and prevents sensitive data in commit messages
-- **pre-push**: Final security verification before pushing to remote repository
-- **post-merge**: Automatically updates hooks after pulling/merging changes
-- **post-checkout**: Automatically updates hooks after switching branches
-
-#### Hook Installation
-
-Hooks are automatically installed when cloning the repository. To reinstall:
-
+Hook installation:
 ```bash
 bash scripts/setup_hooks.sh
 ```
 
-#### Security Patterns Detected
+Security patterns detected:
+- Hardcoded IPs
+- Hardcoded ports
+- Hardcoded usernames
+- Hardcoded hostnames in variables or config
+- Sensitive keys, certificates, vault passwords, API keys, passwords
 
-The hooks automatically detect and block:
-
-- **Hardcoded IPs**: Real infrastructure IPs (`192.168.x.x`, `10.x.x.x`, etc.)
-- **Hardcoded ports**: Kubernetes API ports (`6443`, `7443`), WireGuard ports, custom SSH ports
-- **Hardcoded usernames**: Real usernames (`www`, `root`, `linroot`)
-- **Hardcoded hostnames**: Real hostnames in variables or config (`[haproxy-hostname]`, `[bgp-hostname]`, `[control-plane-hostname]`, etc.)
-  - **Exception**: Inventory group names in `hosts:` field are acceptable (e.g., `hosts: haproxy_servers`)
-- **Sensitive keys**: SSH private keys, certificates, vault passwords, API keys, passwords
-
-#### Acceptable Patterns
-
-All sensitive data must use placeholders:
+Acceptable patterns (placeholders only):
 - IPs: `[server-ip]`, `[client-ip]`, `[internal-ip]`, `[vip-address]`
 - Ports: `[custom-ssh-port]`, `[server-port]`, `[k8s-api-port]`
 - Hostnames: `[cluster-hostname]`, `[server-hostname]`
@@ -393,32 +364,14 @@ All sensitive data must use placeholders:
 - Passwords: `[your-password-here]`
 - API keys: `[your-api-key-here]`
 
-#### Testing Hooks
+Testing hooks:
+- Create a temporary file with placeholders and confirm the hook allows it
+- To test detection locally, replace placeholders with a real value and confirm the hook blocks the commit
+- Never commit or push real values
 
-Test the pre-commit hook:
+Documentation for hooks: `scripts/githooks/README.md`
 
-```bash
-echo "server_ip: 198.51.100.250" > test_sensitive.yaml
-git add test_sensitive.yaml
-git commit -m "test: should fail"
-# Hook should block commit with sensitive data
-git reset HEAD test_sensitive.yaml
-rm test_sensitive.yaml
-```
-
-#### Bypassing Hooks
-
-To bypass hooks temporarily (not recommended):
-
-```bash
-git commit --no-verify
-git push --no-verify
-```
-
-#### Documentation
-
-For detailed documentation, see: `scripts/githooks/README.md`
-- [ ] Documentation uses placeholders instead of real credentials
+---
 
 ## Role Metadata
 
@@ -433,7 +386,7 @@ All roles MUST include `meta/main.yaml` with:
 - `galaxy_tags` - Relevant tags for Ansible Galaxy
 - `dependencies` - List of role dependencies (empty list if none)
 
-### Example meta/main.yaml
+Example `meta/main.yaml`:
 ```yaml
 ---
 author: yourname
@@ -456,6 +409,8 @@ galaxy_tags:
 dependencies: []
 ```
 
+---
+
 ## Testing
 
 ### Test Suite
@@ -470,27 +425,25 @@ ansible-playbook tests/integration/test_common.yaml --check
 
 ### Test Types
 
-#### 1. Unit Tests
-Test variable definitions and structures without executing roles:
+1) Unit Tests
 - Validate variable existence and types
 - Test naming conventions (lowercase_with_underscores)
 - Verify data structures (lists, dicts)
 
-#### 2. Integration Tests
-Run role execution in check mode (no actual changes):
+2) Integration Tests
+- Run role execution in check mode (no actual changes)
 - Test role imports and task execution
 - Validate task flow and logic
 - Ensure handlers are properly defined
 
-#### 3. Validation Tests
+3) Validation Tests
 - Syntax validation: `ansible-playbook --syntax-check`
-- Role structure: Verify tasks/defaults/handlers exist
-- Naming conventions: Detect ALL_CAPS violations
-- FQCN usage: Ensure modules use fully qualified names
+- Role structure: verify tasks/defaults/handlers exist
+- Naming conventions: detect ALL_CAPS violations
+- FQCN usage: ensure modules use fully qualified names
 
 ### Adding Tests
-
-**Unit Test Example:**
+Unit test example:
 ```yaml
 ---
 - name: Test <role_name> variables
@@ -507,7 +460,7 @@ Run role execution in check mode (no actual changes):
         fail_msg: "Variable is missing or wrong type"
 ```
 
-**Integration Test Example:**
+Integration test example:
 ```yaml
 ---
 - name: Test <role_name> role
@@ -545,6 +498,8 @@ test:
     - main
 ```
 
+---
+
 ## Documentation
 
 ### Role Documentation
@@ -558,7 +513,7 @@ Each playbook should include:
 - Descriptive name and purpose
 - Host pattern description
 - Required variables (if any)
-- Usage examples in comments
+- Usage examples in comments (placeholders only)
 
 ### Changelog
 Track changes in `CHANGELOG.md`:
