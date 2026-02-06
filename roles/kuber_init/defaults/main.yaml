@@ -4,7 +4,8 @@ kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet }}"
 kubeadm_service_subnet: "{{ vault_k8s_service_subnet }}"
 
 # Use VIP as control plane endpoint for worker joins
-kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip }}:{{ vault_k8s_api_port }}"
+kubeadm_control_plane_endpoint_host: "{{ vault_k8s_api_vip | default('') }}"
+kubeadm_control_plane_endpoint: "{{ kubeadm_control_plane_endpoint_host }}:{{ vault_k8s_api_port }}"
 
 # Advertise WireGuard IP for internal communication
 # Dynamically finds current host's IP from vault_k8s_control_planes list
@@ -25,6 +26,23 @@ kubeadm_api_server_advertise_address: >-
 kubeadm_kubelet_extra_args:
   node-ip: "{{ kubeadm_api_server_advertise_address }}"
 
+# Ensure API server certificate includes all control-plane endpoints
+kubeadm_api_server_cert_sans: >-
+  {{
+    (
+      [
+        kubeadm_control_plane_endpoint_host,
+        kubeadm_api_server_advertise_address
+      ]
+      + (vault_k8s_control_planes | default([]) | map(attribute='wireguard_ip') | list)
+      + (vault_k8s_control_planes | default([]) | map(attribute='name') | list)
+    )
+    | reject('equalto', '')
+    | select('match', '^(?:\\d{1,3}\\.){3}\\d{1,3}$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+    | unique
+    | list
+  }}
+
 kubeadm_api_version: "v1beta4"
 
 # Calico CNI Configuration (from vault with sensible defaults)
@@ -32,17 +50,19 @@ calico_version: "{{ vault_calico_version | default('v3.31.3') }}"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
 
 # Calico IP Pool Configuration
-# Uses pod subnet from kubeadm configuration for consistency
-calico_ippool_name: "{{ vault_calico_ippool_name | default('default-ipv4-ippool') }}"
-calico_ippool_cidr: "{{ kubeadm_pod_subnet }}"
-calico_encapsulation: "{{ vault_calico_encapsulation | default('VXLANCrossSubnet') }}"
-calico_nat_outgoing: "{{ vault_calico_nat_outgoing | default(true) }}"
-calico_node_selector: "{{ vault_calico_node_selector | default('all()') }}"
-calico_block_size: "{{ vault_calico_block_size | default(26) }}"
-calico_mtu: "{{ vault_calico_mtu | default(1440) }}"
-calico_node_address_interface: "{{ vault_interface | default('wg99') }}"
+calico_ippool_name: "{{ vault_ipPools }}"
+calico_ippool_cidr: "{{ vault_ipPools_cidr }}"
+calico_encapsulation: "{{ vault_ipPools_encapsulation }}"
+calico_nat_outgoing: "{{ natOutgoing }}"
+calico_node_selector: "{{ nodeSelector }}"
+calico_block_size: "{{ vault_ipPools_blockSize }}"
+calico_mtu: "{{ mtu }}"
+calico_node_address_interface: "{{ vault_interface }}"
 
 # Kubeconfig Configuration
 kubeconfig_user: "{{ vault_admin_user | default(ansible_user | default(ansible_user_id)) }}"
 kubeconfig_user_home: "{{ ansible_env.HOME | default(ansible_user_dir | default('/home/' ~ kubeconfig_user)) }}"
 kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"
+
+# Refresh API server certs and kubeconfig on re-run
+kubeadm_refresh_on_existing: true

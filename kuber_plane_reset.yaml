@@ -1,6 +1,6 @@
 ---
 - name: Clean Kubernetes Control Plane for Fresh Setup
-  hosts: bay_plane1
+  hosts: kuber_small_planes
   become: true
   gather_facts: false
   serial: 1

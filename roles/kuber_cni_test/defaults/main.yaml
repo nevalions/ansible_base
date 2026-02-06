@@ -1,0 +1,10 @@
+---
+cni_test_namespace: "cni-test"
+cni_test_pod_image: "nginx:alpine"
+cni_test_pod_port: "80"
+cni_test_namespace_cleanup: true
+cni_test_timeout_seconds: "300"
+cni_test_sleep_seconds: "5"
+cni_test_retry_count: "20"
+cni_test_external_hostname: "[external-hostname]"
+cni_test_test_port: "8080"

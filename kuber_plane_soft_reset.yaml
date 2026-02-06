@@ -1,6 +1,6 @@
 ---
-- name: Clean Kubernetes Worker Node for Fresh Join
-  hosts: kuber_small_workers 
+- name: Soft reset Kubernetes Control Plane (preserve packages)
+  hosts: kuber_small_planes
   become: true
   gather_facts: false
   serial: 1
@@ -11,8 +11,10 @@
     - k8s
     - reset
     - cleanup
-    - worker
+    - master
+    - soft_reset
   vars:
     remove_container_images: false
+    remove_kubernetes_packages: false
   roles:
     - kuber_reset

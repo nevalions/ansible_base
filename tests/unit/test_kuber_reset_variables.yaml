@@ -5,6 +5,7 @@
   gather_facts: false
   vars:
     remove_container_images: false
+    remove_kubernetes_packages: true
   tasks:
     - name: Verify remove_container_images variable
       ansible.builtin.assert:
@@ -13,3 +14,11 @@
           - remove_container_images is boolean
         success_msg: "remove_container_images variable defined correctly"
         fail_msg: "remove_container_images variable is missing or not a boolean"
+
+    - name: Verify remove_kubernetes_packages variable
+      ansible.builtin.assert:
+        that:
+          - remove_kubernetes_packages is defined
+          - remove_kubernetes_packages is boolean
+        success_msg: "remove_kubernetes_packages variable defined correctly"
+        fail_msg: "remove_kubernetes_packages variable is missing or not a boolean"

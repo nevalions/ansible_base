@@ -1,0 +1,543 @@
+---
+- name: Create test namespace
+  ansible.builtin.command: kubectl create namespace {{ cni_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: create_namespace
+  changed_when: "'created' in create_namespace.stdout"
+  ignore_errors: true
+
+- name: Get worker node names
+  ansible.builtin.command: kubectl get nodes -l '!node-role.kubernetes.io/control-plane' -o jsonpath='{.items[*].metadata.name}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: worker_node_names
+  changed_when: false
+
+- name: Set worker node facts
+  ansible.builtin.set_fact:
+    worker_nodes: "{{ worker_node_names.stdout.split() if worker_node_names.stdout is defined and worker_node_names.stdout | length > 0 else [] }}"
+
+- name: Warn if no worker nodes
+  ansible.builtin.debug:
+    msg: "WARNING: No worker nodes found in cluster - cross-node tests will be skipped"
+  when: worker_nodes | length == 0
+
+- name: Check CNI pods on all nodes
+  ansible.builtin.command: kubectl get pods -n calico-system -l k8s-app=calico-node -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.nodeName}{"\t"}{.status.phase}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_pods_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display CNI pod status
+  ansible.builtin.debug:
+    msg: "{{ calico_pods_status.stdout_lines if calico_pods_status.stdout is defined else ['Could not retrieve CNI pod status'] }}"
+  when: calico_pods_status.rc is defined
+
+- name: Check Calico IP pools
+  ansible.builtin.command: kubectl get ippools -n calico-system -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_ippools
+  changed_when: false
+  ignore_errors: true
+
+- name: Display Calico IP pools
+  ansible.builtin.debug:
+    msg: "{{ calico_ippools.stdout_lines if calico_ippools.stdout is defined else ['Could not retrieve IP pools'] }}"
+  when: calico_ippools.stdout is defined
+
+- name: Get control plane node name
+  ansible.builtin.command: kubectl get nodes -l 'node-role.kubernetes.io/control-plane' -o jsonpath='{.items[0].metadata.name}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: control_plane_node
+  changed_when: false
+
+- name: Display cluster nodes
+  ansible.builtin.debug:
+    msg:
+      - "Control plane: {{ control_plane_node.stdout | default('Not found') }}"
+      - "Workers: {{ worker_nodes }}"
+
+- name: Create test pod manifest with node affinity
+  ansible.builtin.copy:
+    dest: /tmp/cni-test-pods.yaml
+    content: |
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: pod-plane
+        namespace: {{ cni_test_namespace }}
+        labels:
+          app: test-pod
+          node: plane
+      spec:
+        nodeName: {{ control_plane_node.stdout }}
+        containers:
+        - name: nginx
+          image: {{ cni_test_pod_image }}
+          ports:
+          - containerPort: {{ cni_test_pod_port }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ cni_test_pod_port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      {% for worker_node in worker_nodes %}
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: pod-worker-{{ loop.index }}
+        namespace: {{ cni_test_namespace }}
+        labels:
+          app: test-pod
+          node: worker-{{ loop.index }}
+      spec:
+        nodeName: {{ worker_node }}
+        containers:
+        - name: nginx
+          image: {{ cni_test_pod_image }}
+          ports:
+          - containerPort: {{ cni_test_pod_port }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ cni_test_pod_port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      {% endfor %}
+  when: control_plane_node.stdout is defined and worker_nodes is defined
+
+- name: Apply test pods
+  ansible.builtin.command: kubectl apply -f /tmp/cni-test-pods.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: apply_test_pods
+  changed_when: true
+  when: control_plane_node.stdout is defined
+
+- name: Wait for all test pods to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod -l app=test-pod -n {{ cni_test_namespace }} --timeout={{ cni_test_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_test_pods
+  changed_when: false
+  until: wait_test_pods.rc == 0
+  retries: "{{ cni_test_retry_count }}"
+  delay: "{{ cni_test_sleep_seconds }}"
+  ignore_errors: true
+
+- name: Check pod statuses in detail
+  ansible.builtin.command: kubectl get pods -n {{ cni_test_namespace }} -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_status_details
+  changed_when: false
+
+- name: Display detailed pod statuses
+  ansible.builtin.debug:
+    msg: "{{ pod_status_details.stdout_lines }}"
+
+- name: Get pod events for troubleshooting
+  ansible.builtin.command: kubectl get events -n {{ cni_test_namespace }} --sort-by='.lastTimestamp'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_events
+  changed_when: false
+
+- name: Display pod events
+  ansible.builtin.debug:
+    msg: "{{ pod_events.stdout_lines }}"
+  when: wait_test_pods.rc != 0
+
+- name: Check IP-in-IP tunnel interfaces on control plane
+  ansible.builtin.command: ip -d link show tunl0
+  register: tunl0_plane
+  changed_when: false
+  ignore_errors: true
+
+- name: Display tunl0 interface on control plane
+  ansible.builtin.debug:
+    msg: "{{ tunl0_plane.stdout_lines if tunl0_plane.stdout is defined else ['tunl0 interface not found or error'] }}"
+
+- name: Check firewall rules on control plane
+  ansible.builtin.shell: iptables -L -v -n | head -30
+  register: iptables_plane
+  changed_when: false
+  ignore_errors: true
+
+- name: Display iptables rules (first 30 lines)
+  ansible.builtin.debug:
+    msg: "{{ iptables_plane.stdout_lines if iptables_plane.stdout is defined else ['Could not retrieve iptables rules'] }}"
+
+- name: Describe failed pods
+  ansible.builtin.command: kubectl describe pod {{ item }} -n {{ cni_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_describe
+  changed_when: false
+  loop: "{{ ['pod-worker-1', 'pod-worker-2'] }}"
+  when:
+    - wait_test_pods.rc != 0
+    - item in pod_status_details.stdout
+  ignore_errors: true
+
+- name: Display failed pod details
+  ansible.builtin.debug:
+    var: pod_describe.results
+  when: pod_describe.results is defined
+
+- name: Display test pods status
+  ansible.builtin.command: kubectl get pods -n {{ cni_test_namespace }} -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: test_pods_status
+  changed_when: false
+
+- name: Show test pods
+  ansible.builtin.debug:
+    var: test_pods_status.stdout_lines
+
+- name: Get pod IP addresses
+  ansible.builtin.command: kubectl get pods -n {{ cni_test_namespace }} -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.podIP}{"\t"}{.spec.nodeName}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_ips
+  changed_when: false
+
+- name: Display pod IPs and nodes
+  ansible.builtin.debug:
+    msg: "{{ pod_ips.stdout_lines }}"
+
+- name: Set pod IP facts for connectivity tests
+  ansible.builtin.set_fact:
+    pod_plane_ip: "{{ item.split('\t')[1] }}"
+  loop: "{{ pod_ips.stdout_lines }}"
+  when: "'pod-plane' in item"
+
+- name: Set pod-worker-1 IP fact
+  ansible.builtin.set_fact:
+    pod_worker_1_ip: "{{ item.split('\t')[1] }}"
+  loop: "{{ pod_ips.stdout_lines }}"
+  when: "'pod-worker-1' in item"
+
+- name: Set pod-worker-2 IP fact
+  ansible.builtin.set_fact:
+    pod_worker_2_ip: "{{ item.split('\t')[1] }}"
+  loop: "{{ pod_ips.stdout_lines }}"
+  when: "'pod-worker-2' in item"
+
+- name: Display pod IP facts
+  ansible.builtin.debug:
+    msg:
+      - "pod-plane IP: {{ pod_plane_ip | default('not found') }}"
+      - "pod-worker-1 IP: {{ pod_worker_1_ip | default('not found') }}"
+      - "pod-worker-2 IP: {{ pod_worker_2_ip | default('not found') }}"
+
+- name: Verify all pods are Ready
+  ansible.builtin.assert:
+    that:
+      - wait_test_pods.rc == 0
+    success_msg: "All test pods are Ready"
+    fail_msg: "Some test pods are not Ready - check pod events and details above"
+  ignore_errors: true
+
+- name: Create ClusterIP service manifest
+  ansible.builtin.copy:
+    dest: /tmp/cni-test-service-clusterip.yaml
+    content: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service-clusterip
+        namespace: {{ cni_test_namespace }}
+      spec:
+        selector:
+          app: test-pod
+        ports:
+        - port: {{ cni_test_test_port }}
+          targetPort: {{ cni_test_pod_port }}
+        type: ClusterIP
+
+- name: Create NodePort service manifest
+  ansible.builtin.copy:
+    dest: /tmp/cni-test-service-nodeport.yaml
+    content: |
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: test-service-nodeport
+        namespace: {{ cni_test_namespace }}
+      spec:
+        selector:
+          app: test-pod
+        ports:
+        - port: {{ cni_test_test_port }}
+          targetPort: {{ cni_test_pod_port }}
+          nodePort: 30080
+        type: NodePort
+
+- name: Apply ClusterIP service
+  ansible.builtin.command: kubectl apply -f /tmp/cni-test-service-clusterip.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: apply_clusterip
+  changed_when: true
+
+- name: Apply NodePort service
+  ansible.builtin.command: kubectl apply -f /tmp/cni-test-service-nodeport.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: apply_nodeport
+  changed_when: true
+
+- name: Wait for services to be ready
+  ansible.builtin.command: kubectl get svc -n {{ cni_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: services_status
+  changed_when: false
+
+- name: Display services
+  ansible.builtin.debug:
+    var: services_status.stdout_lines
+
+- name: Get ClusterIP service IP
+  ansible.builtin.command: kubectl get svc test-service-clusterip -n {{ cni_test_namespace }} -o jsonpath='{.spec.clusterIP}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: clusterip_service_ip
+  changed_when: false
+
+- name: Get NodePort service port
+  ansible.builtin.command: kubectl get svc test-service-nodeport -n {{ cni_test_namespace }} -o jsonpath='{.spec.ports[0].nodePort}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nodeport_service_port
+  changed_when: false
+
+- name: Get control plane node InternalIP
+  ansible.builtin.command: kubectl get node {{ control_plane_node.stdout }} -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: control_plane_internal_ip
+  changed_when: false
+
+- name: Test pod-to-pod on same node (plane to plane)
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- wget -q -O- http://127.0.0.1:{{ cni_test_pod_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_pod_same_node_plane
+  changed_when: false
+  ignore_errors: true
+
+- name: Display pod-to-pod same node (plane) result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod same node (plane): SUCCESS' if pod_to_pod_same_node_plane.rc == 0 else 'Pod-to-pod same node (plane): FAILED' }}"
+  when: pod_to_pod_same_node_plane.rc is defined
+
+- name: Test pod-to-pod same node (worker to worker)
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-worker-1 -- wget -q -O- http://127.0.0.1:{{ cni_test_pod_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_pod_same_node_worker
+  changed_when: false
+  ignore_errors: true
+  when:
+    - worker_nodes | length > 0
+    - wait_test_pods.rc == 0
+
+- name: Display pod-to-pod same node (worker) result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod same node (worker): SUCCESS' if pod_to_pod_same_node_worker.rc == 0 else 'Pod-to-pod same node (worker): FAILED' }}"
+  when: pod_to_pod_same_node_worker.rc is defined
+
+- name: Test pod-to-pod cross node (plane to worker)
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- wget -q -O- http://{{ pod_worker_1_ip }}:{{ cni_test_pod_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_pod_cross_node_plane_worker
+  changed_when: false
+  ignore_errors: true
+  when:
+    - worker_nodes | length > 0
+    - wait_test_pods.rc == 0
+    - pod_worker_1_ip is defined
+
+- name: Display pod-to-pod cross node (plane to worker) result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod cross node (plane to worker): SUCCESS' if pod_to_pod_cross_node_plane_worker.rc == 0 else 'Pod-to-pod cross node (plane to worker): FAILED' }}"
+  when: pod_to_pod_cross_node_plane_worker.rc is defined
+
+- name: Test pod-to-pod cross node (worker to plane)
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-worker-1 -- wget -q -O- http://{{ pod_plane_ip }}:{{ cni_test_pod_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_pod_cross_node_worker_plane
+  changed_when: false
+  ignore_errors: true
+  when:
+    - worker_nodes | length > 0
+    - wait_test_pods.rc == 0
+    - pod_plane_ip is defined
+
+- name: Display pod-to-pod cross node (worker to plane) result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod cross node (worker to plane): SUCCESS' if pod_to_pod_cross_node_worker_plane.rc == 0 else 'Pod-to-pod cross node (worker to plane): FAILED' }}"
+  when: pod_to_pod_cross_node_worker_plane.rc is defined
+
+- name: Test pod-to-pod cross node (worker to worker)
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-worker-1 -- wget -q -O- http://{{ pod_worker_2_ip }}:{{ cni_test_pod_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_pod_cross_node_worker_worker
+  changed_when: false
+  ignore_errors: true
+  when:
+    - worker_nodes | length > 1
+    - wait_test_pods.rc == 0
+    - pod_worker_2_ip is defined
+
+- name: Display pod-to-pod cross node (worker to worker) result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-pod cross node (worker to worker): SUCCESS' if pod_to_pod_cross_node_worker_worker.rc == 0 else 'Pod-to-pod cross node (worker to worker): FAILED' }}"
+  when: pod_to_pod_cross_node_worker_worker.rc is defined
+
+- name: Test pod-to-ClusterIP service
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- wget -q -O- http://{{ clusterip_service_ip.stdout }}:{{ cni_test_test_port }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_clusterip_service
+  changed_when: false
+  ignore_errors: true
+
+- name: Display pod-to-ClusterIP service result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-ClusterIP service: SUCCESS' if pod_to_clusterip_service.rc == 0 else 'Pod-to-ClusterIP service: FAILED' }}"
+  when: pod_to_clusterip_service.rc is defined
+
+- name: Test pod-to-NodePort service via node IP
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- wget -q -O- http://{{ control_plane_internal_ip.stdout }}:{{ nodeport_service_port.stdout }}/ --timeout=5
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: pod_to_nodeport_service
+  changed_when: false
+  ignore_errors: true
+  when:
+    - control_plane_internal_ip.stdout is defined
+    - control_plane_internal_ip.stdout | length > 0
+    - nodeport_service_port.stdout is defined
+    - nodeport_service_port.stdout | length > 0
+
+- name: Display pod-to-NodePort service result
+  ansible.builtin.debug:
+    msg: "{{ 'Pod-to-NodePort service: SUCCESS' if pod_to_nodeport_service.rc == 0 else 'Pod-to-NodePort service: FAILED' }}"
+  when: pod_to_nodeport_service.rc is defined
+
+- name: Test DNS resolution for kubernetes service
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- nslookup kubernetes.default.svc.cluster.local
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: dns_kubernetes_service
+  changed_when: false
+  ignore_errors: true
+
+- name: Display DNS kubernetes service result
+  ansible.builtin.debug:
+    msg: "{{ 'DNS kubernetes service: SUCCESS' if dns_kubernetes_service.rc == 0 else 'DNS kubernetes service: FAILED' }}"
+  when: dns_kubernetes_service.rc is defined
+
+- name: Test DNS resolution for test service
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- nslookup test-service-clusterip.{{ cni_test_namespace }}.svc.cluster.local
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: dns_test_service
+  changed_when: false
+  ignore_errors: true
+
+- name: Display DNS test service result
+  ansible.builtin.debug:
+    msg: "{{ 'DNS test service: SUCCESS' if dns_test_service.rc == 0 else 'DNS test service: FAILED' }}"
+  when: dns_test_service.rc is defined
+
+- name: Test external connectivity
+  ansible.builtin.command: kubectl exec -n {{ cni_test_namespace }} pod-plane -- wget -q -O- https://{{ cni_test_external_hostname }} --timeout=5 --spider
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: external_connectivity
+  changed_when: false
+  ignore_errors: true
+  when:
+    - cni_test_external_hostname is defined
+    - cni_test_external_hostname | length > 0
+    - cni_test_external_hostname is not match('^\[.*\]$')
+
+- name: Display external connectivity result
+  ansible.builtin.debug:
+    msg: "{{ 'External connectivity: SUCCESS' if external_connectivity.rc == 0 else 'External connectivity: FAILED' }}"
+  when: external_connectivity.rc is defined
+
+- name: Calculate issue summary
+  ansible.builtin.set_fact:
+    issue_summary: >-
+      {% if wait_test_pods.rc != 0 %}Worker pods failed to start - check pod events above
+      {% elif (pod_to_pod_cross_node_plane_worker.rc | default(1)) != 0 or (pod_to_clusterip_service.rc | default(1)) != 0 %}
+      CRITICAL: Cross-node pod-to-pod and ClusterIP connectivity is broken!
+      This indicates Calico/Calico CNI networking issues between nodes.
+      Check: Calico IP-in-IP tunneling, firewall rules, IP pool CIDR ranges
+      {% else %}None - All tests passed
+      {% endif %}
+
+- name: Generate CNI test report
+  ansible.builtin.debug:
+    msg:
+      - "============================================"
+      - "      CNI Network Test Report"
+      - "============================================"
+      - "Test namespace: {{ cni_test_namespace }}"
+      - "All pods ready: {{ 'YES' if wait_test_pods.rc == 0 else 'NO' }}"
+      - ""
+      - "Pod-to-Pod Tests:"
+      - "  Same node (plane): {{ 'PASS' if (pod_to_pod_same_node_plane.rc | default(1)) == 0 else 'FAIL' }}"
+      - "  Same node (worker): {{ 'PASS' if (pod_to_pod_same_node_worker.rc | default(1)) == 0 else 'SKIPPED' if wait_test_pods.rc != 0 or worker_nodes | length == 0 else 'FAIL' }}"
+      - "  Plane to Worker: {{ 'PASS' if (pod_to_pod_cross_node_plane_worker.rc | default(1)) == 0 else 'SKIPPED' if wait_test_pods.rc != 0 or worker_nodes | length == 0 else 'FAIL' }}"
+      - "  Worker to Plane: {{ 'PASS' if (pod_to_pod_cross_node_worker_plane.rc | default(1)) == 0 else 'SKIPPED' if wait_test_pods.rc != 0 or worker_nodes | length == 0 else 'FAIL' }}"
+      - "  Worker to Worker: {{ 'PASS' if (pod_to_pod_cross_node_worker_worker.rc | default(1)) == 0 else 'SKIPPED' if wait_test_pods.rc != 0 or worker_nodes | length < 2 else 'FAIL' }}"
+      - ""
+      - "Service Tests:"
+      - "  Pod to ClusterIP: {{ 'PASS' if (pod_to_clusterip_service.rc | default(1)) == 0 else 'FAIL' }}"
+      - "  Pod to NodePort: {{ 'PASS' if (pod_to_nodeport_service.rc | default(1)) == 0 else 'SKIPPED' if wait_test_pods.rc != 0 else 'FAIL' }}"
+      - ""
+      - "DNS Tests:"
+      - "  kubernetes.default: {{ 'PASS' if (dns_kubernetes_service.rc | default(1)) == 0 else 'FAIL' }}"
+      - "  test service: {{ 'PASS' if (dns_test_service.rc | default(1)) == 0 else 'FAIL' }}"
+      - ""
+      - "External: {{ 'PASS' if (external_connectivity.rc | default(1)) == 0 else 'N/A' if cni_test_external_hostname is match('^\\[.*\\]$') else 'FAIL' }}"
+      - ""
+      - "Issue Summary: {{ issue_summary }}"
+      - ""
+      - "Troubleshooting:"
+      - "  - Cross-node failures: Check Calico IP-in-IP tunneling (tunl0 interface)"
+      - "  - ClusterIP failures: Check kube-proxy and iptables rules"
+      - "  - Check calico-node pod logs: kubectl logs -n calico-system -l k8s-app=calico-node"
+      - "  - Check IP pool CIDR ranges don't overlap with host networks"
+      - "============================================"
+
+- name: Clean up test namespace
+  ansible.builtin.command: kubectl delete namespace {{ cni_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: delete_namespace
+  changed_when: "'deleted' in delete_namespace.stdout"
+  ignore_errors: true
+  when: cni_test_namespace_cleanup | default(true)
+
+- name: Display cleanup result
+  ansible.builtin.debug:
+    msg: "Test namespace {{ cni_test_namespace }} {{ 'deleted' if delete_namespace.rc == 0 else 'preserved for debugging' }}"
+  when: cni_test_namespace_cleanup | default(true)

@@ -54,7 +54,7 @@
 # ----------------------------------------------------------------------------
 # WireGuard requires mesh update - all nodes need peer configs
 - name: "Play 1/4: Update WireGuard mesh for new control plane"
-  hosts: wireguard_cluster
+  hosts: kuber_small
   become: true
   gather_facts: true
   serial: 1

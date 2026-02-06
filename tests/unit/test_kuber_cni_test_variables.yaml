@@ -1,0 +1,76 @@
+---
+- name: Test kuber_cni_test variables
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  tasks:
+    - name: Verify cni_test_namespace is defined
+      ansible.builtin.assert:
+        that:
+          - cni_test_namespace is defined
+          - cni_test_namespace | length > 0
+        success_msg: "cni_test_namespace is defined correctly"
+        fail_msg: "cni_test_namespace is missing or empty"
+      vars:
+        cni_test_namespace: "cni-test"
+
+    - name: Verify cni_test_pod_image is valid
+      ansible.builtin.assert:
+        that:
+          - cni_test_pod_image is defined
+          - cni_test_pod_image | length > 0
+          - "':' in cni_test_pod_image"
+        success_msg: "cni_test_pod_image is valid"
+        fail_msg: "cni_test_pod_image is invalid or missing"
+      vars:
+        cni_test_pod_image: "nginx:alpine"
+
+    - name: Verify cni_test_pod_port is defined
+      ansible.builtin.assert:
+        that:
+          - cni_test_pod_port is defined
+          - cni_test_pod_port | length > 0
+        success_msg: "cni_test_pod_port is defined correctly"
+        fail_msg: "cni_test_pod_port is missing or invalid"
+      vars:
+        cni_test_pod_port: "80"
+
+    - name: Verify cni_test_namespace_cleanup is boolean
+      ansible.builtin.assert:
+        that:
+          - cni_test_namespace_cleanup is defined
+          - cni_test_namespace_cleanup | type_debug == "bool"
+        success_msg: "cni_test_namespace_cleanup is boolean"
+        fail_msg: "cni_test_namespace_cleanup is not boolean"
+      vars:
+        cni_test_namespace_cleanup: true
+
+    - name: Verify timeout settings are positive
+      ansible.builtin.assert:
+        that:
+          - cni_test_timeout_seconds is defined
+          - cni_test_timeout_seconds | int > 0
+          - cni_test_sleep_seconds is defined
+          - cni_test_sleep_seconds | int > 0
+          - cni_test_retry_count is defined
+          - cni_test_retry_count | int > 0
+        success_msg: "Timeout settings are valid"
+        fail_msg: "Timeout settings are invalid or missing"
+      vars:
+        cni_test_timeout_seconds: "300"
+        cni_test_sleep_seconds: "5"
+        cni_test_retry_count: "20"
+
+    - name: Verify cni_test_test_port is defined
+      ansible.builtin.assert:
+        that:
+          - cni_test_test_port is defined
+          - cni_test_test_port | length > 0
+        success_msg: "cni_test_test_port is defined correctly"
+        fail_msg: "cni_test_test_port is missing or invalid"
+      vars:
+        cni_test_test_port: "8080"
+
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg: "All kuber_cni_test variables verified successfully"

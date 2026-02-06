@@ -1,0 +1,27 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Comprehensive CNI network testing for Kubernetes clusters - tests pod-to-pod, service connectivity, DNS, and external network access
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - cni
+    - network
+    - testing
+    - calico
+
+dependencies: []

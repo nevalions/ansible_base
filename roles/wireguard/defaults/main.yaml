@@ -27,6 +27,9 @@ vault_wg_peer_public_keys: {}
 # - allowed_ips: VPN IP address for this peer/server (used in AllowedIPs)
 # - endpoint: Public or internal IP:PORT for connecting
 # - client_listen_port: UDP port for incoming WireGuard connections
+# - is_server: (optional) true for servers that route pod network traffic
+#              When true, vault_wg_routed_cidrs (e.g., Calico pod CIDR) is added
+#              to AllowedIPs in client configs for this peer
 #
 # NAT Configuration:
 # - For servers behind NAT: Use public IP with unique port per server
@@ -68,3 +71,13 @@ vault_wg_allowed_networks:
    - "[physical-network-cidr]"
    - "[vpn-network-cidr]"
    - "127.0.0.0/8"
+
+# Routed CIDRs (optional)
+# Networks that are routed through WireGuard server peers.
+# These CIDRs are added to AllowedIPs for peers with is_server: true
+# Example: Kubernetes pod CIDR ([pod-network-cidr] for Calico)
+vault_wg_routed_cidrs: []
+
+# Deprecated: Primary server peer name for routed CIDRs
+# Use is_server: true on individual peers instead
+vault_wg_primary_server_name: ""

@@ -27,6 +27,12 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
 ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
 ```
 
+### Soft reset control plane (preserve packages)
+
+```bash
+ansible-playbook -i hosts_bay.ini kuber_plane_soft_reset.yaml
+```
+
 ### Remove container images as well
 
 ```bash
@@ -55,7 +61,8 @@ ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --limit master1
 
 ## Variables
 
-- `remove_container_images` (default: `false`) - Set to `true` to remove all container images. Note: This will increase join time as images need to be re-downloaded.
+- `remove_container_images` (default: `true`) - Set to `true` to remove all container images. Note: This will increase join time as images need to be re-downloaded.
+- `remove_kubernetes_packages` (default: `true`) - Set to `false` to keep kubelet/kubeadm/kubectl installed.
 
 ## What Happens After Reset
 

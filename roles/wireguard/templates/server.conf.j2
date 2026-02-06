@@ -41,7 +41,8 @@ ListenPort = {{ server_port | default(vault_wg_server_port) }}
 [Peer]
 # {{ peer.name }} - {{ peer.host_group | default('unknown') }}
 PublicKey = {{ vault_wg_peer_public_keys[peer.name] }}
-AllowedIPs = {{ peer.allowed_ips | default(peer.address) }}
+AllowedIPs = {{ peer.allowed_ips | default(peer.address) }}{% if (peer.is_server | default(false)) and (vault_wg_routed_cidrs | default([]) | length > 0) %}, {{ vault_wg_routed_cidrs | join(', ') }}{% endif %}
+
 {%   if peer.endpoint is defined %}
 Endpoint = {{ peer.endpoint }}
 {%   endif %}

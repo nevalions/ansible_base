@@ -1,0 +1,57 @@
+---
+# ============================================================================
+# CNI Network Testing Playbook for Kubernetes Cluster
+# ============================================================================
+#
+# This playbook tests the CNI (Container Network Interface) functionality on
+# a Kubernetes cluster by deploying test pods and testing various network
+# connectivity scenarios.
+#
+# TESTS PERFORMED:
+#   1. Pod-to-Pod (same node)
+#   2. Pod-to-Pod (cross-node: plane to worker, worker to plane)
+#   3. Pod-to-Pod (worker to worker, if multiple workers exist)
+#   4. Pod-to-ClusterIP service
+#   5. Pod-to-NodePort service
+#   6. DNS resolution (kubernetes.default, test services)
+#   7. External connectivity
+#
+# PREREQUISITES:
+#   1. Kubernetes cluster must be running (kuber_init or kuber_join completed)
+#   2. Control plane node must be accessible
+#   3. CNI plugin (Calico) must be installed and operational
+#
+# VARIABLES:
+#   See roles/kuber_cni_test/defaults/main.yaml for configurable variables
+#
+# USAGE:
+#   # Run with default settings (cleans up after test)
+#   ansible-playbook kuber_cni_test.yaml
+#
+#   # Keep test namespace for debugging (set cleanup: false)
+#   ansible-playbook kuber_cni_test.yaml -e "cni_test_namespace_cleanup=false"
+#
+#   # Test with specific external hostname
+#   ansible-playbook kuber_cni_test.yaml -e "cni_test_external_hostname=example.com"
+#
+#   # Dry run to verify playbook syntax
+#   ansible-playbook kuber_cni_test.yaml --check
+#
+# ============================================================================
+
+- name: Test CNI Network Connectivity
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - kubernetes
+    - k8s
+    - cni
+    - network
+    - test
+    - verify
+  roles:
+    - kuber_cni_test

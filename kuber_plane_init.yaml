@@ -1,6 +1,6 @@
 ---
 - name: Initialize Kubernetes Control Plane
-  hosts: bay_plane1
+  hosts: kuber_small_planes
   become: true
   gather_facts: true
   serial: 1

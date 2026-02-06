@@ -59,13 +59,35 @@
   register: apply_test_pods
   changed_when: true
 
-- name: Wait for test pods to be Ready
-  ansible.builtin.command: kubectl wait --for=condition=ready pod -l app=nginx -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
+- name: Wait for test pod 1 to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod/test-pod-1 -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: wait_test_pods
+  register: wait_test_pod_1
   changed_when: false
-  until: wait_test_pods.rc == 0
+  until: wait_test_pod_1.rc == 0
+  retries: "{{ verify_retry_count }}"
+  delay: "{{ verify_sleep_seconds }}"
+  ignore_errors: true
+
+- name: Wait for test pod 2 to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod/test-pod-2 -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_test_pod_2
+  changed_when: false
+  until: wait_test_pod_2.rc == 0
+  retries: "{{ verify_retry_count }}"
+  delay: "{{ verify_sleep_seconds }}"
+  ignore_errors: true
+
+- name: Wait for DNS test pod to be Ready
+  ansible.builtin.command: kubectl wait --for=condition=ready pod/dns-test-pod -n {{ verify_test_namespace }} --timeout={{ verify_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: wait_dns_test_pod
+  changed_when: false
+  until: wait_dns_test_pod.rc == 0
   retries: "{{ verify_retry_count }}"
   delay: "{{ verify_sleep_seconds }}"
   ignore_errors: true
@@ -81,25 +103,34 @@
   ansible.builtin.debug:
     var: test_pods_status.stdout_lines
 
-- name: Get pod IP addresses
-  ansible.builtin.command: kubectl get pods -n {{ verify_test_namespace }} -o jsonpath='{.items[*].status.podIP}'
+- name: Get test pod 1 IP address
+  ansible.builtin.command: kubectl get pod -n {{ verify_test_namespace }} test-pod-1 -o jsonpath='{.status.podIP}'
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: pod_ips
+  register: test_pod_1_ip
   changed_when: false
 
-- name: Display pod IP addresses
+- name: Get test pod 2 IP address
+  ansible.builtin.command: kubectl get pod -n {{ verify_test_namespace }} test-pod-2 -o jsonpath='{.status.podIP}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: test_pod_2_ip
+  changed_when: false
+
+- name: Display pod IP readiness
   ansible.builtin.debug:
-    msg: "Pod IPs: {{ pod_ips.stdout }}"
+    msg: "Pod IPs assigned: {{ (test_pod_1_ip.stdout | length > 0) and (test_pod_2_ip.stdout | length > 0) }}"
 
 - name: Test pod-to-pod connectivity (same namespace)
-  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- http://{{ pod_ips.stdout.split(' ')[1] }}/ --timeout=5
+  ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- http://{{ test_pod_2_ip.stdout }}/ --timeout=5
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: pod_connectivity
   changed_when: false
   ignore_errors: true
-  when: pod_ips.stdout.split(' ') | length >= 2
+  when:
+    - test_pod_1_ip.stdout | length > 0
+    - test_pod_2_ip.stdout | length > 0
 
 - name: Display connectivity result
   ansible.builtin.debug:

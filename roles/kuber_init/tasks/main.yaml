@@ -4,10 +4,25 @@
     path: /etc/kubernetes/admin.conf
   register: k8s_admin_conf
 
+- name: Set initialized flag
+  ansible.builtin.set_fact:
+    kubeadm_cluster_initialized: "{{ k8s_admin_conf.stat.exists }}"
+
+- name: Override kubeconfig user when root
+  ansible.builtin.set_fact:
+    kubeconfig_user: "{{ ansible_user }}"
+  when:
+    - kubeconfig_user == 'root'
+    - ansible_user is defined
+    - ansible_user != 'root'
+
 - name: Fail if Kubernetes is already initialized
   ansible.builtin.fail:
     msg: "Kubernetes cluster is already initialized. Use kuber_plane_reset.yaml to reset first."
-  when: k8s_admin_conf.stat.exists
+  when:
+    - kubeadm_cluster_initialized
+    - not (kubeadm_refresh_on_existing | default(true))
+    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Create containerd config directory
   ansible.builtin.file:
@@ -88,55 +103,144 @@
     dest: /tmp/kubeadm-config.yaml
     mode: "0644"
 
+- name: Refresh control plane certificates and admin kubeconfig
+  ansible.builtin.command: "{{ item }}"
+  loop:
+    - kubeadm init phase certs apiserver --config=/tmp/kubeadm-config.yaml
+    - kubeadm init phase kubeconfig admin --config=/tmp/kubeadm-config.yaml
+  register: kubeadm_refresh
+  changed_when: true
+  when:
+    - kubeadm_cluster_initialized
+    - kubeadm_refresh_on_existing | default(true)
+    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
+
 - name: Check if Kubernetes API port is in use
   ansible.builtin.command: ss -ltnp
   register: k8s_api_port_check
   changed_when: false
   failed_when: false
+  when:
+    - not kubeadm_cluster_initialized
+    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Fail if Kubernetes API port is already in use
   ansible.builtin.fail:
     msg:
       - "Kubernetes API port {{ vault_k8s_api_port }} is already in use"
       - "Stop the service using the port or run kuber_plane_reset.yaml before init"
-  when: k8s_api_port_check.stdout is search(':' ~ vault_k8s_api_port)
+  when:
+    - not kubeadm_cluster_initialized
+    - k8s_api_port_check.stdout is search(':' ~ vault_k8s_api_port)
+    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Initialize Kubernetes control plane
   ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
   register: kubeadm_init
   changed_when: true
+  when:
+    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
+    - not kubeadm_cluster_initialized
+
+- name: Look up kubeconfig user home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ kubeconfig_user }}"
+  register: kubeconfig_user_passwd
+
+- name: Look up ansible user home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ ansible_user }}"
+  register: ansible_user_passwd
+  when:
+    - ansible_user is defined
+    - ansible_user != 'root'
+    - ansible_user != kubeconfig_user
+
+- name: Set kubeconfig user home and path
+  ansible.builtin.set_fact:
+    kubeconfig_user_home: >-
+      {{
+        (kubeconfig_user_passwd.ansible_facts.getent_passwd[kubeconfig_user][5]
+        | default(kubeconfig_user_home))
+      }}
+    kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"
+
+- name: Set ansible user kubeconfig path
+  ansible.builtin.set_fact:
+    ansible_user_kubeconfig_path: >-
+      {{
+        (ansible_user_passwd.ansible_facts.getent_passwd[ansible_user][5]
+        | default('/home/' ~ ansible_user))
+      }}/.kube/config
+  when:
+    - ansible_user is defined
+    - ansible_user != 'root'
+
+- name: Build kubeconfig target list
+  ansible.builtin.set_fact:
+    kubeconfig_targets: >-
+      {{
+        (
+          ([{'path': kubeconfig_path, 'owner': kubeconfig_user}]
+          if (kubeconfig_user == 'root' or kubeconfig_path is not match('^/root/'))
+          else [])
+          +
+          ([{'path': ansible_user_kubeconfig_path, 'owner': ansible_user}]
+          if (ansible_user_kubeconfig_path is defined and ansible_user_kubeconfig_path | length > 0)
+          else [])
+        )
+      }}
 
 - name: Create .kube directory
   ansible.builtin.file:
-    path: "{{ kubeconfig_path | dirname }}"
+    path: "{{ item.path | dirname }}"
     state: directory
     mode: "0700"
-    owner: "{{ kubeconfig_user }}"
-    group: "{{ kubeconfig_user }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+  loop: "{{ kubeconfig_targets }}"
+  when:
+    - kubeconfig_targets is defined
+    - kubeconfig_targets | length > 0
 
 - name: Copy admin.conf to user's kubeconfig
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
-    dest: "{{ kubeconfig_path }}"
+    dest: "{{ item.path }}"
     remote_src: true
     mode: "0600"
-    owner: "{{ kubeconfig_user }}"
-    group: "{{ kubeconfig_user }}"
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+  loop: "{{ kubeconfig_targets }}"
+  when:
+    - kubeconfig_targets is defined
+    - kubeconfig_targets | length > 0
 
-- name: Ensure kubeconfig ownership and mode
+- name: Ensure kubeconfig directory ownership and mode
+  ansible.builtin.file:
+    path: "{{ item.path | dirname }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0700"
+  loop: "{{ kubeconfig_targets }}"
+  when:
+    - kubeconfig_targets is defined
+    - kubeconfig_targets | length > 0
+
+- name: Ensure kubeconfig file ownership and mode
   ansible.builtin.file:
     path: "{{ item.path }}"
-    state: "{{ item.state }}"
-    owner: "{{ kubeconfig_user }}"
-    group: "{{ kubeconfig_user }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - path: "{{ kubeconfig_path | dirname }}"
-      state: directory
-      mode: "0700"
-    - path: "{{ kubeconfig_path }}"
-      state: file
-      mode: "0600"
+    state: file
+    owner: "{{ item.owner }}"
+    group: "{{ item.owner }}"
+    mode: "0600"
+  loop: "{{ kubeconfig_targets }}"
+  when:
+    - kubeconfig_targets is defined
+    - kubeconfig_targets | length > 0
 
 - name: Install Calico Tigera Operator
   ansible.builtin.command: kubectl apply -f {{ calico_tigera_operator_url }}
@@ -147,6 +251,9 @@
   until: calico_operator.rc == 0
   retries: 3
   delay: 5
+  tags:
+    - cni
+    - calico
 
 - name: Wait for Tigera Operator to be ready
   ansible.builtin.command: kubectl wait --for=condition=ready pod -l name=tigera-operator -n tigera-operator --timeout=300s
@@ -157,12 +264,58 @@
   until: operator_wait.rc == 0
   retries: 10
   delay: 10
+  tags:
+    - cni
+    - calico
+
+- name: Fail if Calico vault variables are missing
+  ansible.builtin.assert:
+    that:
+      - vault_ipPools is defined
+      - vault_ipPools | length > 0
+      - vault_ipPools_encapsulation is defined
+      - vault_ipPools_encapsulation | length > 0
+      - vault_ipPools_encapsulation is not match('^\[.*\]$')
+      - vault_ipPools_cidr is defined
+      - vault_ipPools_cidr | length > 0
+      - vault_ipPools_cidr is not match('^\[.*\]$')
+      - vault_ipPools_blockSize is defined
+      - natOutgoing is defined
+      - nodeSelector is defined
+      - nodeSelector | length > 0
+      - nodeSelector is not match('^\[.*\]$')
+      - mtu is defined
+      - vault_interface is defined
+      - vault_interface | length > 0
+      - vault_interface is not match('^\[.*\]$')
+    fail_msg: >-
+      Calico CNI vault variables are missing or placeholders. Set vault_ipPools*,
+      natOutgoing, nodeSelector, mtu, and vault_interface in vault_secrets.yml to
+      avoid applying defaults.
+    success_msg: "Calico CNI vault variables are defined"
+  tags:
+    - cni
+    - calico
+
+- name: Fail if vault admin user is missing
+  ansible.builtin.assert:
+    that:
+      - vault_admin_user is defined
+      - vault_admin_user | length > 0
+      - vault_admin_user is not match('^\[.*\]$')
+    fail_msg: >-
+      vault_admin_user is missing or a placeholder. Set vault_admin_user in
+      vault_secrets.yml to ensure kubeconfig is written to the correct user.
+    success_msg: "vault_admin_user is defined"
 
 - name: Generate Calico custom resources from template
   ansible.builtin.template:
     src: calico-custom-resources.yaml.j2
     dest: /tmp/calico-custom-resources.yaml
     mode: "0644"
+  tags:
+    - cni
+    - calico
 
 - name: Apply Calico custom resources
   ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resources.yaml
@@ -170,6 +323,9 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_custom_apply
   changed_when: "'created' in calico_custom_apply.stdout or 'configured' in calico_custom_apply.stdout"
+  tags:
+    - cni
+    - calico
 
 - name: Detect Calico node pods (k8s-app label)
   ansible.builtin.command: kubectl get pods -A -l k8s-app=calico-node -o name
@@ -181,6 +337,9 @@
   until: calico_node_k8s_label.stdout | length > 0
   retries: 6
   delay: 10
+  tags:
+    - cni
+    - calico
 
 - name: Detect Calico node pods (app label)
   ansible.builtin.command: kubectl get pods -A -l app=calico-node -o name
@@ -193,6 +352,9 @@
   retries: 6
   delay: 10
   when: calico_node_k8s_label.stdout | length == 0
+  tags:
+    - cni
+    - calico
 
 - name: Set Calico node label selector
   ansible.builtin.set_fact:
@@ -203,6 +365,9 @@
   when:
     - calico_node_k8s_label.stdout | length > 0 or
       (calico_node_app_label.stdout | default('') | length > 0)
+  tags:
+    - cni
+    - calico
 
 - name: Fail if Calico node pods not found
   ansible.builtin.fail:
@@ -211,6 +376,9 @@
   when:
     - calico_node_k8s_label.stdout | length == 0
     - calico_node_app_label.stdout | default('') | length == 0
+  tags:
+    - cni
+    - calico
 
 - name: Wait for Calico to be ready
   ansible.builtin.command: >-
@@ -223,6 +391,9 @@
   retries: 20
   delay: 10
   when: calico_node_label_selector is defined
+  tags:
+    - cni
+    - calico
 
 - name: Get cluster node status
   ansible.builtin.command: kubectl get nodes
@@ -235,6 +406,20 @@
 - name: Display cluster node status
   ansible.builtin.debug:
     var: node_status.stdout_lines
+
+- name: Get cluster node status (user kubeconfig)
+  ansible.builtin.command: kubectl get nodes
+  environment:
+    KUBECONFIG: "{{ ansible_user_kubeconfig_path | default(kubeconfig_path) }}"
+  register: node_status_user
+  changed_when: false
+  ignore_errors: true
+  become: true
+  become_user: "{{ ansible_user | default(kubeconfig_user) }}"
+
+- name: Display cluster node status (user kubeconfig)
+  ansible.builtin.debug:
+    var: node_status_user.stdout_lines
 
 - name: Verify control plane node is Ready
   ansible.builtin.command: kubectl get nodes -l node-role.kubernetes.io/control-plane -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}'
@@ -259,10 +444,16 @@
   register: calico_pods
   changed_when: false
   when: calico_node_label_selector is defined
+  tags:
+    - cni
+    - calico
 
 - name: Display Calico pods
   ansible.builtin.debug:
     var: calico_pods.stdout_lines
+  tags:
+    - cni
+    - calico
 
 - name: Get Tigera Operator pods
   ansible.builtin.command: kubectl get pods -n tigera-operator
@@ -270,10 +461,16 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_pods
   changed_when: false
+  tags:
+    - cni
+    - calico
 
 - name: Display Tigera Operator pods
   ansible.builtin.debug:
     var: tigera_pods.stdout_lines
+  tags:
+    - cni
+    - calico
 
 - name: Verify Tigera Operator is Running
   ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
@@ -282,6 +479,9 @@
   register: tigera_phase
   changed_when: false
   ignore_errors: true
+  tags:
+    - cni
+    - calico
 
 - name: Assert Tigera Operator is Running
   ansible.builtin.assert:
@@ -290,6 +490,23 @@
     success_msg: "Tigera Operator is Running"
     fail_msg: "Tigera Operator is not Running"
   when: tigera_phase.stdout is defined
+  tags:
+    - cni
+    - calico
+
+- name: Wait for Calico IPPool CRD to be established
+  ansible.builtin.command: kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=120s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: ippool_crd_wait
+  changed_when: false
+  failed_when: false
+  until: ippool_crd_wait.rc == 0
+  retries: 6
+  delay: 10
+  tags:
+    - cni
+    - calico
 
 - name: Get Calico IP pools
   ansible.builtin.command: kubectl get ippool -o wide
@@ -297,12 +514,21 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: ippool_status
   changed_when: false
-  ignore_errors: true
+  failed_when: false
+  until: ippool_status.rc == 0
+  retries: 6
+  delay: 10
+  tags:
+    - cni
+    - calico
 
 - name: Display Calico IP pools
   ansible.builtin.debug:
     var: ippool_status.stdout_lines
   when: ippool_status.rc == 0
+  tags:
+    - cni
+    - calico
 
 - name: Display control plane initialization summary
   ansible.builtin.debug:

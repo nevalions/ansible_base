@@ -35,6 +35,7 @@
     - kubelet
     - kubeadm
     - kubectl
+  when: remove_kubernetes_packages | default(true)
   failed_when: false
 
 - name: Remove Kubernetes packages
@@ -46,6 +47,7 @@
     state: absent
     purge: yes
     autoremove: yes
+  when: remove_kubernetes_packages | default(true)
   register: pkg_removal
   failed_when: false
 
@@ -248,14 +250,29 @@
       - "Reference: kubeadm reset is 'best-effort' cleanup - Kubernetes docs recommend manual intervention or reboot for persistent network namespace mounts"
   when: orphaned_netns_count.stdout | int > 0
 
-- name: Clean any remaining Calico data
+- name: Clean any remaining Calico data (persistent)
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /var/lib/calico
     state: absent
-  loop:
-    - /var/lib/calico
-    - /run/calico
   failed_when: false
+
+- name: Check if /run/calico is a mount
+  ansible.builtin.command: findmnt -n /run/calico
+  register: calico_run_mount
+  changed_when: false
+  failed_when: false
+
+- name: Clean any remaining Calico data (runtime)
+  ansible.builtin.file:
+    path: /run/calico
+    state: absent
+  failed_when: false
+  when: calico_run_mount.rc != 0
+
+- name: Warn if /run/calico is a mount
+  ansible.builtin.debug:
+    msg: "/run/calico is a runtime mount; skipping removal. A reboot clears it."
+  when: calico_run_mount.rc == 0
 
 - name: Reload systemd daemon
   ansible.builtin.systemd:

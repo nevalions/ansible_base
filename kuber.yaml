@@ -6,7 +6,7 @@
 #   ansible-playbook kuber.yaml -l workers_all    # Only workers
 #   ansible-playbook kuber.yaml -l [worker-hostname]  # Specific node
 - name: Setup Kubernetes Cluster
-  hosts: "[cluster-group]"
+  hosts: kuber_small_all
   become: true
   gather_facts: true
   serial: 1

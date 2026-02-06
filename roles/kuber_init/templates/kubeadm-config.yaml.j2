@@ -2,6 +2,13 @@
 apiVersion: kubeadm.k8s.io/{{ kubeadm_api_version }}
 kind: ClusterConfiguration
 controlPlaneEndpoint: "{{ kubeadm_control_plane_endpoint }}"
+{% if kubeadm_api_server_cert_sans is defined and kubeadm_api_server_cert_sans | length > 0 %}
+apiServer:
+  certSANs:
+{% for san in kubeadm_api_server_cert_sans %}
+    - "{{ san }}"
+{% endfor %}
+{% endif %}
 networking:
   podSubnet: "{{ kubeadm_pod_subnet }}"
   serviceSubnet: "{{ kubeadm_service_subnet }}"
