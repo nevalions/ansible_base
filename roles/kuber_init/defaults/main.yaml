@@ -3,8 +3,14 @@
 kubeadm_pod_subnet: "{{ vault_k8s_pod_subnet }}"
 kubeadm_service_subnet: "{{ vault_k8s_service_subnet }}"
 
-# Use VIP as control plane endpoint for worker joins
-kubeadm_control_plane_endpoint_host: "{{ vault_k8s_api_vip | default('') }}"
+# Use DNS or VIP as control plane endpoint for worker joins
+# Priority: DNS (if enabled) -> VIP -> empty
+kubeadm_control_plane_endpoint_host: >-
+  {{
+    (vault_k8s_api_dns | default(''))
+    if (vault_k8s_use_dns_endpoint | default(false))
+    else (vault_k8s_api_vip | default(''))
+  }}
 kubeadm_control_plane_endpoint: "{{ kubeadm_control_plane_endpoint_host }}:{{ vault_k8s_api_port }}"
 
 # Advertise WireGuard IP for internal communication
@@ -27,15 +33,20 @@ kubeadm_kubelet_extra_args:
   node-ip: "{{ kubeadm_api_server_advertise_address }}"
 
 # Ensure API server certificate includes all control-plane endpoints
+# Includes DNS names when DNS endpoint is enabled
 kubeadm_api_server_cert_sans: >-
   {{
     (
       [
         kubeadm_control_plane_endpoint_host,
-        kubeadm_api_server_advertise_address
+        kubeadm_api_server_advertise_address,
+        (vault_k8s_api_dns_name ~ '.' ~ vault_dns_zone) if (vault_k8s_api_dns_name is defined) else ''
       ]
       + (vault_k8s_control_planes | default([]) | map(attribute='wireguard_ip') | list)
       + (vault_k8s_control_planes | default([]) | map(attribute='name') | list)
+      + (vault_k8s_control_planes | default([]) | map(attribute='dns_name') | list if (vault_k8s_control_planes[0].dns_name is defined) else [])
+      + ([vault_k8s_api_dns_name] if (vault_k8s_api_dns_name is defined) else [])
+      + (vault_k8s_control_planes | default([]) | map(attribute='dns_name') | list | map('regex_replace', '^(.*)$', '\\1.' ~ vault_dns_zone) | list if (vault_k8s_control_planes[0].dns_name is defined) else [])
     )
     | reject('equalto', '')
     | select('match', '^(?:\\d{1,3}\\.){3}\\d{1,3}$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')

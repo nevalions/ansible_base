@@ -20,7 +20,7 @@
 
 - name: Set delegate host for control plane tasks
   ansible.builtin.set_fact:
-    kuber_join_delegate_host: "{{ groups['planes_all'][0] if kuber_join_control_plane_host == 'VIP' else kuber_join_control_plane_host }}"
+    kuber_join_delegate_host: "{{ kuber_join_control_plane_ssh_host }}"
 
 - name: Generate kubeadm join token from control plane
   ansible.builtin.command: kubeadm token create --print-join-command

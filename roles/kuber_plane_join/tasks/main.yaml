@@ -20,7 +20,7 @@
 
 - name: Set delegate host for control plane tasks
   ansible.builtin.set_fact:
-    kuber_plane_join_delegate_host: "{{ groups['planes_all'][0] if kuber_plane_join_control_plane_host == 'VIP' else kuber_plane_join_control_plane_host }}"
+    kuber_plane_join_delegate_host: "{{ kuber_plane_join_control_plane_ssh_host }}"
 
 - name: Upload certificates to enable control plane join
   ansible.builtin.command: kubeadm init phase upload-certs --upload-certs

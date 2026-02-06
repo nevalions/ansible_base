@@ -1,8 +1,24 @@
 ---
-kuber_plane_join_control_plane_host: "VIP"
-kuber_plane_join_control_plane_ip: "{{ vault_k8s_api_vip | default('[vip-address]') }}"
+# Control plane endpoint: DNS or VIP
+# Priority: DNS (if enabled) -> VIP
+kuber_plane_join_control_plane_host: >-
+  {{
+    (vault_k8s_api_dns | default('VIP'))
+    if (vault_k8s_use_dns_endpoint | default(false))
+    else 'VIP'
+  }}
+kuber_plane_join_control_plane_ip: >-
+  {{
+    (vault_k8s_api_dns | default(''))
+    if (vault_k8s_use_dns_endpoint | default(false))
+    else (vault_k8s_api_vip | default('[vip-address]'))
+  }}
 kuber_plane_join_api_port: "{{ vault_k8s_api_port | default('[k8s-api-port]') }}"
 kuber_plane_join_token_ttl: "0"
+
+# SSH delegation target - always use inventory hostname for SSH
+# Never use DNS name for SSH delegation to avoid resolution issues
+kuber_plane_join_control_plane_ssh_host: "{{ groups['planes_all'][0] | default('') }}"
 kuber_plane_join_kubelet_extra_args:
   node-ip: >-
     {{
