@@ -314,6 +314,62 @@
     - kubeadm
     - crictl
 
+- name: Create kubelet systemd service file
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=kubelet: The Kubernetes Node Agent
+      Documentation=https://kubernetes.io/docs/
+      After=containerd.service
+      Requires=containerd.service
+
+      [Service]
+      ExecStart=/usr/local/bin/kubelet
+      Restart=always
+      StartLimitInterval=0
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/kubelet.service
+    mode: "0644"
+
+- name: Create kubelet drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/kubelet.service.d
+    state: directory
+    mode: "0755"
+
+- name: Create kubeadm kubelet drop-in configuration
+  ansible.builtin.copy:
+    content: |
+      [Service]
+      Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+      Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+      # This is a file that "kubeadm init" and "kubeadm join" generate at runtime
+      EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+      # This is a file that the user can use for overrides of the kubelet args
+      EnvironmentFile=-/etc/default/kubelet
+      ExecStart=
+      ExecStart=/usr/local/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+    dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    mode: "0644"
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Stop kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+  ignore_errors: true
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: true
+
 - name: Verify kubelet version
   ansible.builtin.command: /usr/local/bin/kubelet --version
   register: kubelet_verify
