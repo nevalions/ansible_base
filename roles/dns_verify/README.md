@@ -109,7 +109,7 @@ Generates comprehensive health report:
 | `verify_ping_timeout` | Ping timeout in seconds | `2` |
 | `verify_dns_timeout` | DNS query timeout in seconds | `5` |
 | `verify_dns_retry` | DNS query retry attempts | `2` |
-| `verify_internal_test_records` | Internal DNS test targets | See defaults |
+| `verify_internal_test_records` | Internal DNS test targets (defaults from `vault_dns_records`/`vault_dns_zone`) | See defaults |
 | `verify_external_test_hosts` | External DNS test targets | See defaults |
 | `verify_fail_immediately` | Fail on critical errors | `true` |
 

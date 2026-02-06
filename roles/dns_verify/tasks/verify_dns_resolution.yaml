@@ -9,6 +9,24 @@
     dns_internal_tests: []
     dns_external_tests: []
 
+- name: Initialize internal DNS test list from vault
+  ansible.builtin.set_fact:
+    verify_internal_test_records: []
+    dns_internal_records_from_vault: true
+  when:
+    - verify_internal_test_records is not defined or verify_internal_test_records | length == 0
+    - vault_dns_records is defined
+    - vault_dns_zone is defined
+
+- name: Add internal DNS test entries from vault
+  ansible.builtin.set_fact:
+    verify_internal_test_records: "{{ verify_internal_test_records + [ {'name': item.name, 'domain': vault_dns_zone} ] }}"
+  loop: "{{ vault_dns_records }}"
+  when:
+    - dns_internal_records_from_vault | default(false)
+    - vault_dns_records is defined
+    - vault_dns_zone is defined
+
 - name: Test internal DNS resolution (cluster.local)
   block:
     - name: Query each internal DNS record

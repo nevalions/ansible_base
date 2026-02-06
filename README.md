@@ -1077,6 +1077,7 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 - [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Complete Kubernetes setup guide
 - [KUBERNETES_QUICKREF.md](KUBERNETES_QUICKREF.md) - Kubernetes quick reference
 - [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) - SSH agent usage guide
+- [WIREGUARD_ADD_NODE.md](WIREGUARD_ADD_NODE.md) - Add WireGuard clients and servers
 
 ### Role Documentation
 Each role includes:

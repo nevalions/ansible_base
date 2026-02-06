@@ -1,5 +1,7 @@
 # WireGuard Setup Instructions
 
+For adding new clients or servers, see [WIREGUARD_ADD_NODE.md](WIREGUARD_ADD_NODE.md).
+
 ## Step 1: Generate WireGuard Keys
 
 ### Prerequisites

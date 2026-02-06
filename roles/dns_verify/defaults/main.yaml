@@ -11,15 +11,8 @@ verify_dns_timeout: 5
 verify_dns_retry: 2
 
 # DNS test targets - internal
-verify_internal_test_records:
-  - name: "[dns-server-1]"
-    domain: "[search-domain]"
-  - name: "[dns-server-2]"
-    domain: "[search-domain]"
-  - name: "[client-hostname-1]"
-    domain: "[search-domain]"
-  - name: "[client-hostname-2]"
-    domain: "[search-domain]"
+# Defaults to vault_dns_records + vault_dns_zone when empty or undefined.
+verify_internal_test_records: []
 
 # DNS test targets - external
 verify_external_test_hosts:

@@ -1,6 +1,6 @@
 ---
 - name: Upgrade Debian packages
-  hosts: bay_cluster_all
+  hosts: "[cluster-group]"
   become: true
   gather_facts: true
   serial: "30%"
@@ -39,14 +39,18 @@
 
     - name: Collect hosts requiring reboot
       ansible.builtin.set_fact:
+        reboot_required_hosts: []
+
+    - name: Build reboot required host list
+      ansible.builtin.set_fact:
         reboot_required_hosts: >-
           {{
-            play_hosts | map('extract', hostvars)
-            | selectattr('ansible_facts.reboot_required_status', 'equalto', true)
-            | map('attr', 'inventory_hostname')
-            | map('regex_replace', '^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$', '\\1.***.***.\\4')
-            | list
+            reboot_required_hosts
+            + [item | regex_replace('^(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)$', '\\1.***.***.\\4')]
           }}
+      loop: "{{ play_hosts }}"
+      when: hostvars[item].ansible_facts.reboot_required_status | default(false)
+      run_once: true
 
     - name: Display final upgrade summary
       ansible.builtin.debug:
