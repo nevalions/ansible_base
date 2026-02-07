@@ -182,8 +182,13 @@ Examples:
 **What it checks:**
 - All commits being pushed
 - Sensitive files in commits
-- Hardcoded IPs, ports, hostnames in commit contents
+- Hardcoded IPs, ports, hostnames in commit contents (excluding comments and documentation)
 - Commit author and date
+
+**Exclusions:**
+- YAML comments (lines starting with `#`)
+- Inventory group names in `hosts:` fields (e.g., `hosts: bay_bgp`)
+- Markdown table entries documenting inventory references
 
 **How it works:**
 1. Gets commits being pushed (from remote to local)
@@ -279,6 +284,7 @@ Commit: def5678
 - Group variables: `group_vars/*.yml` (non-example)
 - Inventory files: `hosts_*.ini`, `inventory_*.yaml`
 - SSH keys: `id_rsa`, `id_ed25519`, `*.pem`
+- All INI files: `*.ini` (may contain connection details)
 
 **Acceptable patterns (allowed):**
 

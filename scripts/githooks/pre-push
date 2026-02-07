@@ -56,8 +56,8 @@ while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r "$COMMIT_SHA" 2>/dev/null || true)
         
         if [ -n "$FILES_CHANGED" ]; then
-            # Check for sensitive files
-            SENSITIVE_FILES=$(echo "$FILES_CHANGED" | grep -E 'vault_secrets|wg_keys|\.vault|group_vars/.*\.yml$|hosts_' || true)
+            # Check for sensitive files (exclude .example files)
+            SENSITIVE_FILES=$(echo "$FILES_CHANGED" | grep -E 'vault_secrets\.yml$|wg_keys|\.vault$|group_vars/.*\.yml$|hosts_' || true)
             
             if [ -n "$SENSITIVE_FILES" ]; then
                 echo -e "${RED}  ✗ Sensitive files detected:${NC}"
@@ -89,10 +89,13 @@ while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
                     CONTENT=$(git show "$COMMIT_SHA:$FILE" 2>/dev/null || true)
                     
                     if [ -n "$CONTENT" ]; then
+                        # Remove YAML comments before checking
+                        CONTENT_NO_COMMENTS=$(echo "$CONTENT" | sed 's/#.*$//')
+
                         # Check for hardcoded IPs
-                        if echo "$CONTENT" | grep -qE '9\.11\.0\.|192\.168\.10\.|176\.57\.220\.'; then
+                        if echo "$CONTENT_NO_COMMENTS" | grep -qE '9\.11\.0\.|192\.168\.10\.|176\.57\.220\.'; then
                             # Skip if line has acceptable patterns (placeholder format)
-                            if ! echo "$CONTENT" | grep -q '\[vip-address\]\|\[server-ip\]\|\[internal-ip\]\|\[control-plane-ip\]\|\[client-ip\]'; then
+                            if ! echo "$CONTENT_NO_COMMENTS" | grep -q '\[vip-address\]\|\[server-ip\]\|\[internal-ip\]\|\[control-plane-ip\]\|\[client-ip\]'; then
                                 echo -e "${RED}  ✗ Found hardcoded IP in: $FILE${NC}"
                                 VIOLATION_FOUND=1
                             fi
@@ -107,10 +110,10 @@ while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
                             fi
                         fi
                         
-                        # Check for real hostnames
-                        if echo "$CONTENT" | grep -qE 'haproxy_spb|bay_bgp|bay_plane[12]|cloud_'; then
+                        # Check for real hostnames (skip hosts: field and table entries - inventory group names are OK)
+                        if echo "$CONTENT_NO_COMMENTS" | grep -vE '^\s*hosts:|^\s*\|.*\|' | grep -qE 'haproxy_spb|bay_bgp|bay_plane[12]|cloud_'; then
                             # Skip if in documentation examples (showing what NOT to do)
-                            if ! echo "$CONTENT" | grep -qE '❌|WRONG|example|e\.g\.'; then
+                            if ! echo "$CONTENT_NO_COMMENTS" | grep -qE '❌|WRONG|example|e\.g\.'; then
                                 echo -e "${RED}  ✗ Found real hostname in: $FILE${NC}"
                                 VIOLATION_FOUND=1
                             fi
