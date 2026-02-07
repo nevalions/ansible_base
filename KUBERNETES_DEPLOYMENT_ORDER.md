@@ -374,9 +374,9 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
 | 3.2 | `kuber_worker_join.yaml` | kuber_small_workers | Join workers | join |
 | 3.3 | `kuber_verify.yaml` | planes_all | Verify cluster | verify |
 | 4.1 | `calico_bgp_manage.yaml` | kuber_small_all | Configure Calico BGP | calico, bgp |
-| 4.2 | `bgp_router_manage.yaml` | bay_bgp | Configure BGP router | bgp |
+| 4.2 | `bgp_router_manage.yaml` | bgp_routers | Configure BGP router | bgp |
 | 4.3 | `kuber_metallb_install.yaml` | planes_all | Install MetalLB | metallb |
-| 4.4 | `bgp_router_verify.yaml` | bay_bgp | Verify BGP | bgp |
+| 4.4 | `bgp_router_verify.yaml` | bgp_routers | Verify BGP | bgp |
 | 4.5 | `kuber_metallb_verify.yaml` | planes_all | Verify MetalLB | metallb |
 
 ---
@@ -390,7 +390,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
 | `kuber_worker_soft_reset.yaml` | kuber_small_workers | Soft reset (keep packages) |
 | `kuber_plane_soft_reset.yaml` | kuber_small_planes | Soft reset (keep packages) |
 | `kuber_metallb_remove.yaml` | planes_all | Remove MetalLB |
-| `bgp_router_remove.yaml` | bay_bgp | Remove BGP router config |
+| `bgp_router_remove.yaml` | bgp_routers | Remove BGP router config |
 
 ---
 
