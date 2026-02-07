@@ -66,19 +66,6 @@ for hook in "${HOOKS[@]}"; do
     INSTALLED=$((INSTALLED + 1))
 done
 
-# Copy verification script
-VERIFY_SOURCE="$GITHOOKS_DIR/verify_sensitive_data.py"
-VERIFY_TARGET="$REPO_ROOT/scripts/verify_sensitive_data.py"
-
-if [ -f "$VERIFY_SOURCE" ]; then
-    echo -e "${GREEN}✓ Installing verification script${NC}"
-    cp "$VERIFY_SOURCE" "$VERIFY_TARGET"
-    chmod +x "$VERIFY_TARGET"
-else
-    echo -e "${RED}✗ Verification script not found${NC}"
-    FAILED=$((FAILED + 1))
-fi
-
 # Summary
 echo ""
 echo -e "${BLUE}=== Setup Complete ===${NC}"

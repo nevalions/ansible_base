@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # Path to verification script
-VERIFY_SCRIPT="$REPO_ROOT/scripts/verify_sensitive_data.py"
+VERIFY_SCRIPT="$REPO_ROOT/scripts/githooks/verify_sensitive_data.py"
 
 # Check if verification script exists
 if [ ! -f "$VERIFY_SCRIPT" ]; then
