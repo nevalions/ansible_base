@@ -1,8 +1,10 @@
 # Kubernetes Cluster Setup with Ansible
 
+> **Quick Start:** For complete deployment order from scratch, see [KUBERNETES_DEPLOYMENT_ORDER.md](KUBERNETES_DEPLOYMENT_ORDER.md)
+
 ## Overview
 
-This Ansible project provides automated Kubernetes cluster setup with Calico CNI networking.
+This Ansible project provides automated Kubernetes cluster setup with Calico CNI networking over WireGuard VPN.
 
 ## Architecture
 
@@ -23,11 +25,69 @@ Kubernetes API server (port [haproxy-backend-port])
 - **HAProxy**: Load balances Kubernetes API requests on each control plane
 - **WireGuard**: Provides secure mesh network for inter-plane communication
 - **VIP**: Virtual IP ([vip-address]) that workers connect to
+- **Calico CNI**: Pod networking with IPIP encapsulation over WireGuard
 
 **Scalability:**
 - Start with single control plane ([plane-hostname])
 - Add additional control planes by updating `vault_k8s_control_planes`
 - Keepalived automatically detects healthy planes and routes traffic accordingly
+
+---
+
+## WireGuard + Calico IPIP Network Requirements
+
+Running Kubernetes with Calico CNI over WireGuard requires specific configuration to ensure proper pod networking.
+
+### Critical Configuration
+
+| Setting | Required Value | Why |
+|---------|---------------|-----|
+| `natOutgoing` | `true` | Pods must NAT to reach node WireGuard IPs (9.11.0.x) |
+| `vault_ipPools_encapsulation` | `IPIP` | Required for L3 WireGuard networks |
+| `mtu` | `1380` | WireGuard (1420) - IPIP (20) - safety (20) |
+| `vault_calico_typha_replicas` | `1` | Prevents port conflicts on small clusters |
+
+### Network Flow
+
+```
+Pod (10.244.x.x) → IPIP Tunnel → WireGuard (9.11.0.x) → Remote Node
+                      ↓
+              NAT (MASQUERADE)
+                      ↓
+           Source becomes node's WireGuard IP
+```
+
+### Why natOutgoing is Critical
+
+Without `natOutgoing: true`:
+- Pods can reach other pods via IPIP tunnels ✓
+- Pods CANNOT reach node WireGuard IPs (9.11.0.x) ✗
+- Pods CANNOT reach Kubernetes API (10.96.0.1 → 9.11.0.11:6443) ✗
+- MetalLB controller crashes with API timeout ✗
+
+### Typha Anti-Affinity
+
+Calico Typha uses `hostNetwork: true` and binds to port 5473. Without proper anti-affinity, multiple Typha pods can be scheduled on the same node, causing:
+
+```
+[PANIC] Failed to open listen socket error=listen tcp :5473: bind: address already in use
+```
+
+The playbooks now configure **required** pod anti-affinity:
+
+```yaml
+typhaDeployment:
+  spec:
+    template:
+      spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    k8s-app: calico-typha
+                topologyKey: kubernetes.io/hostname
+```
 
 ## Playbooks
 
@@ -298,9 +358,28 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 # Includes automatic verification of control plane and Calico
 ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
+# 2.5 (Optional) Move Calico BGP off TCP/179 (needed for MetalLB BGP)
+# Calico (BIRD) binds TCP/179 by default; MetalLB BGP also needs TCP/179.
+ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
+
 # 3. Join workers (all 4 workers)
 # Includes automatic verification of each worker
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
+
+# 3.5 (Optional) Configure BGP router and install MetalLB (LoadBalancer)
+# Recommended for WireGuard/L3 clusters. Keeps Calico IPIP unchanged.
+#
+# 1) Configure FRR on the BGP router host (e.g., bay_bgp)
+ansible-playbook -i hosts_bay.ini bgp_router_manage.yaml --tags bgp
+#
+# 2) Install and configure MetalLB (BGP mode)
+ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml --tags metallb
+
+# Remove MetalLB (cleanup)
+ansible-playbook -i hosts_bay.ini kuber_metallb_remove.yaml --tags remove
+
+# Remove BGP router configuration (cleanup)
+ansible-playbook -i hosts_bay.ini bgp_router_remove.yaml --tags remove
 
 # 4. Full cluster verification (optional but recommended)
 # Tests pod-to-pod connectivity, DNS, external access
@@ -441,6 +520,117 @@ kubectl delete pod test-pod
 - No manual token management required
 - Token is generated from control plane and used immediately
 
+### WireGuard + Calico IPIP Issues
+
+**5. calico-typha CrashLoopBackOff - Port Already in Use**
+
+**Symptoms:**
+```
+[PANIC] Failed to open listen socket error=listen tcp :5473: bind: address already in use
+```
+
+**Cause:** Multiple Typha pods scheduled on same node (autoscaler override or missing anti-affinity)
+
+**Fix:**
+```bash
+# Check typha pods
+kubectl get pods -n calico-system -o wide | grep typha
+
+# Patch installation with required anti-affinity (already in playbooks)
+kubectl patch installation default --type=merge -p '{"spec":{"typhaDeployment":{"spec":{"template":{"spec":{"affinity":{"podAntiAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchLabels":{"k8s-app":"calico-typha"}},"topologyKey":"kubernetes.io/hostname"}]}}}}}}}}'
+
+# Kill orphaned typha process if stuck
+ssh <node> "pgrep -a typha"
+ssh <node> "sudo kill -9 <pid>"
+```
+
+**6. Pods Cannot Reach Kubernetes API - Timeout**
+
+**Symptoms:**
+```
+dial tcp [k8s-api-vip]:443: i/o timeout
+```
+
+**Cause:** `natOutgoing: Disabled` in Calico IPPool - pods can't reach node WireGuard IPs
+
+**Fix:**
+```bash
+# Enable NAT outgoing
+kubectl patch ippool default-ip4-ippool --type=merge -p '{"spec":{"natOutgoing":true}}'
+
+# Verify
+kubectl get ippool -o yaml | grep natOutgoing
+
+# Test from a pod
+kubectl run test --image=busybox --rm -it -- wget -qO- --timeout=5 https://[k8s-api-vip]:443/healthz
+```
+
+**7. metallb-speaker CrashLoopBackOff - Port Already in Use**
+
+**Symptoms:**
+```
+failed to create memberlist: listen tcp [node-ip]:[metallb-memberlist-port]: bind: address already in use
+```
+
+**Cause:** Orphaned speaker process from previous crashed pod
+
+**Fix:**
+```bash
+# Find orphaned speaker process
+ssh <node> "pgrep -a speaker"
+
+# Kill it
+ssh <node> "sudo kill -9 <pid>"
+
+# Delete crashed pod to trigger restart
+kubectl delete pod -n metallb-system <speaker-pod> --force --grace-period=0
+```
+
+**8. BGP Peers Not Establishing**
+
+**Symptoms:**
+```
+BIRD is not ready: BGP not established with [node-ip-1],[node-ip-2]
+```
+
+**Cause:** WireGuard tunnel not up, firewall blocking, or BGP port conflict
+
+**Fix:**
+```bash
+# Check WireGuard connectivity
+wg show wg99
+
+# Test BGP port from node
+nc -zv [node-ip] [bgp-port]
+
+# Check Calico BGP config
+kubectl get bgpconfigurations default -o yaml
+
+# If Calico BGP conflicts with MetalLB, move Calico to different port
+kubectl patch bgpconfigurations default --type=merge -p '{"spec":{"listenPort":178}}'
+```
+
+**9. MTU Issues - Packet Fragmentation**
+
+**Symptoms:**
+- Slow network performance
+- Large file transfers fail
+- TCP connections hang
+
+**Cause:** MTU too high for WireGuard + IPIP encapsulation
+
+**Fix:**
+```bash
+# Check current MTU
+kubectl get installation default -o jsonpath='{.spec.calicoNetwork.mtu}'
+
+# Should be 1380 for WireGuard + IPIP
+# WireGuard: 1420, IPIP: -20, safety: -20 = 1380
+
+# Patch if needed
+kubectl patch installation default --type=merge -p '{"spec":{"calicoNetwork":{"mtu":1380}}}'
+```
+
 ---
 
 ## Security Notes
@@ -499,6 +689,8 @@ All playbooks support the following tags for selective execution:
 - `plane` - Control plane operations
 - `worker` - Worker node operations
 - `cni` - Calico CNI installation
+- `metallb` - MetalLB install/config (LoadBalancer)
+- `bgp` - BGP router configuration
 - `reset` - Reset/cleanup operations
 
 ---

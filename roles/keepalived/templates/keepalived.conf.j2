@@ -56,9 +56,12 @@ vrrp_instance K8S_VIP {
 {% endfor %}
     }
 {% elif use_unicast and unicast_peers | length == 0 %}
-    # Single control plane - no unicast peers needed
-    # VIP will be assigned directly to this node as permanent MASTER
-    # When adding more control planes, re-run this playbook to enable VRRP failover
+    # Single control plane on WireGuard.
+    # Use unicast to self so we don't rely on multicast support on wg* interfaces.
+    unicast_src_ip {{ keepalived_unicast_src_ip }}
+    unicast_peer {
+        {{ keepalived_unicast_src_ip }}
+    }
 {% endif %}
 
     authentication {

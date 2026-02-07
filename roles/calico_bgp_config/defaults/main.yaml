@@ -1,0 +1,19 @@
+---
+# Calico BGP configuration helper.
+# This role is used to tune Calico BGP settings when MetalLB BGP is enabled.
+
+calico_bgp_enabled: "{{ vault_calico_bgp_enabled | default(true) }}"
+
+# Move Calico BGP off TCP/179 so MetalLB can use 179.
+# Pick any unused TCP port (common choice: 178).
+calico_bgp_listen_port: "{{ vault_calico_bgp_listen_port | default(178) }}"
+
+# Apply changes and restart calico-node daemonset to release port 179.
+calico_bgp_restart_calico_node: "{{ vault_calico_bgp_restart_calico_node | default(true) }}"
+
+# Manage UFW rules for the Calico BGP listen port on every node.
+calico_bgp_manage_ufw: "{{ vault_calico_bgp_manage_ufw | default(true) }}"
+
+# Source CIDR allowed to connect to Calico BGP port.
+# Defaults to the WireGuard network CIDR when available.
+calico_bgp_allowed_source_cidr: "{{ vault_calico_bgp_allowed_source_cidr | default(vault_wg_network_cidr | default('')) }}"

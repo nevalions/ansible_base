@@ -2,6 +2,38 @@
 
 For adding new clients or servers, see [WIREGUARD_ADD_NODE.md](WIREGUARD_ADD_NODE.md).
 
+## Kubernetes Networking Requirements
+
+When using WireGuard as the underlying network for Kubernetes with Calico CNI:
+
+### Critical Settings in vault_secrets.yml
+
+```yaml
+# REQUIRED for pods to reach node WireGuard IPs
+natOutgoing: true
+
+# REQUIRED for L3 WireGuard networks
+vault_ipPools_encapsulation: "IPIP"
+
+# MTU calculation: WireGuard (1420) - IPIP (20) - safety (20)
+mtu: 1380
+
+# Prevents Typha port conflicts on small clusters
+vault_calico_typha_replicas: 1
+```
+
+### Why These Settings Matter
+
+| Setting | Impact if Wrong |
+|---------|----------------|
+| `natOutgoing: false` | Pods cannot reach Kubernetes API, MetalLB crashes |
+| `encapsulation: None` | Pod-to-pod traffic fails across WireGuard |
+| `mtu: 1500` | Packet fragmentation, slow/failed transfers |
+
+See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md#wireguard--calico-ipip-network-requirements) for detailed troubleshooting.
+
+---
+
 ## Step 1: Generate WireGuard Keys
 
 ### Prerequisites

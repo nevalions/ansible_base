@@ -1,0 +1,390 @@
+---
+- name: Skip when BGP router disabled
+  ansible.builtin.meta: end_play
+  when: not (bgp_router_enabled | bool)
+
+- name: Remove FRR BGP router when operation is remove
+  block:
+    - name: Check whether UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: ufw_bin_remove
+
+    - name: Check UFW status
+      ansible.builtin.command: ufw status
+      register: ufw_status_remove
+      changed_when: false
+      failed_when: false
+      when:
+        - bgp_router_manage_ufw | bool
+        - ufw_bin_remove.stat.exists
+
+    - name: Set UFW active flag
+      ansible.builtin.set_fact:
+        ufw_is_active_remove: >-
+          {{ ufw_status_remove.stdout is defined and 'Status: active' in ufw_status_remove.stdout }}
+      when:
+        - bgp_router_manage_ufw | bool
+        - ufw_bin_remove.stat.exists
+
+    - name: Remove BGP (TCP/179) UFW rule from WireGuard network
+      community.general.ufw:
+        rule: allow
+        port: "179"
+        proto: tcp
+        from_ip: "{{ bgp_router_allowed_source_cidr }}"
+        delete: true
+      when:
+        - bgp_router_manage_ufw | bool
+        - ufw_bin_remove.stat.exists
+        - ufw_is_active_remove | default(false)
+        - bgp_router_allowed_source_cidr | default('') | length > 0
+        - bgp_router_allowed_source_cidr is not match('^\[.*\]$')
+      failed_when: false
+
+    - name: Stop and disable FRR service
+      ansible.builtin.systemd:
+        name: frr
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove FRR configuration files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/frr/frr.conf
+        - /etc/frr/daemons
+      failed_when: false
+
+    - name: Purge FRR packages
+      ansible.builtin.apt:
+        name:
+          - frr
+          - frr-pythontools
+        state: absent
+        purge: true
+        autoremove: true
+        update_cache: true
+
+    - name: Gather installed package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Assert FRR packages are removed (strict)
+      ansible.builtin.assert:
+        that:
+          - "'frr' not in ansible_facts.packages"
+          - "'frr-pythontools' not in ansible_facts.packages"
+        success_msg: "FRR packages are removed"
+        fail_msg: "FRR packages still present after removal"
+      when: bgp_router_remove_strict | bool
+
+    - name: Verify FRR config files are absent
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/frr/frr.conf
+        - /etc/frr/daemons
+      register: frr_files
+
+    - name: Assert FRR config files are removed (strict)
+      ansible.builtin.assert:
+        that:
+          - "(frr_files.results | map(attribute='stat.exists') | select('equalto', true) | list | length) == 0"
+        success_msg: "FRR config files removed"
+        fail_msg: "Some FRR config files still exist under /etc/frr"
+      when: bgp_router_remove_strict | bool
+
+    - name: Verify BGP port is not listening
+      ansible.builtin.command: ss -ltnp
+      register: listen_after_remove
+      changed_when: false
+      failed_when: false
+
+    - name: Assert TCP/179 is not listening (strict)
+      ansible.builtin.assert:
+        that:
+          - listen_after_remove.stdout is not search(':179')
+        success_msg: "TCP/179 is not listening"
+        fail_msg: "TCP/179 is still listening after FRR removal"
+      when: bgp_router_remove_strict | bool
+
+    - name: Check for remaining UFW rules mentioning 179 (best-effort)
+      ansible.builtin.command: ufw status
+      register: ufw_status_post
+      changed_when: false
+      failed_when: false
+      when:
+        - bgp_router_manage_ufw | bool
+        - ufw_bin_remove.stat.exists
+        - ufw_is_active_remove | default(false)
+
+    - name: Warn when UFW still contains 179 rules
+      ansible.builtin.debug:
+        msg:
+          - "UFW still contains rules mentioning 179. Review with: ufw status numbered"
+          - "{{ ufw_status_post.stdout_lines | default([]) }}"
+      when:
+        - ufw_status_post.stdout is defined
+        - ufw_status_post.stdout is search('179')
+  when: bgp_router_operation | default('install') == 'remove'
+
+- name: End play after removal
+  ansible.builtin.meta: end_play
+  when: bgp_router_operation | default('install') == 'remove'
+
+- name: Check if bird service exists (legacy Calico BGP)
+  ansible.builtin.stat:
+    path: /lib/systemd/system/bird.service
+  register: bird_service_file
+
+- name: Stop and disable bird service (conflicts with FRR on port 179)
+  ansible.builtin.systemd:
+    name: bird
+    state: stopped
+    enabled: false
+  when: bird_service_file.stat.exists
+  failed_when: false
+
+- name: Fail if BGP router variables are missing or placeholders
+  ansible.builtin.assert:
+    that:
+      - bgp_router_asn is defined
+      - bgp_router_asn | string | length > 0
+      - bgp_router_asn is not match('^\[.*\]$')
+      - bgp_router_router_id is defined
+      - bgp_router_router_id | string | length > 0
+      - bgp_router_router_id is not match('^\[.*\]$')
+      - bgp_router_metallb_pool_cidr is defined
+      - bgp_router_metallb_pool_cidr | string | length > 0
+      - bgp_router_metallb_pool_cidr is not match('^\[.*\]$')
+      - bgp_router_neighbors is defined
+      - bgp_router_neighbors | length > 0
+    fail_msg: >-
+      BGP router variables are missing or placeholders. Set vault_bgp_router_asn,
+      vault_bgp_router_router_id, vault_metallb_pool_cidr, and vault_bgp_router_neighbors
+      in vault_secrets.yml.
+    success_msg: "BGP router variables are defined"
+
+- name: Install FRR
+  ansible.builtin.apt:
+    name:
+      - frr
+      - frr-pythontools
+    state: present
+    update_cache: true
+
+- name: Detect vtysh path
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/bin/vtysh
+    - /usr/lib/frr/vtysh
+  register: vtysh_paths
+
+- name: Set vtysh path fact
+  ansible.builtin.set_fact:
+    bgp_router_vtysh_path: >-
+      {{ (vtysh_paths.results
+          | selectattr('stat.exists', 'equalto', true)
+          | map(attribute='stat.path')
+          | list
+          | first)
+        | default('') }}
+
+- name: Fail when vtysh is missing
+  ansible.builtin.fail:
+    msg: >-
+      vtysh was not found at /usr/bin/vtysh or /usr/lib/frr/vtysh.
+      FRR appears incomplete on this host. Verify the 'frr' package installed
+      correctly for your distribution.
+  when: bgp_router_vtysh_path | length == 0
+
+- name: Enable required FRR daemons
+  ansible.builtin.copy:
+    dest: /etc/frr/daemons
+    mode: "0644"
+    owner: root
+    group: root
+    content: |
+      # Managed by Ansible - FRR daemons
+      zebra=yes
+      bgpd=yes
+      ospfd=no
+      ospf6d=no
+      ripd=no
+      ripngd=no
+      isisd=no
+      pimd=no
+      ldpd=no
+      nhrpd=no
+      eigrpd=no
+      babeld=no
+      sharpd=no
+      pbrd=no
+      bfdd=no
+      fabricd=no
+      vrrpd=no
+      pathd=no
+      watchfrr_enable=yes
+      frr_profile="traditional"
+  notify: Restart frr
+
+- name: Verify update-source interface exists
+  ansible.builtin.command: "ip link show {{ bgp_router_update_source }}"
+  register: bgp_router_iface_check
+  changed_when: false
+  failed_when: false
+  when:
+    - bgp_router_update_source | default('') | length > 0
+    - bgp_router_update_source is not match('^\[.*\]$')
+
+- name: Fail when update-source interface is missing
+  ansible.builtin.fail:
+    msg: >-
+      Interface {{ bgp_router_update_source }} not found on this host.
+      Set vault_bgp_router_update_source (recommended: your WireGuard interface)
+      or verify WireGuard is up.
+  when:
+    - bgp_router_update_source | default('') | length > 0
+    - bgp_router_update_source is not match('^\[.*\]$')
+    - bgp_router_iface_check.rc != 0
+
+- name: Render FRR configuration
+  ansible.builtin.template:
+    src: frr.conf.j2
+    dest: /etc/frr/frr.conf
+    mode: "0640"
+    owner: frr
+    group: frr
+    backup: true
+  notify: Restart frr
+
+- name: Ensure FRR service is enabled and running
+  ansible.builtin.systemd:
+    name: frr
+    enabled: true
+    state: started
+
+- name: Flush handlers to apply FRR config
+  ansible.builtin.meta: flush_handlers
+
+- name: Read rendered FRR config (debug)
+  ansible.builtin.slurp:
+    src: /etc/frr/frr.conf
+  register: frr_conf_slurp
+  changed_when: false
+  when: bgp_router_debug | bool
+
+- name: Display rendered FRR config (first lines)
+  ansible.builtin.debug:
+    msg: >-
+      {{ (frr_conf_slurp.content | b64decode).split('\n')[:120] }}
+  when: bgp_router_debug | bool
+
+- name: Check FRR running-config (attempt 1)
+  ansible.builtin.command: "{{ bgp_router_vtysh_path }} -c 'show running-config'"
+  register: frr_running_1
+  changed_when: false
+  failed_when: false
+
+- name: Restart FRR once if BGP neighbors are missing
+  ansible.builtin.systemd:
+    name: frr
+    state: restarted
+  when:
+    - frr_running_1.rc == 0
+    - (frr_running_1.stdout | default('')) is search('router bgp ' ~ (bgp_router_asn | string))
+    - (frr_running_1.stdout | default('')) is not search('neighbor ')
+
+- name: Check FRR running-config (attempt 2)
+  ansible.builtin.command: "{{ bgp_router_vtysh_path }} -c 'show running-config'"
+  register: frr_running_2
+  changed_when: false
+  failed_when: false
+
+- name: Display running-config BGP section (debug)
+  ansible.builtin.debug:
+    msg: >-
+      {{ (frr_running_2.stdout | default('')
+        | split('\n')
+        | select('search', '^(router bgp| neighbor | address-family ipv4| ip prefix-list| route-map|line vty)')
+        | list)[:120] }}
+  when:
+    - bgp_router_debug | bool
+    - frr_running_2.rc == 0
+
+- name: Collect FRR journal logs (debug)
+  ansible.builtin.command: journalctl -u frr -n 200 --no-pager
+  register: frr_journal
+  changed_when: false
+  failed_when: false
+  when: bgp_router_debug | bool
+
+- name: Display FRR journal logs (last lines)
+  ansible.builtin.debug:
+    var: frr_journal.stdout_lines
+  when:
+    - bgp_router_debug | bool
+    - frr_journal.stdout_lines is defined
+
+- name: Fail when BGP neighbor configuration is not present in running-config
+  ansible.builtin.fail:
+    msg: >-
+      FRR did not load BGP neighbor configuration into running-config.
+      Check /etc/frr/frr.conf syntax, frr permissions, and journal logs.
+  when:
+    - frr_running_2.rc != 0 or
+      (frr_running_2.stdout | default('')) is not search('router bgp ' ~ (bgp_router_asn | string)) or
+      (frr_running_2.stdout | default('')) is not search('neighbor ')
+
+- name: Check whether UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_bin
+
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  failed_when: false
+  when:
+    - bgp_router_manage_ufw | bool
+    - ufw_bin.stat.exists
+
+- name: Set UFW active flag
+  ansible.builtin.set_fact:
+    ufw_is_active: "{{ ufw_status.stdout is defined and 'Status: active' in ufw_status.stdout }}"
+  when:
+    - bgp_router_manage_ufw | bool
+    - ufw_bin.stat.exists
+
+- name: Allow BGP (TCP/179) from WireGuard network
+  community.general.ufw:
+    rule: allow
+    port: "179"
+    proto: tcp
+    from_ip: >-
+      {{ bgp_router_allowed_source_cidr
+      if (bgp_router_allowed_source_cidr | default('') | length > 0 and
+          bgp_router_allowed_source_cidr is not match('^\[.*\]$'))
+      else omit }}
+  when:
+    - bgp_router_manage_ufw | bool
+    - ufw_bin.stat.exists
+    - ufw_is_active | default(false)
+
+- name: Verify FRR BGP is listening
+  ansible.builtin.command: ss -ltnp
+  register: frr_listen
+  changed_when: false
+  failed_when: false
+
+- name: Assert BGP port is listening
+  ansible.builtin.assert:
+    that:
+      - frr_listen.stdout is search(':179')
+    success_msg: "FRR is listening on TCP/179"
+    fail_msg: "FRR is not listening on TCP/179; check /etc/frr/daemons and frr logs"

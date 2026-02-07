@@ -1,0 +1,8 @@
+---
+metallb_verify_enabled: true
+
+metallb_namespace: "{{ vault_metallb_namespace | default('metallb-system') }}"
+metallb_mode: "{{ vault_metallb_mode | default('bgp') }}"
+
+# Optional: create a temporary LoadBalancer service and wait for IP assignment
+metallb_verify_smoke_test: "{{ vault_metallb_verify_smoke_test | default(false) }}"

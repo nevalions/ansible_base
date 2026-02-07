@@ -1,0 +1,17 @@
+---
+- name: Remove BGP router configuration (FRR)
+  hosts: bay_bgp
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - bgp
+    - remove
+    - router
+    - frr
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    bgp_router_operation: remove
+  roles:
+    - bgp_router_frr

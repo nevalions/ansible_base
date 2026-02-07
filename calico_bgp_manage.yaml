@@ -1,0 +1,14 @@
+---
+- name: Configure Calico BGP settings (avoid TCP/179 conflict)
+  hosts: kuber_small_all
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - calico
+    - cni
+    - bgp
+  vars_files:
+    - vault_secrets.yml
+  roles:
+    - calico_bgp_config

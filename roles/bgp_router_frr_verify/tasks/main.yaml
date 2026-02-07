@@ -1,0 +1,114 @@
+---
+- name: Skip when verification disabled
+  ansible.builtin.meta: end_play
+  when: not (bgp_router_verify_enabled | bool)
+
+- name: Verify FRR service is active
+  ansible.builtin.systemd:
+    name: frr
+  register: frr_service
+  changed_when: false
+  failed_when: false
+
+- name: Assert FRR service is active
+  ansible.builtin.assert:
+    that:
+      - frr_service.status.ActiveState is defined
+      - frr_service.status.ActiveState == 'active'
+    success_msg: "FRR service is active"
+    fail_msg: "FRR service is not active; check: systemctl status frr"
+
+- name: Detect vtysh path
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /usr/bin/vtysh
+    - /usr/lib/frr/vtysh
+  register: vtysh_paths
+
+- name: Set vtysh path fact
+  ansible.builtin.set_fact:
+    vtysh_path: >-
+      {{ (vtysh_paths.results
+          | selectattr('stat.exists', 'equalto', true)
+          | map(attribute='stat.path')
+          | list
+          | first)
+        | default('') }}
+
+- name: Fail when vtysh is missing
+  ansible.builtin.fail:
+    msg: >-
+      vtysh not found at /usr/bin/vtysh or /usr/lib/frr/vtysh.
+      Ensure FRR is installed correctly (package 'frr').
+  when: vtysh_path | length == 0
+
+- name: Show BGP IPv4 summary
+  ansible.builtin.command: "{{ vtysh_path }} -c 'show bgp ipv4 summary'"
+  register: bgp_summary
+  changed_when: false
+  failed_when: false
+
+- name: Display BGP summary
+  ansible.builtin.debug:
+    var: bgp_summary.stdout_lines
+  when: bgp_summary.stdout_lines is defined
+
+- name: Show running-config (filtered)
+  ansible.builtin.command: "{{ vtysh_path }} -c 'show running-config'"
+  register: running_cfg
+  changed_when: false
+  failed_when: false
+
+- name: Display running-config BGP section
+  ansible.builtin.debug:
+    msg: >-
+      {{ (running_cfg.stdout | default('')
+        | split('\n')
+        | select('search', '^(router bgp| neighbor | address-family ipv4| ip prefix-list| route-map)')
+        | list)[:80] }}
+  when: running_cfg.rc == 0
+
+- name: Assert expected neighbors appear in BGP summary
+  ansible.builtin.assert:
+    that:
+      - bgp_router_neighbors | length > 0
+      - bgp_summary.stdout is defined
+      - bgp_summary.stdout is search(item.address)
+    success_msg: "Neighbor {{ item.address }} present in BGP summary"
+    fail_msg: "Neighbor {{ item.address }} not present in BGP summary"
+  loop: "{{ bgp_router_neighbors }}"
+  when:
+    - bgp_router_neighbors | length > 0
+    - (bgp_summary.stdout | default('')) is not search('% No BGP neighbors found')
+
+- name: Fail when no BGP neighbors are configured
+  ansible.builtin.fail:
+    msg: >-
+      FRR reports no BGP neighbors configured. This usually means /etc/frr/frr.conf
+      was not loaded or bgpd is not running. Check /etc/frr/frr.conf ownership
+      (should be frr:frr) and frr logs.
+  when: (bgp_summary.stdout | default('')) is search('% No BGP neighbors found')
+
+- name: Show BGP IPv4 table
+  ansible.builtin.command: "{{ vtysh_path }} -c 'show bgp ipv4'"
+  register: bgp_table
+  changed_when: false
+  failed_when: false
+
+- name: Display BGP routes (filtered)
+  ansible.builtin.debug:
+    msg:
+      - "MetalLB pool expected: {{ bgp_router_metallb_pool_cidr | default('N/A') }}"
+      - "Route present: {{ (bgp_table.stdout | default('')) is search(bgp_router_metallb_pool_cidr | default('')) }}"
+  when: bgp_router_metallb_pool_cidr | default('') | length > 0
+
+- name: Fail when MetalLB pool route is required but missing
+  ansible.builtin.fail:
+    msg: >-
+      MetalLB pool route {{ bgp_router_metallb_pool_cidr }} not found in BGP table.
+      Ensure MetalLB is installed and BGP sessions are Established.
+  when:
+    - bgp_router_verify_require_pool_route | bool
+    - bgp_router_metallb_pool_cidr | default('') | length > 0
+    - (bgp_table.stdout | default('')) is not search(bgp_router_metallb_pool_cidr)

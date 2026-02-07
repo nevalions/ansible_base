@@ -1,0 +1,49 @@
+---
+- name: Test metallb role variables
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    vault_become_pass: "test"
+    ansible_become_pass: "test"
+    metallb_mode: "bgp"
+    metallb_bgp_my_asn: "65000"
+    metallb_bgp_peers:
+      - name: "router1"
+        peer_address: "[router-wg-ip]"
+        peer_asn: 65001
+    metallb_address_pools:
+      - name: "wg-lb-pool"
+        addresses:
+          - "[metallb-pool-cidr]/24"
+    metallb_bgp_aggregate_length_v4: 24
+  tasks:
+    - name: Verify MetalLB mode
+      ansible.builtin.assert:
+        that:
+          - metallb_mode in ['bgp', 'layer2']
+
+    - name: Verify BGP ASN variables
+      ansible.builtin.assert:
+        that:
+          - metallb_bgp_my_asn | int > 0
+          - metallb_bgp_my_asn | int < 4294967296
+
+    - name: Verify BGP peers structure
+      ansible.builtin.assert:
+        that:
+          - metallb_bgp_peers | length > 0
+          - metallb_bgp_peers[0].peer_address is defined
+          - metallb_bgp_peers[0].peer_asn is defined
+
+    - name: Verify address pools structure
+      ansible.builtin.assert:
+        that:
+          - metallb_address_pools | length > 0
+          - metallb_address_pools[0].addresses | length > 0
+
+    - name: Verify aggregate length
+      ansible.builtin.assert:
+        that:
+          - metallb_bgp_aggregate_length_v4 | int >= 1
+          - metallb_bgp_aggregate_length_v4 | int <= 32

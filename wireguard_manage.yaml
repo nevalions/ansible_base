@@ -70,9 +70,15 @@
       ansible.builtin.set_fact:
         wg_allowed_networks_merged: "{{ (vault_wg_allowed_networks | default([])) + [vault_k8s_pod_subnet] | unique }}"
 
-    - name: Set WireGuard routed CIDRs (pod network + K8s API VIP)
+    # NOTE: Pod CIDR is NOT included in routed_cidrs because Calico IPIP
+    # encapsulates pod traffic and sends it to node WireGuard IPs (9.11.0.x).
+    # Including pod CIDR creates a broad 10.244.0.0/16 route via wg99 that
+    # conflicts with Calico's per-node /26 routes via tunl0, breaking
+    # ClusterIP connectivity from pods (e.g. MetalLB controller cannot
+    # reach kubernetes API at 10.96.0.1).
+    - name: Set WireGuard routed CIDRs (K8s API VIP only)
       ansible.builtin.set_fact:
-        wg_routed_cidrs: "{{ [vault_k8s_pod_subnet, vault_k8s_api_vip + '/32'] | select | list }}"
+        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32'] | select | list }}"
 
     - name: Apply WireGuard role
       ansible.builtin.include_role:

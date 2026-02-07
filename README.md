@@ -1074,10 +1074,17 @@ All contributions must follow the guidelines in [AGENTS.md](AGENTS.md), includin
 - [AGENTS.md](AGENTS.md) - Coding guidelines and conventions
 - [SECURITY.md](SECURITY.md) - Security best practices and setup guide
 - [tests/README.md](tests/README.md) - Testing documentation
-- [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Complete Kubernetes setup guide
+
+### Kubernetes Documentation
+- [KUBERNETES_DEPLOYMENT_ORDER.md](KUBERNETES_DEPLOYMENT_ORDER.md) - **Complete deployment order from scratch**
+- [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) - Kubernetes setup guide with troubleshooting
 - [KUBERNETES_QUICKREF.md](KUBERNETES_QUICKREF.md) - Kubernetes quick reference
-- [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) - SSH agent usage guide
+
+### Infrastructure Documentation
+- [WIREGUARD_SETUP.md](WIREGUARD_SETUP.md) - WireGuard VPN setup instructions
 - [WIREGUARD_ADD_NODE.md](WIREGUARD_ADD_NODE.md) - Add WireGuard clients and servers
+- [SSH_AGENT_QUICKREF.md](SSH_AGENT_QUICKREF.md) - SSH agent usage guide
+- [VAULT_SETUP.md](VAULT_SETUP.md) - Ansible Vault configuration
 
 ### Role Documentation
 Each role includes:

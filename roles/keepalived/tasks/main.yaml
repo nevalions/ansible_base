@@ -62,6 +62,14 @@
     fail_msg: "Keepalived unicast source IP is required for {{ keepalived_vip_interface }}. Set keepalived_unicast_src_ip."
   when: keepalived_use_unicast
 
+- name: Assert keepalived control plane list is defined
+  ansible.builtin.assert:
+    that:
+      - keepalived_control_planes is defined
+      - keepalived_control_planes | length > 0
+    success_msg: "Keepalived control planes list is defined"
+    fail_msg: "vault_k8s_control_planes must be defined (at least one control plane entry)"
+
 - name: Determine keepalived priority for this host
   ansible.builtin.set_fact:
     keepalived_priority: >-
@@ -154,55 +162,16 @@
       {{ keepalived_control_planes 
          | rejectattr('wireguard_ip', 'equalto', keepalived_unicast_src_ip) 
          | list }}
-  when: keepalived_use_unicast
+  when:
+    - keepalived_use_unicast
+    - keepalived_control_planes is defined
+    - keepalived_control_planes | length > 0
 
 - name: Set single node mode
   ansible.builtin.set_fact:
     keepalived_single_node: "{{ (keepalived_unicast_peers | default([]) | length) == 0 }}"
 
-# For single control plane on WireGuard: assign VIP directly (no VRRP needed)
-- name: Check if VIP already assigned (single node mode)
-  ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep -q "{{ keepalived_vip }}"
-  register: vip_exists
-  changed_when: false
-  failed_when: false
-  when:
-    - keepalived_single_node
-    - keepalived_state == 'MASTER'
-    - not ansible_check_mode
-
-- name: Add VIP to interface (single node mode)
-  ansible.builtin.command:
-    cmd: ip addr add {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}
-  register: vip_add_result
-  changed_when: vip_add_result.rc == 0
-  failed_when: vip_add_result.rc != 0 and 'File exists' not in (vip_add_result.stderr | default(''))
-  when:
-    - keepalived_single_node
-    - keepalived_state == 'MASTER'
-    - not ansible_check_mode
-    - vip_exists.rc != 0
-
-- name: Make VIP persistent across reboots (single node mode)
-  ansible.builtin.lineinfile:
-    path: /etc/network/interfaces.d/{{ keepalived_vip_interface }}-vip
-    line: "post-up ip addr add {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}"
-    create: true
-    mode: "0644"
-  when:
-    - keepalived_single_node
-    - keepalived_state == 'MASTER'
-    - not ansible_check_mode
-  ignore_errors: true
-
-- name: Report VIP assignment (single node mode)
-  ansible.builtin.debug:
-    msg: "VIP {{ keepalived_vip }} assigned to {{ keepalived_vip_interface }} (single node mode - no VRRP)"
-  when:
-    - keepalived_single_node
-    - not ansible_check_mode
-
-# For multiple control planes: use Keepalived with VRRP
+# Deploy Keepalived configuration (single node uses unicast-to-self on wg*)
 - name: Deploy keepalived configuration
   ansible.builtin.template:
     src: keepalived.conf.j2
@@ -210,7 +179,13 @@
     mode: "0644"
     validate: "keepalived -t -f %s"
   notify: Restart keepalived
-  when: not keepalived_single_node
+
+- name: Remove legacy VIP persistence file (VIP managed by keepalived)
+  ansible.builtin.file:
+    path: /etc/network/interfaces.d/{{ keepalived_vip_interface }}-vip
+    state: absent
+  failed_when: false
+  when: not ansible_check_mode
 
 - name: Ensure keepalived is enabled and started
   ansible.builtin.systemd:
@@ -219,17 +194,6 @@
     enabled: true
   when:
     - not ansible_check_mode
-    - not keepalived_single_node
-
-- name: Stop keepalived in single node mode (VIP managed directly)
-  ansible.builtin.systemd:
-    name: keepalived
-    state: stopped
-    enabled: false
-  when:
-    - not ansible_check_mode
-    - keepalived_single_node
-  ignore_errors: true
 
 - name: Wait for VIP to stabilize
   ansible.builtin.pause:
@@ -265,7 +229,7 @@
       - VIP: {{ keepalived_vip }}/{{ keepalived_vip_cidr }}
       - Interface: {{ keepalived_vip_interface }}
       - API Port: {{ keepalived_vip_port }}
-      - Mode: {{ 'Single Node (VIP direct)' if keepalived_single_node else 'Multi-Node (VRRP)' }}
+      - Mode: {{ 'Single Node (Keepalived)' if keepalived_single_node else 'Multi-Node (VRRP)' }}
       - State: {{ keepalived_state }}
       - Priority: {{ keepalived_priority }}
       - Unicast Peers: {{ keepalived_unicast_peers | default([]) | map(attribute='wireguard_ip') | list | join(', ') | default('None') }}

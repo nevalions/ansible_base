@@ -1,0 +1,15 @@
+---
+- name: Verify BGP router (FRR) for MetalLB
+  hosts: bay_bgp
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - bgp
+    - verify
+    - router
+    - frr
+  vars_files:
+    - vault_secrets.yml
+  roles:
+    - bgp_router_frr_verify

@@ -1,0 +1,197 @@
+---
+- name: Skip when MetalLB verification disabled
+  ansible.builtin.meta: end_play
+  when: not (metallb_verify_enabled | bool)
+
+- name: Compute kubectl delegate host
+  ansible.builtin.set_fact:
+    metallb_verify_delegate: "{{ ansible_play_hosts | first }}"
+  run_once: true
+
+- name: Verify MetalLB namespace exists
+  ansible.builtin.command: kubectl get ns {{ metallb_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_ns
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Assert MetalLB namespace exists
+  ansible.builtin.assert:
+    that:
+      - metallb_ns.rc == 0
+    success_msg: "MetalLB namespace {{ metallb_namespace }} exists"
+    fail_msg: "MetalLB namespace {{ metallb_namespace }} not found; install MetalLB first"
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Verify controller is available
+  ansible.builtin.command: kubectl wait -n {{ metallb_namespace }} --for=condition=available deploy/controller --timeout=180s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: controller_wait
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Verify speaker rollout status
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout status ds/speaker --timeout=180s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: speaker_rollout
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Get MetalLB pods
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} get pods -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_pods
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Get MetalLB events (recent)
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} get events --sort-by=.metadata.creationTimestamp
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_events
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Display MetalLB events (tail)
+  ansible.builtin.debug:
+    msg: "{{ (metallb_events.stdout_lines | default([]))[-50:] }}"
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Display MetalLB pods
+  ansible.builtin.debug:
+    var: metallb_pods.stdout_lines
+  when: metallb_pods.stdout_lines is defined
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Get MetalLB IPAddressPools
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} get ipaddresspools.metallb.io
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_pools
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Display MetalLB IPAddressPools
+  ansible.builtin.debug:
+    var: metallb_pools.stdout_lines
+  when: metallb_pools.stdout_lines is defined
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Verify BGP configuration objects (when mode is bgp)
+  block:
+    - name: Get MetalLB BGPPeers
+      ansible.builtin.command: kubectl -n {{ metallb_namespace }} get bgppeers.metallb.io
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_peers
+      changed_when: false
+      failed_when: false
+
+    - name: Display MetalLB BGPPeers
+      ansible.builtin.debug:
+        var: metallb_peers.stdout_lines
+      when: metallb_peers.stdout_lines is defined
+
+    - name: Get MetalLB BGPAdvertisements
+      ansible.builtin.command: kubectl -n {{ metallb_namespace }} get bgpadvertisements.metallb.io
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_advs
+      changed_when: false
+      failed_when: false
+
+    - name: Display MetalLB BGPAdvertisements
+      ansible.builtin.debug:
+        var: metallb_advs.stdout_lines
+      when: metallb_advs.stdout_lines is defined
+  when: metallb_mode == 'bgp'
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: MetalLB smoke test (optional)
+  block:
+    - name: Create test namespace
+      ansible.builtin.command: kubectl create ns metallb-verify-test
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: ns_create
+      changed_when: "ns_create.rc == 0"
+      failed_when: false
+
+    - name: Apply test service
+      ansible.builtin.copy:
+        dest: /tmp/metallb-verify-test.yaml
+        mode: "0644"
+        content: |
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: echo
+            namespace: metallb-verify-test
+          spec:
+            type: LoadBalancer
+            selector:
+              app: echo
+            ports:
+              - name: http
+                port: 80
+                targetPort: 80
+          ---
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: echo
+            namespace: metallb-verify-test
+            labels:
+              app: echo
+          spec:
+            containers:
+              - name: echo
+                image: nginx:alpine
+                ports:
+                  - containerPort: 80
+
+    - name: Apply test manifest
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-verify-test.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: test_apply
+      changed_when: "'created' in test_apply.stdout or 'configured' in test_apply.stdout"
+
+    - name: Wait for LoadBalancer IP
+      ansible.builtin.command: kubectl -n metallb-verify-test get svc echo -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: test_ip
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: test_ip.stdout | length > 0
+
+    - name: Display assigned LoadBalancer IP
+      ansible.builtin.debug:
+        msg: "Verify test EXTERNAL-IP: {{ test_ip.stdout }}"
+  when: metallb_verify_smoke_test | bool
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"

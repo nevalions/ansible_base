@@ -1,0 +1,13 @@
+---
+{% for peer in metallb_bgp_peers %}
+apiVersion: metallb.io/v1beta2
+kind: BGPPeer
+metadata:
+  name: {{ peer.name | default('peer-' ~ loop.index) }}
+  namespace: {{ metallb_namespace }}
+spec:
+  peerAddress: {{ peer.peer_address }}
+  peerASN: {{ peer.peer_asn }}
+  myASN: {{ metallb_bgp_my_asn }}
+---
+{% endfor %}

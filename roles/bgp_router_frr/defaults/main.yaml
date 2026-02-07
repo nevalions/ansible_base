@@ -1,0 +1,40 @@
+---
+# FRR-based BGP router for MetalLB
+
+bgp_router_enabled: true
+
+# Operation mode for this role
+# - install: install/configure FRR BGP router
+# - remove: stop/purge FRR and remove firewall rules/config
+bgp_router_operation: "{{ vault_bgp_router_operation | default('install') }}"
+
+# When true, removal will assert that FRR packages/configs are gone and TCP/179
+# is not listening (best-effort for firewall rule deletion).
+bgp_router_remove_strict: "{{ vault_bgp_router_remove_strict | default(false) }}"
+
+# BGP router identity and local ASN
+bgp_router_asn: "{{ vault_bgp_router_asn | default('[router-asn]') }}"
+bgp_router_router_id: "{{ vault_bgp_router_router_id | default('[router-id-ip]') }}"
+
+# Interface used to reach Kubernetes nodes (typically WireGuard)
+bgp_router_listen_interface: "{{ vault_bgp_router_listen_interface | default('[wg-interface]') }}"
+
+# Update-source for BGP sessions (usually the WireGuard interface)
+bgp_router_update_source: "{{ vault_bgp_router_update_source | default(bgp_router_listen_interface) }}"
+
+# MetalLB address pool CIDR to accept/route (typically /24)
+bgp_router_metallb_pool_cidr: "{{ vault_metallb_pool_cidr | default('[metallb-pool-cidr]/24') }}"
+
+# Neighbors are the Kubernetes nodes running MetalLB speaker.
+# Provide WireGuard IPs (or reachable IPs) for each node.
+bgp_router_neighbors: "{{ vault_bgp_router_neighbors | default([]) }}"
+
+# Optional: only configure UFW rules when UFW is present and active
+bgp_router_manage_ufw: "{{ vault_bgp_router_manage_ufw | default(true) }}"
+
+# Source CIDR allowed to connect to TCP/179 on the router.
+# Defaults to the WireGuard network CIDR.
+bgp_router_allowed_source_cidr: "{{ vault_bgp_router_allowed_source_cidr | default(vault_wg_network_cidr | default('')) }}"
+
+# Enable verbose debug output (prints FRR config and recent logs on each run)
+bgp_router_debug: "{{ vault_bgp_router_debug | default(false) }}"

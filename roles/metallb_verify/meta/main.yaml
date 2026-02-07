@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Verify MetalLB readiness and configuration
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+  galaxy_tags:
+    - kubernetes
+    - metallb
+    - verify
+dependencies: []

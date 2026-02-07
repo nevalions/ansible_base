@@ -1,0 +1,12 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+  name: per-service
+  namespace: {{ metallb_namespace }}
+spec:
+  ipAddressPools:
+{% for pool in metallb_address_pools %}
+    - {{ pool.name }}
+{% endfor %}
+  aggregationLength: 32

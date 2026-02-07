@@ -87,15 +87,18 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: Stop kubelet service
+- name: Stop kubelet service (pre-init)
   ansible.builtin.systemd:
     name: kubelet
     state: stopped
+  failed_when: false
 
-- name: Enable kubelet service
+- name: Ensure kubelet service is enabled and started (required for kubeadm init)
   ansible.builtin.systemd:
     name: kubelet
     enabled: true
+    state: started
+  when: not ansible_check_mode
 
 - name: Copy kubeadm config
   ansible.builtin.template:
@@ -326,6 +329,17 @@
   tags:
     - cni
     - calico
+
+- name: Disable UFW to prevent BGP blocking
+  ansible.builtin.systemd:
+    name: ufw
+    state: stopped
+    enabled: false
+  ignore_errors: true
+  tags:
+    - cni
+    - calico
+    - firewall
 
 - name: Detect Calico node pods (k8s-app label)
   ansible.builtin.command: kubectl get pods -A -l k8s-app=calico-node -o name

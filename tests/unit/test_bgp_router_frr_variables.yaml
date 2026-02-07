@@ -1,0 +1,40 @@
+---
+- name: Test bgp_router_frr role variables
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    vault_become_pass: "test"
+    ansible_become_pass: "test"
+    bgp_router_enabled: true
+    bgp_router_asn: "65001"
+    bgp_router_router_id: "[router-wg-ip]"
+    bgp_router_metallb_pool_cidr: "[metallb-pool-cidr]/24"
+    bgp_router_neighbors:
+      - address: "[k8s-node-wg-ip]"
+        asn: 65000
+  tasks:
+    - name: Verify router ASN
+      ansible.builtin.assert:
+        that:
+          - bgp_router_asn | int > 0
+          - bgp_router_asn | int < 4294967296
+
+    - name: Verify router ID
+      ansible.builtin.assert:
+        that:
+          - bgp_router_router_id is string
+          - bgp_router_router_id | length > 0
+
+    - name: Verify MetalLB pool CIDR
+      ansible.builtin.assert:
+        that:
+          - bgp_router_metallb_pool_cidr is string
+          - bgp_router_metallb_pool_cidr | length > 0
+
+    - name: Verify neighbors list
+      ansible.builtin.assert:
+        that:
+          - bgp_router_neighbors | length > 0
+          - bgp_router_neighbors[0].address is defined
+          - bgp_router_neighbors[0].asn is defined

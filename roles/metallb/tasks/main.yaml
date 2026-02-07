@@ -1,0 +1,422 @@
+---
+- name: Skip when MetalLB disabled
+  ansible.builtin.meta: end_play
+  when: not (metallb_enabled | bool)
+
+- name: Compute kubectl delegate host
+  ansible.builtin.set_fact:
+    metallb_kubectl_delegate: "{{ ansible_play_hosts | first }}"
+  run_once: true
+
+- name: Remove MetalLB when operation is remove
+  block:
+    - name: Delete MetalLB custom resources (best-effort)
+      ansible.builtin.command: >-
+        kubectl -n {{ metallb_namespace }} delete {{ item }} --all --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_cr_delete
+      changed_when: false
+      failed_when: false
+      loop:
+        - bgpadvertisements.metallb.io
+        - bgppeers.metallb.io
+        - l2advertisements.metallb.io
+        - ipaddresspools.metallb.io
+      run_once: true
+      delegate_to: "{{ metallb_kubectl_delegate }}"
+
+    - name: Delete MetalLB manifest
+      ansible.builtin.command: kubectl delete -f {{ metallb_manifest_url }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_manifest_delete
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ metallb_kubectl_delegate }}"
+
+    - name: Optionally delete MetalLB namespace
+      ansible.builtin.command: kubectl delete ns {{ metallb_namespace }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_ns_delete
+      changed_when: false
+      failed_when: false
+      when: metallb_remove_namespace | bool
+      run_once: true
+      delegate_to: "{{ metallb_kubectl_delegate }}"
+
+    - name: Wait for MetalLB namespace to be gone (when deleted)
+      ansible.builtin.command: kubectl get ns {{ metallb_namespace }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_ns_gone
+      changed_when: false
+      failed_when: false
+      retries: 30
+      delay: 5
+      until: metallb_ns_gone.rc != 0
+      when: metallb_remove_namespace | bool
+      run_once: true
+      delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_operation | default('install') == 'remove'
+
+- name: End play after removal
+  ansible.builtin.meta: end_play
+  when: metallb_operation | default('install') == 'remove'
+
+- name: Fail if MetalLB mode is invalid
+  ansible.builtin.assert:
+    that:
+      - metallb_mode in ['bgp', 'layer2']
+    fail_msg: "metallb_mode must be 'bgp' or 'layer2'"
+    success_msg: "MetalLB mode is valid: {{ metallb_mode }}"
+
+- name: Fail if MetalLB address pools are missing
+  ansible.builtin.assert:
+    that:
+      - metallb_address_pools is defined
+      - metallb_address_pools | length > 0
+    fail_msg: "metallb_address_pools must be defined"
+    success_msg: "MetalLB address pools are defined"
+
+- name: Fail if MetalLB BGP variables are missing when mode is bgp
+  ansible.builtin.assert:
+    that:
+      - metallb_bgp_my_asn is defined
+      - metallb_bgp_my_asn | string | length > 0
+      - metallb_bgp_my_asn is not match('^\[.*\]$')
+      - metallb_bgp_peers is defined
+      - metallb_bgp_peers | length > 0
+      - metallb_bgp_peers | selectattr('peer_address', 'defined') | list | length == metallb_bgp_peers | length
+      - metallb_bgp_peers | selectattr('peer_asn', 'defined') | list | length == metallb_bgp_peers | length
+    fail_msg: >-
+      MetalLB BGP settings missing. Set vault_metallb_bgp_my_asn and vault_metallb_bgp_peers
+      in vault_secrets.yml.
+    success_msg: "MetalLB BGP settings are defined"
+  when: metallb_mode == 'bgp'
+
+- name: Install MetalLB manifest
+  ansible.builtin.command: kubectl apply -f {{ metallb_manifest_url }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_apply
+  changed_when: "'created' in metallb_apply.stdout or 'configured' in metallb_apply.stdout"
+  retries: 3
+  delay: 5
+  until: metallb_apply.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Optionally pin MetalLB controller to control-plane nodes
+  ansible.builtin.command: >-
+    kubectl -n {{ metallb_namespace }} patch deploy/controller --type=merge -p
+    '{"spec":{"template":{"spec":{
+      "nodeSelector":{"node-role.kubernetes.io/control-plane":""},
+      "tolerations":[
+        {"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"},
+        {"key":"node-role.kubernetes.io/master","operator":"Exists","effect":"NoSchedule"}
+      ]
+    }}}}}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_controller_pin
+  changed_when: "metallb_controller_pin.rc == 0"
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_controller_run_on_control_plane | bool
+
+- name: Wait for MetalLB namespace to exist
+  ansible.builtin.command: kubectl get ns {{ metallb_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_ns
+  changed_when: false
+  retries: 20
+  delay: 3
+  until: metallb_ns.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Check whether memberlist secret exists
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} get secret memberlist -o jsonpath='{.data.secretkey}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_memberlist_secret
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_manage_memberlist_secret | bool
+
+- name: Generate memberlist secret key when missing
+  ansible.builtin.command: openssl rand -base64 128
+  register: metallb_memberlist_key
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  no_log: true
+  when:
+    - metallb_manage_memberlist_secret | bool
+    - metallb_memberlist_secret.rc != 0 or (metallb_memberlist_secret.stdout | default('') | length == 0)
+
+- name: Write memberlist secret manifest
+  ansible.builtin.copy:
+    dest: /tmp/metallb-memberlist-secret.yaml
+    mode: "0600"
+    content: |
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: memberlist
+        namespace: {{ metallb_namespace }}
+      type: Opaque
+      stringData:
+        secretkey: "{{ metallb_memberlist_key.stdout | trim }}"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  no_log: true
+  when:
+    - metallb_manage_memberlist_secret | bool
+    - metallb_memberlist_key is defined
+
+- name: Apply memberlist secret manifest
+  ansible.builtin.command: kubectl apply -f /tmp/metallb-memberlist-secret.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_memberlist_apply
+  changed_when: "'created' in metallb_memberlist_apply.stdout or 'configured' in metallb_memberlist_apply.stdout"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  no_log: true
+  when:
+    - metallb_manage_memberlist_secret | bool
+    - metallb_memberlist_key is defined
+
+- name: Restart MetalLB components after memberlist secret change
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout restart deploy/controller ds/speaker
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_restart
+  changed_when: metallb_restart.rc == 0
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when:
+    - metallb_manage_memberlist_secret | bool
+    - metallb_memberlist_apply is defined and (metallb_memberlist_apply.changed | default(false))
+
+- name: Wait for MetalLB controller rollout after restart
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout status deploy/controller --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_controller_rollout
+  changed_when: false
+  failed_when: false
+  retries: 10
+  delay: 10
+  until: metallb_controller_rollout.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when:
+    - metallb_restart is defined
+    - metallb_restart.rc == 0
+
+- name: Wait for MetalLB speaker rollout after restart
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout status ds/speaker --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_speaker_rollout_restart
+  changed_when: false
+  failed_when: false
+  retries: 10
+  delay: 10
+  until: metallb_speaker_rollout_restart.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when:
+    - metallb_restart is defined
+    - metallb_restart.rc == 0
+
+- name: Wait for MetalLB controller deployment to be available
+  ansible.builtin.command: kubectl wait -n {{ metallb_namespace }} --for=condition=available deploy/controller --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_controller_wait
+  changed_when: false
+  retries: 10
+  delay: 10
+  until: metallb_controller_wait.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Wait for MetalLB speaker daemonset rollout
+  ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout status ds/speaker --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_speaker_rollout
+  changed_when: false
+  retries: 10
+  delay: 10
+  until: metallb_speaker_rollout.rc == 0
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Render MetalLB IPAddressPool resources
+  ansible.builtin.template:
+    src: ipaddresspool.yaml.j2
+    dest: /tmp/metallb-ipaddresspools.yaml
+    mode: "0644"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Apply MetalLB IPAddressPool resources
+  ansible.builtin.command: kubectl apply -f /tmp/metallb-ipaddresspools.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_pool_apply
+  changed_when: "'created' in metallb_pool_apply.stdout or 'configured' in metallb_pool_apply.stdout"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+
+- name: Configure Layer2Advertisement when mode is layer2
+  block:
+    - name: Render L2Advertisement
+      ansible.builtin.template:
+        src: l2advertisement.yaml.j2
+        dest: /tmp/metallb-l2advertisement.yaml
+        mode: "0644"
+
+    - name: Apply L2Advertisement
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-l2advertisement.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_l2_apply
+      changed_when: "'created' in metallb_l2_apply.stdout or 'configured' in metallb_l2_apply.stdout"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_mode == 'layer2'
+
+- name: Configure BGPPeers and advertisements when mode is bgp
+  block:
+    - name: Render BGPPeer resources
+      ansible.builtin.template:
+        src: bgppeer.yaml.j2
+        dest: /tmp/metallb-bgppeers.yaml
+        mode: "0644"
+
+    - name: Apply BGPPeer resources
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-bgppeers.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_bgppeer_apply
+      changed_when: "'created' in metallb_bgppeer_apply.stdout or 'configured' in metallb_bgppeer_apply.stdout"
+
+    - name: Render per-service BGPAdvertisement
+      ansible.builtin.template:
+        src: bgpadvertisement-specific.yaml.j2
+        dest: /tmp/metallb-bgpadv-specific.yaml
+        mode: "0644"
+      when: metallb_bgp_advertise_per_service | bool
+
+    - name: Apply per-service BGPAdvertisement
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-bgpadv-specific.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_bgpadv_specific_apply
+      changed_when: "'created' in metallb_bgpadv_specific_apply.stdout or 'configured' in metallb_bgpadv_specific_apply.stdout"
+      when: metallb_bgp_advertise_per_service | bool
+
+    - name: Render aggregate BGPAdvertisement
+      ansible.builtin.template:
+        src: bgpadvertisement-aggregate.yaml.j2
+        dest: /tmp/metallb-bgpadv-aggregate.yaml
+        mode: "0644"
+      when: metallb_bgp_aggregate_enabled | bool
+
+    - name: Apply aggregate BGPAdvertisement
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-bgpadv-aggregate.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_bgpadv_aggregate_apply
+      changed_when: "'created' in metallb_bgpadv_aggregate_apply.stdout or 'configured' in metallb_bgpadv_aggregate_apply.stdout"
+      when: metallb_bgp_aggregate_enabled | bool
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_mode == 'bgp'
+
+- name: Run MetalLB smoke test (optional)
+  block:
+    - name: Render smoke test manifest
+      ansible.builtin.copy:
+        dest: /tmp/metallb-smoke-test.yaml
+        mode: "0644"
+        content: |
+          ---
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: metallb-smoke-test
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: echo
+            namespace: metallb-smoke-test
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: echo
+            template:
+              metadata:
+                labels:
+                  app: echo
+              spec:
+                containers:
+                  - name: echo
+                    image: nginx:alpine
+                    ports:
+                      - containerPort: 80
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: echo
+            namespace: metallb-smoke-test
+          spec:
+            type: LoadBalancer
+            selector:
+              app: echo
+            ports:
+              - name: http
+                port: 80
+                targetPort: 80
+
+    - name: Apply smoke test manifest
+      ansible.builtin.command: kubectl apply -f /tmp/metallb-smoke-test.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_smoke_apply
+      changed_when: "'created' in metallb_smoke_apply.stdout or 'configured' in metallb_smoke_apply.stdout"
+
+    - name: Wait for LoadBalancer IP assignment
+      ansible.builtin.command: >-
+        kubectl -n metallb-smoke-test get svc echo -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_smoke_ip
+      changed_when: false
+      retries: 30
+      delay: 5
+      until: metallb_smoke_ip.stdout | length > 0
+
+    - name: Display assigned LoadBalancer IP
+      ansible.builtin.debug:
+        msg: "MetalLB assigned EXTERNAL-IP: {{ metallb_smoke_ip.stdout }}"
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_run_smoke_test | bool

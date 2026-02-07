@@ -50,6 +50,13 @@
     dest: /tmp/kube-join.yaml
     mode: "0644"
 
+- name: Ensure kubelet service is enabled and started (required for kubeadm join)
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: true
+    state: started
+  when: not ansible_check_mode
+
 - name: Join worker node to cluster
   ansible.builtin.command: kubeadm join --config=/tmp/kube-join.yaml
   register: kubeadm_join
@@ -62,6 +69,20 @@
   retries: 10
   delay: 5
   changed_when: false
+
+- name: Check kubelet is enabled
+  ansible.builtin.command: systemctl is-enabled kubelet
+  register: kubelet_enabled
+  changed_when: false
+  failed_when: false
+
+- name: Assert kubelet is enabled
+  ansible.builtin.assert:
+    that:
+      - kubelet_enabled.rc == 0
+      - (kubelet_enabled.stdout | trim) == 'enabled'
+    success_msg: "Kubelet service is enabled"
+    fail_msg: "Kubelet service is not enabled (systemctl is-enabled kubelet: {{ kubelet_enabled.stdout | default('') | trim }})"
 
 - name: Display join success message
   ansible.builtin.debug:

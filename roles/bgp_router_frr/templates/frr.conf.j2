@@ -1,0 +1,42 @@
+! Managed by Ansible - FRR configuration
+frr defaults traditional
+hostname {{ inventory_hostname }}
+no ipv6 forwarding
+service integrated-vtysh-config
+!
+
+{% set pool = bgp_router_metallb_pool_cidr %}
+ip prefix-list METALLB-POOL seq 10 permit {{ pool }} le 32
+!
+route-map FROM-K8S permit 10
+ match ip address prefix-list METALLB-POOL
+!
+
+router bgp {{ bgp_router_asn }}
+ bgp router-id {{ bgp_router_router_id }}
+ no bgp ebgp-requires-policy
+ no bgp network import-check
+
+{% for nbr in bgp_router_neighbors %}
+{%   if nbr.address is defined and nbr.asn is defined %}
+ neighbor {{ nbr.address }} remote-as {{ nbr.asn }}
+ neighbor {{ nbr.address }} description k8s-metallb-speaker
+ neighbor {{ nbr.address }} timers 10 30
+{%     if bgp_router_update_source is defined and (bgp_router_update_source | string | length > 0) and (bgp_router_update_source is not match('^\[.*\]$')) %}
+ neighbor {{ nbr.address }} update-source {{ bgp_router_update_source }}
+{%     endif %}
+{%   endif %}
+{% endfor %}
+
+ address-family ipv4 unicast
+{% for nbr in bgp_router_neighbors %}
+{%   if nbr.address is defined and nbr.asn is defined %}
+  neighbor {{ nbr.address }} activate
+  neighbor {{ nbr.address }} route-map FROM-K8S in
+{%   endif %}
+{% endfor %}
+ exit-address-family
+!
+
+line vty
+!

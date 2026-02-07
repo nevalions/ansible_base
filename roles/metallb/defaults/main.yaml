@@ -1,0 +1,46 @@
+---
+metallb_enabled: "{{ vault_metallb_enabled | default(true) }}"
+
+# Operation mode for this role
+# - install: install/configure MetalLB
+# - remove: delete MetalLB resources and optionally the namespace
+metallb_operation: "{{ vault_metallb_operation | default('install') }}"
+
+# Pin MetalLB version for reproducible deployments
+metallb_version: "{{ vault_metallb_version | default('v0.14.9') }}"
+metallb_manifest_url: >-
+  https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml
+
+metallb_namespace: metallb-system
+
+# MetalLB uses a memberlist secret for speaker coordination.
+# The upstream native manifest may not create it with a valid key.
+metallb_manage_memberlist_secret: "{{ vault_metallb_manage_memberlist_secret | default(true) }}"
+
+# Optional scheduling override: run controller on control-plane nodes.
+# Useful when a worker has broken ClusterIP-to-API connectivity.
+metallb_controller_run_on_control_plane: "{{ vault_metallb_controller_run_on_control_plane | default(true) }}"
+
+# Removal behavior
+metallb_remove_namespace: "{{ vault_metallb_remove_namespace | default(false) }}"
+
+# BGP mode by default for WireGuard/L3 networks
+metallb_mode: "{{ vault_metallb_mode | default('bgp') }}"
+
+# Address pools
+metallb_address_pools:
+  - name: "{{ vault_metallb_pool_name | default('wg-lb-pool') }}"
+    addresses:
+      - "{{ vault_metallb_pool_cidr | default('[metallb-pool-cidr]/24') }}"
+
+# BGP settings
+metallb_bgp_my_asn: "{{ vault_metallb_bgp_my_asn | default('[metallb-my-asn]') }}"
+metallb_bgp_peers: "{{ vault_metallb_bgp_peers | default([]) }}"
+
+# Advertise both per-service (/32) and an aggregate (e.g., /24)
+metallb_bgp_advertise_per_service: "{{ vault_metallb_bgp_advertise_per_service | default(true) }}"
+metallb_bgp_aggregate_enabled: "{{ vault_metallb_bgp_aggregate_enabled | default(true) }}"
+metallb_bgp_aggregate_length_v4: "{{ vault_metallb_bgp_aggregate_length_v4 | default(24) }}"
+
+# Optional: run a smoke test service after installation
+metallb_run_smoke_test: "{{ vault_metallb_run_smoke_test | default(false) }}"

@@ -1,0 +1,9 @@
+---
+bgp_router_verify_enabled: true
+
+# If true, fail when the MetalLB pool route isn't present in the BGP table.
+bgp_router_verify_require_pool_route: "{{ vault_bgp_router_verify_require_pool_route | default(false) }}"
+
+# Reuse vars from the router role/vault
+bgp_router_neighbors: "{{ vault_bgp_router_neighbors | default([]) }}"
+bgp_router_metallb_pool_cidr: "{{ vault_metallb_pool_cidr | default('') }}"

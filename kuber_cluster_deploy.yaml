@@ -1,0 +1,178 @@
+---
+# Master playbook: Deploy entire Kubernetes cluster from scratch
+#
+# This playbook deploys the complete Kubernetes cluster stack:
+# Phase 1: Infrastructure (DNS, WireGuard)
+# Phase 2: Kubernetes prerequisites (packages, Keepalived)
+# Phase 3: Kubernetes cluster (control plane, workers)
+# Phase 4: LoadBalancer (Calico BGP, BGP router, MetalLB)
+#
+# Usage:
+#   # Full deployment (all phases)
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml
+#
+#   # Skip infrastructure (DNS/WireGuard already deployed)
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true
+#
+#   # Skip MetalLB/BGP (no LoadBalancer needed)
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_metallb=true
+#
+#   # Kubernetes only (skip infra and metallb)
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
+#
+#   # Run specific phase only
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase1
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase2
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase3
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase4
+
+###############################################################################
+# PHASE 1: Infrastructure Setup
+###############################################################################
+
+# Step 1.1: Deploy DNS servers
+- name: "Phase 1.1: Deploy DNS servers"
+  import_playbook: dns_server_manage.yaml
+  when: not (skip_infrastructure | default(false) | bool)
+  tags:
+    - phase1
+    - infrastructure
+    - dns
+
+# Step 1.2: Deploy WireGuard VPN
+- name: "Phase 1.2: Deploy WireGuard VPN"
+  import_playbook: wireguard_manage.yaml
+  when: not (skip_infrastructure | default(false) | bool)
+  tags:
+    - phase1
+    - infrastructure
+    - wireguard
+
+# Step 1.3: Verify WireGuard connectivity
+- name: "Phase 1.3: Verify WireGuard connectivity"
+  import_playbook: wireguard_verify.yaml
+  when: not (skip_infrastructure | default(false) | bool)
+  tags:
+    - phase1
+    - infrastructure
+    - wireguard
+    - verify
+
+# Step 1.4: Configure DNS clients
+- name: "Phase 1.4: Configure DNS clients"
+  import_playbook: dns_client_manage.yaml
+  when: not (skip_infrastructure | default(false) | bool)
+  tags:
+    - phase1
+    - infrastructure
+    - dns
+
+# Step 1.5: Verify DNS
+- name: "Phase 1.5: Verify DNS resolution"
+  import_playbook: dns_verify.yaml
+  when: not (skip_infrastructure | default(false) | bool)
+  tags:
+    - phase1
+    - infrastructure
+    - dns
+    - verify
+
+###############################################################################
+# PHASE 2: Kubernetes Prerequisites
+###############################################################################
+
+# Step 2.1: Install Kubernetes packages
+- name: "Phase 2.1: Install Kubernetes packages"
+  import_playbook: kuber.yaml
+  tags:
+    - phase2
+    - kubernetes
+    - packages
+
+# Step 2.2: Configure Keepalived VIP
+- name: "Phase 2.2: Configure Keepalived VIP"
+  import_playbook: keepalived_manage.yaml
+  tags:
+    - phase2
+    - kubernetes
+    - keepalived
+
+###############################################################################
+# PHASE 3: Kubernetes Cluster
+###############################################################################
+
+# Step 3.1: Initialize control plane
+- name: "Phase 3.1: Initialize Kubernetes control plane"
+  import_playbook: kuber_plane_init.yaml
+  tags:
+    - phase3
+    - kubernetes
+    - init
+    - plane
+
+# Step 3.2: Join worker nodes
+- name: "Phase 3.2: Join Kubernetes worker nodes"
+  import_playbook: kuber_worker_join.yaml
+  tags:
+    - phase3
+    - kubernetes
+    - join
+    - workers
+
+# Step 3.3: Verify cluster health
+- name: "Phase 3.3: Verify Kubernetes cluster health"
+  import_playbook: kuber_verify.yaml
+  tags:
+    - phase3
+    - kubernetes
+    - verify
+
+###############################################################################
+# PHASE 4: LoadBalancer (MetalLB with BGP)
+###############################################################################
+
+# Step 4.1: Configure Calico BGP port
+- name: "Phase 4.1: Configure Calico BGP port"
+  import_playbook: calico_bgp_manage.yaml
+  when: not (skip_metallb | default(false) | bool)
+  tags:
+    - phase4
+    - metallb
+    - calico
+    - bgp
+
+# Step 4.2: Configure BGP router
+- name: "Phase 4.2: Configure BGP router (FRR)"
+  import_playbook: bgp_router_manage.yaml
+  when: not (skip_metallb | default(false) | bool)
+  tags:
+    - phase4
+    - metallb
+    - bgp
+
+# Step 4.3: Install MetalLB
+- name: "Phase 4.3: Install and configure MetalLB"
+  import_playbook: kuber_metallb_install.yaml
+  when: not (skip_metallb | default(false) | bool)
+  tags:
+    - phase4
+    - metallb
+
+# Step 4.4: Verify BGP router
+- name: "Phase 4.4: Verify BGP router"
+  import_playbook: bgp_router_verify.yaml
+  when: not (skip_metallb | default(false) | bool)
+  tags:
+    - phase4
+    - metallb
+    - bgp
+    - verify
+
+# Step 4.5: Verify MetalLB
+- name: "Phase 4.5: Verify MetalLB"
+  import_playbook: kuber_metallb_verify.yaml
+  when: not (skip_metallb | default(false) | bool)
+  tags:
+    - phase4
+    - metallb
+    - verify

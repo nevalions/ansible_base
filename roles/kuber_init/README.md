@@ -9,15 +9,48 @@ This role performs the complete initialization of a Kubernetes control plane nod
 - Initializes Kubernetes cluster with kubeadm
 - Configures containerd cgroup driver
 - Installs Calico CNI with Tigera Operator
+- Configures Typha deployment with required anti-affinity
 - Configures kubeadm API version and control plane endpoint
 - Verifies cluster readiness and Calico installation
 - Sets up kubeconfig for admin user
+
+## WireGuard + Calico IPIP Requirements
+
+When running Kubernetes over WireGuard VPN, specific Calico settings are required:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `natOutgoing` | `true` | **CRITICAL**: Pods must NAT to reach WireGuard IPs |
+| `vault_ipPools_encapsulation` | `IPIP` | Required for L3 networks |
+| `mtu` | `1380` | WireGuard (1420) - IPIP (20) - safety (20) |
+| `vault_calico_typha_replicas` | `1` | Prevents port conflicts |
+
+### Typha Anti-Affinity
+
+This role configures **required** pod anti-affinity for Typha to prevent port 5473 conflicts:
+
+```yaml
+typhaDeployment:
+  spec:
+    template:
+      spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    k8s-app: calico-typha
+                topologyKey: kubernetes.io/hostname
+```
+
+Without this, multiple Typha pods can be scheduled on the same node, causing CrashLoopBackOff.
 
 ## Requirements
 
 - Kubernetes packages installed (kubelet, kubeadm, kubectl)
 - Containerd configured and running
 - Network firewall configured for Kubernetes ports
+- WireGuard VPN configured and connected
 - Vault variables defined in `vault_secrets.yml`
 
 ## Role Variables
@@ -34,12 +67,13 @@ This role performs the complete initialization of a Kubernetes control plane nod
 - `calico_version` - Calico version (default: `v3.31.3`)
 - `calico_ippool_name` - IP pool name (default: `default-ipv4-ippool`)
 - `calico_ippool_cidr` - IP pool CIDR (uses pod subnet)
-- `calico_encapsulation` - Encapsulation type (default: `VXLANCrossSubnet`)
-- `calico_nat_outgoing` - NAT outgoing traffic (default: `true`)
+- `calico_encapsulation` - Encapsulation type (default: `IPIP` for WireGuard)
+- `calico_nat_outgoing` - NAT outgoing traffic (default: `true`) **CRITICAL for WireGuard**
 - `calico_node_selector` - Node selector for Calico (default: `all()`)
 - `calico_block_size` - IP block size (default: `26`)
-- `calico_mtu` - MTU size (default: `1440`)
+- `calico_mtu` - MTU size (default: `1380` for WireGuard + IPIP)
 - `calico_node_address_interface` - Network interface (default: `wg99`)
+- `calico_typha_replicas` - Typha replicas (default: `1` for small clusters)
 
 ### Kubeconfig Configuration
 
@@ -99,6 +133,79 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
 9. Verify cluster node status
 10. Verify Tigera Operator is running
 11. Display initialization summary
+
+## Troubleshooting
+
+### Common Issues
+
+**Felix (Calico node agent) crashes with OOM:**
+- **Symptoms:** calico-node pods in CrashLoopBackOff, BIRD/BGP instability
+- **Root Cause:** Felix has no memory limits; kernel OOM killer terminates it
+- **Solution:** Added Felix resource limits in calico-custom-resources.yaml.j2
+  - Memory request: 256Mi, limit: 2048Mi
+  - CPU request: 100m, limit: 500m
+  - Applied via `componentResources.node` in Installation CRD
+
+**BGP connection failures:**
+- **Symptoms:** metallb-speaker crashes, calico-typha can't connect to Felix
+- **Root Cause:** UFW INPUT chain default DROP policy blocks BGP port 179
+- **Solution:** Disable UFW during CNI setup or configure UFW to allow BGP
+  - Implemented via `Disable UFW` task after Calico installation
+
+**CSI node driver socket connection failures:**
+- **Symptoms:** csi-node-driver pods with Exit Code 2, socket connection refused
+- **Root Cause:** Temporary instability after Felix/BIRD crashes
+- **Solution:** Ensure Felix has stable resource limits before CSI starts
+
+### WireGuard + Calico IPIP Issues
+
+**Typha CrashLoopBackOff - Port 5473 in use:**
+- **Symptoms:** `listen tcp :5473: bind: address already in use`
+- **Root Cause:** Multiple Typha pods on same node (autoscaler or missing anti-affinity)
+- **Solution:** This role now includes required anti-affinity in Installation CR
+  ```bash
+  # Kill orphaned process if needed
+  ssh <node> "pgrep -a typha && sudo kill -9 $(pgrep typha)"
+  ```
+
+**Pods cannot reach Kubernetes API:**
+- **Symptoms:** `dial tcp 10.96.0.1:443: i/o timeout`
+- **Root Cause:** `natOutgoing: Disabled` - pods can't reach WireGuard IPs
+- **Solution:** Ensure `natOutgoing: true` in vault_secrets.yml
+  ```bash
+  kubectl patch ippool default-ip4-ippool --type=merge -p '{"spec":{"natOutgoing":true}}'
+  ```
+
+**MetalLB speaker port conflict:**
+- **Symptoms:** `listen tcp 9.11.0.41:7946: bind: address already in use`
+- **Root Cause:** Orphaned speaker process from crashed pod
+- **Solution:** Kill orphaned process and restart pod
+  ```bash
+  ssh <node> "pgrep -a speaker && sudo kill -9 $(pgrep speaker)"
+  kubectl delete pod -n metallb-system <speaker-pod> --force
+  ```
+
+### Remediation Commands
+
+```bash
+# Fix Felix OOM crashes by adding resource limits
+kubectl patch ds calico-node -n calico-system -p '{"spec":{"template":{"spec":{"containers":[{"name":"calico-node","resources":{"limits":{"memory":"2048Mi","cpu":"500m"},"requests":{"memory":"256Mi","cpu":"100m"}}]}}}'
+
+# Disable UFW to allow BGP
+sudo systemctl stop ufw && sudo systemctl disable ufw
+
+# Check Felix resource usage
+kubectl top pod -n calico-system calico-node --containers
+
+# Monitor BGP status
+kubectl logs -n calico-system calico-node-<pod> -c calico-node --tail=50 | grep -iE 'BGP|bird|mesh'
+
+# Fix NAT outgoing for WireGuard
+kubectl patch ippool default-ip4-ippool --type=merge -p '{"spec":{"natOutgoing":true}}'
+
+# Add Typha anti-affinity (already in playbooks)
+kubectl patch installation default --type=merge -p '{"spec":{"typhaDeployment":{"spec":{"template":{"spec":{"affinity":{"podAntiAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchLabels":{"k8s-app":"calico-typha"}},"topologyKey":"kubernetes.io/hostname"}]}}}}}}}}'
+```
 
 ## Verification
 

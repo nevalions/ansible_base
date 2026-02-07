@@ -1,0 +1,113 @@
+---
+- name: Skip when Calico BGP config disabled
+  ansible.builtin.meta: end_play
+  when: not (calico_bgp_enabled | bool)
+
+- name: Choose kubectl delegate host (must be a control-plane node)
+  ansible.builtin.set_fact:
+    calico_kubectl_delegate: "{{ groups['planes_all'] | first }}"
+  run_once: true
+
+# --- UFW management for Calico BGP listen port (runs on every node) ---
+
+- name: Check whether UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: calico_ufw_bin
+
+- name: Check UFW status
+  ansible.builtin.command: ufw status
+  register: calico_ufw_status
+  changed_when: false
+  failed_when: false
+  when:
+    - calico_bgp_manage_ufw | bool
+    - calico_ufw_bin.stat.exists
+
+- name: Set UFW active flag
+  ansible.builtin.set_fact:
+    calico_ufw_is_active: >-
+      {{ calico_ufw_status.stdout is defined and 'Status: active' in calico_ufw_status.stdout }}
+  when:
+    - calico_bgp_manage_ufw | bool
+    - calico_ufw_bin.stat.exists
+
+- name: Allow Calico BGP (TCP/{{ calico_bgp_listen_port }}) from cluster network
+  community.general.ufw:
+    rule: allow
+    port: "{{ calico_bgp_listen_port | string }}"
+    proto: tcp
+    from_ip: >-
+      {{ calico_bgp_allowed_source_cidr
+      if (calico_bgp_allowed_source_cidr | default('') | length > 0 and
+          calico_bgp_allowed_source_cidr is not match('^\[.*\]$'))
+      else omit }}
+  when:
+    - calico_bgp_manage_ufw | bool
+    - calico_ufw_bin.stat.exists
+    - calico_ufw_is_active | default(false)
+
+# --- End UFW management ---
+
+- name: Render Calico BGPConfiguration manifest
+  ansible.builtin.copy:
+    dest: /tmp/calico-bgpconfiguration.yaml
+    mode: "0644"
+    content: |
+      ---
+      apiVersion: projectcalico.org/v3
+      kind: BGPConfiguration
+      metadata:
+        name: default
+      spec:
+        # Move Calico BGP off TCP/179 to avoid conflict with MetalLB BGP.
+        listenPort: {{ calico_bgp_listen_port }}
+        bindMode: NodeIP
+  run_once: true
+  delegate_to: "{{ calico_kubectl_delegate }}"
+
+- name: Apply Calico BGPConfiguration
+  ansible.builtin.command: kubectl apply -f /tmp/calico-bgpconfiguration.yaml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_bgp_apply
+  changed_when: "'created' in calico_bgp_apply.stdout or 'configured' in calico_bgp_apply.stdout"
+  run_once: true
+  delegate_to: "{{ calico_kubectl_delegate }}"
+
+- name: Detect calico-node daemonset namespace
+  ansible.builtin.command: kubectl get ds -A -o jsonpath='{range .items[?(@.metadata.name=="calico-node")]}{.metadata.namespace}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_node_ns
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ calico_kubectl_delegate }}"
+
+- name: Set calico-node namespace fact
+  ansible.builtin.set_fact:
+    calico_node_namespace: "{{ (calico_node_ns.stdout_lines | reject('equalto','') | list | first) | default('calico-system') }}"
+  run_once: true
+
+- name: Restart calico-node daemonset to apply BGP listenPort change
+  ansible.builtin.command: kubectl -n {{ calico_node_namespace }} rollout restart ds/calico-node
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_node_restart
+  changed_when: "calico_node_restart.rc == 0"
+  failed_when: false
+  when: calico_bgp_restart_calico_node | bool
+  run_once: true
+  delegate_to: "{{ calico_kubectl_delegate }}"
+
+- name: Wait for calico-node rollout to complete
+  ansible.builtin.command: kubectl -n {{ calico_node_namespace }} rollout status ds/calico-node --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_node_rollout
+  changed_when: false
+  failed_when: false
+  when: calico_bgp_restart_calico_node | bool
+  run_once: true
+  delegate_to: "{{ calico_kubectl_delegate }}"

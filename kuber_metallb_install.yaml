@@ -1,0 +1,15 @@
+---
+- name: Install and configure MetalLB (BGP mode)
+  hosts: planes_all
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - metallb
+    - addon
+  vars_files:
+    - vault_secrets.yml
+  roles:
+    - metallb
