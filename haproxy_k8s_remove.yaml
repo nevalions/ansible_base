@@ -1,0 +1,69 @@
+---
+- name: Remove HAProxy configuration for Kubernetes API
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+    - roles/haproxy_k8s/defaults/main.yaml
+  tags:
+    - haproxy
+    - kubernetes
+    - loadbalancer
+    - remove
+  tasks:
+    - name: Stop and disable HAProxy service
+      ansible.builtin.systemd:
+        name: haproxy
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Check if HAProxy config exists
+      ansible.builtin.stat:
+        path: /etc/haproxy/haproxy.cfg
+      register: haproxy_config
+
+    - name: Backup HAProxy config before removal
+      ansible.builtin.copy:
+        src: /etc/haproxy/haproxy.cfg
+        dest: /etc/haproxy/haproxy.cfg.removed.{{ ansible_facts['date_time']['epoch'] }}
+        remote_src: true
+        mode: "0640"
+      when: haproxy_config.stat.exists
+
+    - name: Check if UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: ufw_bin
+
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      changed_when: false
+      failed_when: false
+      when: ufw_bin.stat.exists
+
+    - name: Remove UFW rule for HAProxy frontend port
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ haproxy_k8s_frontend_port }}"
+        from: "{{ net }}"
+        direction: in
+        delete: yes
+      loop: "{{ haproxy_k8s_allowed_networks }}"
+      loop_control:
+        loop_var: net
+      failed_when: false
+      when:
+        - ansible_facts['os_family'] == 'Debian'
+        - ufw_bin.stat.exists
+
+    - name: Purge HAProxy package (optional)
+      ansible.builtin.apt:
+        name: haproxy
+        state: absent
+        purge: true
+        update_cache: false
+      when: haproxy_k8s_remove_purge | default(false) | bool

@@ -22,7 +22,7 @@ chmod +x .git/hooks/commit-msg
 chmod +x .git/hooks/pre-push
 chmod +x .git/hooks/post-merge
 chmod +x .git/hooks/post-checkout
-chmod +x scripts/verify_sensitive_data.py
+chmod +x scripts/githooks/verify_sensitive_data.py
 ```
 
 ### Automatic Hook Updates
@@ -75,11 +75,11 @@ Checking 3 file(s)...
 
 File: roles/kuber_init/defaults/main.yaml
   HARDCODED_IP:
-    Line 23: Found hardcoded_ip: 198.51.100.250
+    Line 23: Found hardcoded_ip: [server-ip]
 
 File: CHANGELOG.md
   HARDCODED_PORT:
-    Line 45: Found hardcoded_port: "6443"
+    Line 45: Found hardcoded_port: "[k8s-api-port]"
 
 Total violations: 2
 
@@ -187,7 +187,7 @@ Examples:
 
 **Exclusions:**
 - YAML comments (lines starting with `#`)
-- Inventory group names in `hosts:` fields (e.g., `hosts: bay_bgp`)
+- Inventory group names in `hosts:` fields (e.g., `hosts: [inventory-group-name]`)
 - Markdown table entries documenting inventory references
 
 **How it works:**
@@ -239,7 +239,7 @@ Commit: def5678
 
 ## Verification Script
 
-**Location:** `scripts/.git/hooks/verify_sensitive_data.py`
+**Location:** `scripts/githooks/verify_sensitive_data.py`
 
 **Purpose:** Main verification logic for detecting sensitive data.
 
@@ -254,27 +254,30 @@ Commit: def5678
 **Sensitive patterns detected:**
 
 ### Hardcoded IPs
-- Real infrastructure IPs: `192.168.10.x`, `176.57.220.x`, etc.
-- Kubernetes networks: `10.244.0.0/16`, `10.96.0.0/12`
+- Real infrastructure IPs: `[server-ip]`, `[internal-ip]`, etc.
+- Kubernetes networks: `[pod-network-cidr]`, `[service-network-cidr]`
 - Private networks: `10.x.x.x`, `172.16-31.x.x`
 
 ### Hardcoded Ports
-- Kubernetes API: `6443`, `7443`
-- WireGuard: `51840-51842`, `51942`
+- Kubernetes API: `[k8s-api-port]` (and other common cluster ports)
+- WireGuard: `[vpn-port]` (and other WireGuard ports)
 - Custom SSH ports: `ansible_port:` with value
 
 ### Hardcoded Usernames
-- Real usernames: `www`, `root`, `linroot`
-- Format: `ansible_user: www`, `become_user: root`
+- Real usernames (examples): `[your-username]`, `[admin-username]`
+- Format: `ansible_user: [your-username]`, `become_user: [admin-username]`
+
+**Exception:** Public GitHub repository usernames are allowed:
+- `dotfiles_repo: "https://github.com/[your-username]/dotfiles.git"` (public repository)
 
 ### Hardcoded Hostnames
-- Real hostnames: `haproxy_spb`, `bay_bgp`, `bay_plane1-2`, `bay_worker1-2`
-- Cloud hostnames: `cloud_plane1-2`, `cloud_worker1-2`
+- Real hostnames (examples): `[haproxy-hostname]`, `[node-hostname]`
+- Cloud hostnames (examples): `[cloud-node-hostname]`
 
 ### Sensitive Keys
-- SSH private keys: `-----BEGIN RSA PRIVATE KEY-----`
-- Certificates: `-----BEGIN CERTIFICATE-----`
-- Vault passwords: `vault_become_pass:`, `vault_*_pass:`
+- SSH private keys: PEM blocks (private key material)
+- Certificates: PEM blocks (certificate material)
+- Vault passwords: `vault_become_pass: [your-password-here]`, `vault_*_pass: [your-password-here]`
 - API keys: `api_key:` with long random strings
 - Passwords: `password:` with long values
 
@@ -294,6 +297,11 @@ Commit: def5678
 - `[cluster-hostname]`, `[server-hostname]`
 - `[your-username]`, `[your-password-here]`, `[your-api-key-here]`
 - `[network-cidr]`, `[vpn-network-cidr]`, `[pod-network-cidr]`, `[service-network-cidr]`
+
+### Public GitHub Repositories
+- `https://github.com/[your-username]/[repo].git` (public URLs with GitHub usernames are allowed)
+- `git@github.com:[your-username]/[repo].git` (SSH format also allowed)
+- Exception applies to `dotfiles_repo` and similar public repository variables
 
 ### Masked Documentation
 - `192.168.1.***:518***` (WireGuard sanitization)
@@ -434,8 +442,8 @@ chmod +x .git/hooks/pre-push
 
 **Solution:** Ensure script exists:
 ```bash
-ls -la scripts/.git/hooks/verify_sensitive_data.py
-chmod +x scripts/.git/hooks/verify_sensitive_data.py
+ls -la scripts/githooks/verify_sensitive_data.py
+chmod +x scripts/githooks/verify_sensitive_data.py
 ```
 
 ### False Positives
@@ -496,24 +504,11 @@ Requires Python 3.7+. Update verification script shebang if needed:
 
 ## Security Policy
 
-All commits must comply with the [AGENTS.md](../../AGENTS.md) security policy:
+Security rules, examples, and exceptions are centralized in `SECURITY.md`.
 
-### NEVER Commit:
-- Real usernames, IP addresses, SSH ports
-- Real hostnames or domain names
-- Real passwords, API keys, tokens
-- SSH private keys or certificates
-- Network CIDRs or identifiers
+These hooks enforce that policy by scanning staged changes (pre-commit), commit messages (commit-msg), and outgoing commits (pre-push).
 
-### ALWAYS Use Placeholders:
-- Usernames: `[your-username]`
-- IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`
-- Ports: `[custom-ssh-port]`, `[server-port]`
-- Hostnames: `[cluster-hostname]`, `[server-hostname]`
-- Passwords: `[your-password-here]`
-- API keys: `[your-api-key-here]`
-
-**Violation of this policy will immediately fail code review.**
+If a hook blocks you, fix the content (replace real values with placeholders) rather than bypassing with `--no-verify`.
 
 ---
 
@@ -521,7 +516,7 @@ All commits must comply with the [AGENTS.md](../../AGENTS.md) security policy:
 
 ### Adding New Sensitive Patterns
 
-Edit `scripts/.git/hooks/verify_sensitive_data.py`:
+Edit `scripts/githooks/verify_sensitive_data.py`:
 
 ```python
 SENSITIVE_PATTERNS = {
@@ -535,7 +530,7 @@ SENSITIVE_PATTERNS = {
 
 ### Adding New Acceptable Patterns
 
-Edit `scripts/.git/hooks/verify_sensitive_data.py`:
+Edit `scripts/githooks/verify_sensitive_data.py`:
 
 ```python
 ACCEPTABLE_PATTERNS = [
@@ -549,7 +544,7 @@ ACCEPTABLE_PATTERNS = [
 Keep this README synchronized with:
 - Hook code changes
 - New sensitive patterns
-- Policy updates in AGENTS.md
+- Policy updates in SECURITY.md
 
 ---
 
@@ -560,7 +555,7 @@ For issues or questions about Git hooks:
 1. Check this documentation first
 2. Review hook output for specific errors
 3. Test with simple cases to isolate issues
-4. Check AGENTS.md for security policies
+4. Check `SECURITY.md` for the security policy
 
 ---
 

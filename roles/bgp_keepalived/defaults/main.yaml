@@ -1,0 +1,42 @@
+---
+# Keepalived defaults for BGP Router VIP
+# This role provides HA for FRR BGP routers using VRRP
+
+# VIP Configuration (from vault)
+bgp_keepalived_vip: "{{ vault_bgp_keepalived_vip }}"
+bgp_keepalived_vip_cidr: "{{ vault_bgp_keepalived_vip_cidr | default('32') }}"
+bgp_keepalived_vip_interface: "{{ vault_bgp_keepalived_vip_interface | default('wg99') }}"
+
+# VRRP Configuration
+bgp_keepalived_password: "{{ vault_bgp_keepalived_password | default('changeme') }}"
+bgp_keepalived_router_id: "{{ vault_bgp_keepalived_router_id | default('52') }}"
+bgp_keepalived_script_user: "{{ vault_bgp_keepalived_script_user | default('[admin-username]') }}"
+
+# GARP (Gratuitous ARP) settings
+bgp_keepalived_garp_interval: 1
+bgp_keepalived_gna_interval: 1
+
+# Unicast settings (auto-detected for wg* interfaces)
+bgp_keepalived_unicast_src_ip: ""
+
+# Default priority (overridden per-host from bgp_routers list)
+bgp_keepalived_priority: 100
+
+# VRRP advertisement interval (seconds)
+bgp_keepalived_advert_int: 1
+
+# Preemption: if true, lower priority node won't take VIP back when higher comes online
+bgp_keepalived_nopreempt: false
+
+# Health check settings for BGP (FRR)
+bgp_keepalived_check_interval: 2
+bgp_keepalived_check_weight: -50
+bgp_keepalived_check_fall: 3
+bgp_keepalived_check_rise: 2
+
+# BGP routers list (from vault)
+# Each entry should have: name, wireguard_ip, priority
+bgp_routers: "{{ vault_bgp_routers }}"
+
+# Network access control
+bgp_keepalived_vrrp_allowed_network: "{{ vault_wg_network_cidr | default('any') }}"

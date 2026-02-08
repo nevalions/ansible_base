@@ -12,31 +12,18 @@ The OpenCode worker is an automated coding agent that:
 
 The OpenCode worker is not allowed to add real infrastructure data. It must use placeholders in all examples and docs.
 
+
 ---
 
-## SECURITY WARNING - READ BEFORE EDITING
+## Security (Read First)
 
-### CRITICAL: NEVER COMMIT SENSITIVE DATA
+The full security policy for this repository lives in `SECURITY.md`.
 
-STRICTLY PROHIBITED in ALL files (docs, playbooks, examples):
-- Real usernames
-- Real IP addresses
-- Real SSH ports
-- Real hostnames or domain names (except inventory group names in `hosts:` field)
-- Real passwords or API keys
-- SSH private keys or certificates
-- Network CIDRs or network identifiers
+Key expectations for contributors and automation:
 
-ALWAYS use placeholders instead:
-- Usernames: `[your-username]`, `[admin-username]`
-- IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
-- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`, `[k8s-api-port]`
-- Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
-- Passwords: `[your-password-here]`, `[sudo-password]`
-- API keys: `[your-api-key-here]`
-- Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
-
-Violation of this policy will immediately fail code review.
+- Never commit secrets or real infrastructure identifiers; use repo placeholders everywhere.
+- Keep inventory and local configuration out of git (the repo ships git hooks that enforce this).
+- If a hook blocks you, fix the content instead of bypassing; see `scripts/githooks/README.md`.
 
 ---
 
@@ -269,107 +256,14 @@ Always configure `.ansible-lint` with:
 
 ---
 
-## Security Guidelines
+## Security Notes
 
-### CRITICAL: NEVER COMMIT SENSITIVE DATA
+Security rules, examples, and exceptions are centralized in `SECURITY.md`.
 
-STRICTLY PROHIBITED in ALL commits (code, docs, examples):
-- Real usernames
-- Real IP addresses
-- Real SSH ports
-- Real hostnames or domain names (except inventory group names in `hosts:` field)
-- Real passwords
-- API keys/tokens
-- SSH private keys
-- Certificates
-- Network CIDRs
+This guide intentionally avoids duplicating the full policy to prevent drift.
 
-MANDATORY: Use placeholders ONLY:
-- Usernames: `[your-username]`, `[admin-username]`
-- IPs: `[internal-ip]`, `[server-ip]`, `[client-ip]`, `[control-plane-ip]`
-- Ports: `[custom-ssh-port]`, `[server-port]`, `[vpn-port]`, `[k8s-api-port]`
-- Hostnames: `[cluster-hostname]`, `[server-hostname]`, `[node-hostname]`
-- Exception: inventory group names in `hosts:` field are allowed
-- Passwords: `[your-password-here]`, `[sudo-password]`
-- API keys: `[your-api-key-here]`
-- Networks: `[network-cidr]`, `[vpn-network-cidr]`, `[client-network]`
-
-Examples of correct placeholder usage:
-```yaml
-ansible_user: [your-username]
-ansible_port: [custom-ssh-port]
-ansible_host: [server-ip]
-vault_become_pass: [your-password-here]
-dns_server: [dns-server-ip]
-```
-
-Never use real values in examples, even in "wrong" examples.
-
-### Never Commit Secrets
-- Never commit plaintext passwords, API keys, tokens, or sensitive data
-- Never put logins or passwords in documentation files
-- Never include SSH private keys, certificates, or encrypted secrets in git
-- Use `[redacted]`, `[REDACTED]`, or placeholder text in documentation examples
-- Reference `SECURITY.md` for comprehensive security practices
-
-### Secret Management
-- Use `ansible-vault` for encrypting sensitive variables in playbooks
-- Use GPG or password managers for vault password storage (see `SECURITY.md`)
-- Vault password file: use `.vault_pass` in project root for automation
-  - Ensure `.vault_pass` has correct permissions: `chmod 600 .vault_pass`
-  - Add `.vault_pass` to `.gitignore` to prevent committing passwords
-  - Configure in `ansible.cfg`: `vault_password_file = .vault_pass`
-  - Example: `ansible-vault encrypt secrets.yaml` (reads password from `.vault_pass`)
-- Store secrets in environment variables only when absolutely necessary
-- Consider external secret managers (HashiCorp Vault, AWS Secrets Manager)
-
-### Documentation Security
-Documentation must use placeholders only. Never include real data in README files, guides, or examples.
-
-### Pre-Commit Security Checklist
-Before any commit, verify:
-- [ ] No plaintext passwords in any files (use `git diff` to review)
-- [ ] No API keys, tokens, or credentials in code or documentation
-- [ ] All secrets properly encrypted with ansible-vault or GPG
-- [ ] Sensitive files added to `.gitignore`
-- [ ] Inventory group names in `hosts:` field are acceptable
-
-### Git Hooks for Security Validation
-The repository includes Git hooks to prevent commits with sensitive data.
-
-Available hooks:
-- `pre-commit`: blocks commits containing hardcoded IPs, ports, usernames, hostnames, or other sensitive patterns
-- `commit-msg`: validates commit messages and prevents sensitive data in commit messages
-- `pre-push`: final security verification before pushing to remote repository
-- `post-merge`: automatically updates hooks after pulling/merging changes
-- `post-checkout`: automatically updates hooks after switching branches
-
-Hook installation:
-```bash
-bash scripts/setup_hooks.sh
-```
-
-Security patterns detected:
-- Hardcoded IPs
-- Hardcoded ports
-- Hardcoded usernames
-- Hardcoded hostnames in variables or config
-- Sensitive keys, certificates, vault passwords, API keys, passwords
-
-Acceptable patterns (placeholders only):
-- IPs: `[server-ip]`, `[client-ip]`, `[internal-ip]`, `[vip-address]`
-- Ports: `[custom-ssh-port]`, `[server-port]`, `[k8s-api-port]`
-- Hostnames: `[cluster-hostname]`, `[server-hostname]`
-- Usernames: `[your-username]`
-- Passwords: `[your-password-here]`
-- API keys: `[your-api-key-here]`
-
-Testing hooks:
-- Create a temporary file with placeholders and confirm the hook allows it
-- To test detection locally, replace placeholders with a real value and confirm the hook blocks the commit
-- Never commit or push real values
-
-Documentation for hooks: `scripts/githooks/README.md`
+- Hooks: `scripts/githooks/README.md`
+- If blocked by a hook: replace real values with placeholders and re-run the commit
 
 ---
 

@@ -1,0 +1,143 @@
+---
+# Remove BGP HA: FRR + Keepalived from BGP routers
+#
+# This playbook removes the BGP HA configuration:
+# - Stops and removes Keepalived VRRP (releases VIP)
+# - Stops and removes FRR BGP router
+#
+# Usage:
+#   ansible-playbook -i hosts_bay.ini bgp_ha_remove.yaml
+#
+# Options:
+#   -e remove_packages=true   Remove FRR and Keepalived packages (default: false)
+#   -e keep_frr=true          Keep FRR installed, only remove Keepalived (default: false)
+
+- name: Remove BGP HA - Keepalived and FRR from BGP routers
+  hosts: bgp_routers
+  become: true
+  gather_facts: true
+  serial: 1  # One router at a time for safety during removal
+  tags:
+    - bgp_ha
+    - bgp
+    - remove
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    remove_packages: false
+    keep_frr: false
+
+  tasks:
+    # Phase 1: Remove Keepalived (VIP will be released)
+    - name: Stop keepalived service
+      ansible.builtin.systemd:
+        name: keepalived
+        state: stopped
+      failed_when: false
+      tags:
+        - keepalived
+
+    - name: Disable keepalived service
+      ansible.builtin.systemd:
+        name: keepalived
+        enabled: false
+      failed_when: false
+      tags:
+        - keepalived
+
+    - name: Remove keepalived configuration
+      ansible.builtin.file:
+        path: /etc/keepalived/keepalived.conf
+        state: absent
+      tags:
+        - keepalived
+
+    - name: Remove BGP health check script
+      ansible.builtin.file:
+        path: /usr/local/bin/check_bgp.sh
+        state: absent
+      tags:
+        - keepalived
+
+    - name: Remove keepalived package
+      ansible.builtin.apt:
+        name: keepalived
+        state: absent
+        purge: true
+      when: remove_packages | bool
+      tags:
+        - keepalived
+        - packages
+
+    # Phase 2: Remove FRR (unless keep_frr is true)
+    - name: Remove FRR BGP router configuration
+      when: not (keep_frr | bool)
+      block:
+        - name: Stop FRR service
+          ansible.builtin.systemd:
+            name: frr
+            state: stopped
+          failed_when: false
+          tags:
+            - frr
+
+        - name: Disable FRR service
+          ansible.builtin.systemd:
+            name: frr
+            enabled: false
+          failed_when: false
+          tags:
+            - frr
+
+        - name: Remove FRR configuration files
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/frr/frr.conf
+            - /etc/frr/daemons
+          tags:
+            - frr
+
+        - name: Remove FRR packages
+          ansible.builtin.apt:
+            name:
+              - frr
+              - frr-pythontools
+            state: absent
+            purge: true
+          when: remove_packages | bool
+          tags:
+            - frr
+            - packages
+
+    # Phase 3: Cleanup iptables rules for VRRP
+    - name: Remove VRRP iptables rule
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: vrrp
+        source: "{{ vault_wg_network_cidr | default('[network-cidr]') }}"
+        jump: ACCEPT
+        comment: "Allow VRRP for BGP Keepalived"
+        state: absent
+      failed_when: false
+      tags:
+        - firewall
+
+    - name: Display removal summary
+      ansible.builtin.debug:
+        msg: |
+          BGP HA Removal Complete on {{ inventory_hostname }}
+          ================================================
+          Keepalived: REMOVED
+            - Service stopped and disabled
+            - Configuration removed
+            - Health check script removed
+            {{ '- Package purged' if remove_packages | bool else '- Package kept (use -e remove_packages=true to purge)' }}
+
+          FRR BGP Router: {{ 'KEPT (keep_frr=true)' if keep_frr | bool else 'REMOVED' }}
+          {{ '  - Service stopped and disabled' if not keep_frr | bool else '' }}
+          {{ '  - Configuration removed' if not keep_frr | bool else '' }}
+          {{ '  - Package purged' if (not keep_frr | bool) and (remove_packages | bool) else '' }}
+      tags:
+        - always

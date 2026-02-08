@@ -86,27 +86,51 @@
       vars:
         vault_wg_allowed_networks: "{{ wg_allowed_networks_merged }}"
         vault_wg_routed_cidrs: "{{ wg_routed_cidrs }}"
-      register: wireguard_role_result
 
-    - name: Check if this host is also a control plane
+    - name: Check if this host is a control plane or BGP router
       ansible.builtin.set_fact:
         is_control_plane: "{{ inventory_hostname in (groups.planes_all | default([])) }}"
+        is_bgp_router: "{{ inventory_hostname in (groups.bgp_routers | default([])) }}"
 
-    - name: Restart Keepalived on control planes after WireGuard update
+    - name: Restart Keepalived on control planes after WireGuard config change
       ansible.builtin.systemd:
         name: keepalived
         state: restarted
       when:
         - is_control_plane | default(false)
-        - wireguard_role_result.wg_config_deployed.changed | default(false)
+        - wg_config_deployed.changed | default(false)
         - not ansible_check_mode
-      delegate_to: "{{ inventory_hostname }}"
-      run_once: false
 
-    - name: Notify Keepalived restart
+    - name: Notify Keepalived restart on control plane
       ansible.builtin.debug:
         msg: "Keepalived restarted on {{ inventory_hostname }} after WireGuard configuration change"
       when:
         - is_control_plane | default(false)
-        - wireguard_role_result.wg_config_deployed.changed | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Restart FRR on BGP routers after WireGuard config change
+      ansible.builtin.systemd:
+        name: frr
+        state: restarted
+      when:
+        - is_bgp_router | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Restart Keepalived on BGP routers after WireGuard config change
+      ansible.builtin.systemd:
+        name: keepalived
+        state: restarted
+      when:
+        - is_bgp_router | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Notify BGP services restart
+      ansible.builtin.debug:
+        msg: "FRR and Keepalived restarted on BGP router {{ inventory_hostname }} after WireGuard configuration change"
+      when:
+        - is_bgp_router | default(false)
+        - wg_config_deployed.changed | default(false)
         - not ansible_check_mode

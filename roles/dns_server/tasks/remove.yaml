@@ -25,7 +25,7 @@
     delete: yes
   failed_when: false
   loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Remove DNS firewall rules (TCP)
   community.general.ufw:
@@ -35,7 +35,7 @@
     delete: yes
   failed_when: false
   loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Display DNS server removal completion
   ansible.builtin.debug:

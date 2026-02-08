@@ -170,14 +170,15 @@
     - calico
     - bgp
 
-# Step 4.2: Configure BGP router
-- name: "Phase 4.2: Configure BGP router (FRR)"
-  import_playbook: kuber_bgp_router_install.yaml
+# Step 4.2: Deploy BGP HA (FRR + Keepalived)
+- name: "Phase 4.2: Deploy BGP HA (FRR + Keepalived)"
+  import_playbook: bgp_ha_deploy.yaml
   when: not (skip_metallb | default(false) | bool)
   tags:
     - phase4
     - metallb
     - bgp
+    - bgp_ha
 
 # Step 4.3: Install MetalLB
 - name: "Phase 4.3: Install and configure MetalLB"
@@ -187,14 +188,15 @@
     - phase4
     - metallb
 
-# Step 4.4: Verify BGP router
-- name: "Phase 4.4: Verify BGP router"
-  import_playbook: kuber_bgp_router_verify.yaml
+# Step 4.4: Verify BGP HA
+- name: "Phase 4.4: Verify BGP HA (FRR + Keepalived)"
+  import_playbook: bgp_ha_verify.yaml
   when: not (skip_metallb | default(false) | bool)
   tags:
     - phase4
     - metallb
     - bgp
+    - bgp_ha
     - verify
 
 # Step 4.5: Verify MetalLB

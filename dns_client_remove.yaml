@@ -1,0 +1,18 @@
+---
+- name: Remove DNS client configuration
+  hosts: dns_clients
+  become: true
+  gather_facts: true
+  serial: "50%"
+  tags:
+    - dns
+    - client
+    - remove
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    dns_operation: remove
+
+  tasks:
+    - name: Run DNS client removal tasks
+      ansible.builtin.include_tasks: roles/dns_client/tasks/remove.yaml

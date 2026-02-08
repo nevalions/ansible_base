@@ -10,7 +10,7 @@
 - name: Backup WireGuard configuration before removal
   ansible.builtin.copy:
     src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
-    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_date_time.iso8601 }}"
+    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_facts['date_time']['iso8601'] }}"
     remote_src: yes
   when:
     - inventory_hostname in groups.get('wireguard_servers', [])
@@ -30,7 +30,7 @@
     delete: yes
   loop: "{{ vault_wg_allowed_networks }}"
   ignore_errors: yes
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Remove UFW WireGuard NAT port rules
   community.general.ufw:
@@ -42,7 +42,7 @@
   loop: "{{ vault_wg_peers }}"
   ignore_errors: yes
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - item.endpoint is defined
 
 - name: Display removal completion

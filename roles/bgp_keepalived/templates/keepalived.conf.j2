@@ -1,0 +1,82 @@
+# Keepalived Configuration for BGP Router VIP
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+# Architecture: VIP floats between FRR BGP routers via VRRP
+# Upstream gateway routes to VIP -> traffic goes to MASTER router
+# MASTER router has BGP sessions with all K8s MetalLB speakers
+
+global_defs {
+    router_id {{ bgp_keepalived_router_id }}
+    vrrp_garp_master_delay 1
+    vrrp_garp_master_repeat 5
+    vrrp_garp_master_refresh 600
+    vrrp_garp_interval {{ bgp_keepalived_garp_interval | default(1) }}
+    vrrp_gna_interval {{ bgp_keepalived_gna_interval | default(1) }}
+    enable_script_security
+    script_user {{ bgp_keepalived_script_user | default('[admin-username]') }}
+}
+
+# Health check for BGP sessions via FRR
+# Checks if at least one BGP neighbor is Established
+vrrp_script chk_bgp {
+    script "/usr/local/bin/check_bgp.sh"
+    interval {{ bgp_keepalived_check_interval | default(2) }}
+    weight {{ bgp_keepalived_check_weight | default(-50) }}
+    fall {{ bgp_keepalived_check_fall | default(3) }}
+    rise {{ bgp_keepalived_check_rise | default(2) }}
+}
+
+# VRRP instance for BGP Router VIP
+vrrp_instance BGP_VIP {
+    state {{ bgp_keepalived_state | default('BACKUP') }}
+    interface {{ bgp_keepalived_vip_interface }}
+    virtual_router_id {{ bgp_keepalived_router_id }}
+    priority {{ bgp_keepalived_priority | default(100) }}
+    advert_int {{ bgp_keepalived_advert_int | default(1) }}
+    
+    # Preemption: higher priority node takes over when it comes back online
+{% if bgp_keepalived_nopreempt | default(false) %}
+    nopreempt
+{% endif %}
+
+{% set use_unicast = bgp_keepalived_use_unicast | default((bgp_keepalived_vip_interface | regex_search('^wg')) is not none) %}
+{% set unicast_peers = [] %}
+{% for router in bgp_routers %}
+{% if router.wireguard_ip != bgp_keepalived_unicast_src_ip %}
+{%   set _ = unicast_peers.append(router.wireguard_ip) %}
+{% endif %}
+{% endfor %}
+
+{% if use_unicast and unicast_peers | length > 0 %}
+    # Unicast mode for WireGuard/overlay networks (multicast doesn't work)
+    unicast_src_ip {{ bgp_keepalived_unicast_src_ip }}
+    unicast_peer {
+{% for peer_ip in unicast_peers %}
+        {{ peer_ip }}
+{% endfor %}
+    }
+{% elif use_unicast and unicast_peers | length == 0 %}
+    # Single BGP router on WireGuard.
+    # Use unicast to self so we don't rely on multicast support on wg* interfaces.
+    unicast_src_ip {{ bgp_keepalived_unicast_src_ip }}
+    unicast_peer {
+        {{ bgp_keepalived_unicast_src_ip }}
+    }
+{% endif %}
+
+    authentication {
+        auth_type PASS
+        auth_pass {{ bgp_keepalived_password | regex_replace('\\s+', '') | regex_replace('^(.{0,8}).*$', '\\1') }}
+    }
+    
+    virtual_ipaddress {
+        {{ bgp_keepalived_vip }}/{{ bgp_keepalived_vip_cidr }} dev {{ bgp_keepalived_vip_interface }}
+    }
+    
+{% if unicast_peers | length > 0 %}
+    # Track BGP session health (only when multiple routers exist)
+    track_script {
+        chk_bgp
+    }
+{% endif %}
+}

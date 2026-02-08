@@ -1,6 +1,6 @@
 ---
 - name: Setup common tools, zsh and dotfiles
-  hosts: workers_super
+  hosts: haproxy_spb
   become: true
   gather_facts: true
   tags:

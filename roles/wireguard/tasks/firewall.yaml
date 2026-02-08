@@ -2,13 +2,13 @@
 - name: Set debconf for non-interactive APT
   ansible.builtin.shell: echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
   changed_when: false
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Ensure UFW is installed
   ansible.builtin.shell: DEBIAN_FRONTEND=noninteractive apt-get install -y ufw
   register: ufw_install
   changed_when: "'0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.' not in ufw_install.stdout"
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Check if WireGuard server port rule already exists
   ansible.builtin.command: ufw status | grep "{{ vault_wg_server_port }}"
@@ -16,7 +16,7 @@
   changed_when: false
   failed_when: false
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_allowed_networks is defined
 
 - name: Allow WireGuard server port from allowed networks
@@ -27,7 +27,7 @@
     src: "{{ item }}"
   loop: "{{ vault_wg_allowed_networks }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_allowed_networks is defined
     - vault_wg_server_port | string not in (existing_wg_rules.stdout | default(''))
   ignore_errors: true
@@ -38,7 +38,7 @@
     msg: "WireGuard server port {{ vault_wg_server_port }} from {{ item.item }}: {{ 'ADDED' if item.changed else 'EXISTS' }}"
   loop: "{{ wg_server_firewall_rules.results | default([]) }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_allowed_networks is defined
     - wg_server_firewall_rules.results is defined
   ignore_errors: true
@@ -51,7 +51,7 @@
     src: "{{ item.endpoint | regex_replace(':\\d+$', '') }}"
   loop: "{{ vault_wg_peers }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - item.endpoint is defined
   ignore_errors: true
   register: wg_nat_firewall_rules
@@ -61,7 +61,7 @@
     msg: "NAT port {{ item.item.client_listen_port | default(vault_wg_client_default_port) }} from {{ item.item.endpoint | regex_replace(':\\d+$', '') if item.item.endpoint is defined else 'unknown' }}: {{ 'ADDED' if item.changed else 'EXISTS/FAILED' }}"
   loop: "{{ wg_nat_firewall_rules.results | default([]) }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_nat_firewall_rules.results is defined
   ignore_errors: true
 
@@ -70,7 +70,7 @@
     cmd: "ufw allow proto udp from {{ item.endpoint | regex_replace(':\\d+$', '') }} to any port {{ item.client_listen_port | default(vault_wg_client_default_port) }}"
   loop: "{{ vault_wg_peers }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - item.client_listen_port is defined
   ignore_errors: true
   register: wg_internal_port_rules
@@ -80,7 +80,7 @@
     msg: "Internal port {{ item.item.client_listen_port | default(vault_wg_client_default_port) }} from {{ item.item.endpoint | regex_replace(':\\d+$', '') if item.item.endpoint is defined else 'unknown' }}: {{ 'ADDED' if item.changed else 'EXISTS/FAILED' }}"
   loop: "{{ wg_internal_port_rules.results | default([]) }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_internal_port_rules.results is defined
   ignore_errors: true
 
@@ -88,12 +88,12 @@
   ansible.builtin.command: ufw status
   register: ufw_status
   changed_when: false
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Check if UFW is currently active
   ansible.builtin.set_fact:
     ufw_active: "{{ 'Status: active' in ufw_status.stdout }}"
-  when: ansible_os_family == 'Debian'
+  when: ansible_facts['os_family'] == 'Debian'
 
 - name: Allow SSH port from current connecting IP
   community.general.ufw:
@@ -102,7 +102,7 @@
     port: "{{ ansible_ssh_port | default('22') }}"
     src: "{{ ansible_host }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - not ufw_active | default(false)
   ignore_errors: true
   register: ssh_firewall_rule
@@ -111,7 +111,7 @@
   ansible.builtin.debug:
     msg: "SSH port {{ ansible_ssh_port | default('22') }} from {{ ansible_host }}: {{ 'ADDED' if ssh_firewall_rule.changed else 'EXISTS/FAILED' }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - not ufw_active | default(false)
     - ssh_firewall_rule is defined
   ignore_errors: true
@@ -121,7 +121,7 @@
     state: enabled
     logging: "on"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_operation == "install"
     - not ufw_active | default(false)
   ignore_errors: true
@@ -131,7 +131,7 @@
   ansible.builtin.debug:
     msg: "UFW firewall: {{ 'ENABLED' if ufw_enable_result.changed else 'ALREADY ENABLED' }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_operation == "install"
     - not ufw_active | default(false)
     - ufw_enable_result is defined
@@ -142,14 +142,14 @@
   register: ufw_status_enabled
   changed_when: false
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_operation == "install"
 
 - name: Display UFW status
   ansible.builtin.debug:
     var: ufw_status_enabled.stdout_lines
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - ufw_status_enabled.stdout_lines is defined
     - wg_operation == "install"
     - not ansible_check_mode
@@ -161,7 +161,7 @@
     success_msg: "WireGuard firewall rules are present and UFW is active"
     fail_msg: "WireGuard firewall rules not found in UFW"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - wg_operation == "install"
     - not ansible_check_mode
     - ufw_active | default(false)

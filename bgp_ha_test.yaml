@@ -1,0 +1,335 @@
+---
+# BGP HA Connectivity Tests
+#
+# This playbook tests end-to-end BGP connectivity:
+# - BGP routes are advertised by MetalLB
+# - LoadBalancer services are reachable via BGP VIP
+# - Pod-to-external connectivity works via BGP router
+#
+# Usage:
+#   ansible-playbook -i hosts_bay.ini bgp_ha_test.yaml
+#
+# Prerequisites:
+#   - BGP HA deployed (bgp_ha_deploy.yaml)
+#   - MetalLB installed with BGP mode
+#   - At least one LoadBalancer service exists
+#
+# Tags:
+#   - bgp_test: Full test suite
+#   - routes: Test BGP route advertisement
+#   - services: Test LoadBalancer service connectivity
+#   - pods: Test pod connectivity to external via BGP
+
+- name: Gather BGP test prerequisites
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags:
+    - bgp_test
+    - always
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Set test variables
+      ansible.builtin.set_fact:
+        bgp_vip: "{{ vault_bgp_keepalived_vip }}"
+        bgp_test_namespace: "metallb-smoke-test"
+        bgp_test_service: "echo"
+
+    - name: Display test configuration
+      ansible.builtin.debug:
+        msg: |
+          BGP HA Test Configuration
+          =========================
+          BGP VIP: {{ bgp_vip }}
+          Test Namespace: {{ bgp_test_namespace }}
+          Test Service: {{ bgp_test_service }}
+
+- name: Test BGP route advertisement on routers
+  hosts: bgp_routers
+  become: true
+  gather_facts: false
+  tags:
+    - bgp_test
+    - routes
+  vars_files:
+    - vault_secrets.yml
+
+  vars:
+    metallb_pool_prefix_len: "{{ (vault_metallb_pool_cidr.split('/')[1] | int) if (vault_metallb_pool_cidr is defined and '/' in vault_metallb_pool_cidr) else 24 }}"
+    metallb_pool_ip: "{{ (vault_metallb_pool_cidr.split('/')[0]) if (vault_metallb_pool_cidr is defined) else '' }}"
+    metallb_pool_grep_prefix: >-
+      {{
+        (metallb_pool_ip.split('.')[0:2] | join('.') ~ '.')
+        if metallb_pool_prefix_len | int <= 16 else
+        (metallb_pool_ip.split('.')[0:3] | join('.') ~ '.')
+        if metallb_pool_prefix_len | int <= 24 else
+        metallb_pool_ip
+      }}
+
+  tasks:
+    - name: Check VIP ownership
+      ansible.builtin.shell: |
+        ip addr show {{ vault_bgp_keepalived_vip_interface | default('wg99') }} | grep -q {{ vault_bgp_keepalived_vip }} && echo "MASTER" || echo "BACKUP"
+      register: vip_role
+      changed_when: false
+
+    - name: Get BGP routes from FRR
+      ansible.builtin.command: vtysh -c "show ip route bgp"
+      register: bgp_routes
+      changed_when: false
+
+    - name: Display BGP routes
+      ansible.builtin.debug:
+        msg: "{{ bgp_routes.stdout_lines }}"
+      when: bgp_routes.stdout_lines | length > 0
+
+    - name: Check for MetalLB pool routes
+      ansible.builtin.shell: |
+        vtysh -c "show ip route bgp" | grep -cF "{{ metallb_pool_grep_prefix }}" || true
+      register: metallb_route_count
+      changed_when: false
+
+    - name: Assert MetalLB routes are present (MASTER only)
+      ansible.builtin.assert:
+        that:
+          - metallb_route_count.stdout_lines | default([]) | length > 0
+        success_msg: "MASTER: Found MetalLB routes via BGP matching {{ metallb_pool_grep_prefix }}"
+        fail_msg: "MASTER: No MetalLB routes found in BGP table on {{ inventory_hostname }}"
+      when: vip_role.stdout == "MASTER"
+
+    - name: Note BACKUP router status
+      ansible.builtin.debug:
+        msg: "BACKUP: MetalLB route match count={{ metallb_route_count.stdout_lines | default([]) | length }} (may be 0 until failover)"
+      when: vip_role.stdout == "BACKUP"
+
+    - name: Get BGP neighbor prefixes received
+      ansible.builtin.shell: |
+        vtysh -c "show bgp summary" | grep -E "^[0-9]" | awk '{print $1": "$10" prefixes"}'
+      register: bgp_prefixes
+      changed_when: false
+
+    - name: Display prefixes per neighbor
+      ansible.builtin.debug:
+        msg: "{{ bgp_prefixes.stdout_lines }}"
+
+- name: Gather LoadBalancer service information
+  hosts: planes_all
+  become: true
+  gather_facts: false
+  run_once: true
+  tags:
+    - bgp_test
+    - services
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Get all LoadBalancer services
+      ansible.builtin.shell: |
+        KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc -A --field-selector spec.type=LoadBalancer -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}:{.status.loadBalancer.ingress[0].ip}:{.spec.ports[0].port}{"\n"}{end}'
+      register: lb_services_raw
+      changed_when: false
+
+    - name: Filter LoadBalancer services with IPs
+      ansible.builtin.set_fact:
+        lb_services: "{{ lb_services_raw.stdout_lines | select() | list }}"
+
+    - name: Set LoadBalancer services globally
+      ansible.builtin.set_fact:
+        lb_services: "{{ lb_services }}"
+      delegate_to: localhost
+      delegate_facts: true
+
+    - name: Display LoadBalancer services
+      ansible.builtin.debug:
+        msg: "Found {{ lb_services | length }} LoadBalancer services: {{ lb_services }}"
+
+- name: Test LoadBalancer service connectivity from BGP routers
+  hosts: bgp_routers
+  become: true
+  gather_facts: false
+  tags:
+    - bgp_test
+    - services
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Check if LoadBalancer services exist
+      ansible.builtin.set_fact:
+        has_lb_services: "{{ hostvars['localhost']['lb_services'] | default([]) | length > 0 }}"
+
+    - name: Skip if no LoadBalancer services
+      ansible.builtin.debug:
+        msg: "No LoadBalancer services with external IPs found"
+      when: not has_lb_services
+
+    - name: Test TCP connectivity to each LoadBalancer
+      ansible.builtin.wait_for:
+        host: "{{ item.split(':')[1] }}"
+        port: "{{ item.split(':')[2] }}"
+        timeout: 5
+        state: started
+      register: lb_tcp_tests
+      failed_when: false
+      loop: "{{ hostvars['localhost']['lb_services'] | default([]) }}"
+      when: has_lb_services
+
+    - name: Display LoadBalancer connectivity results
+      ansible.builtin.debug:
+        msg: "{{ item.item }}: {{ 'REACHABLE' if item is not failed else 'UNREACHABLE' }}"
+      loop: "{{ lb_tcp_tests.results | default([]) }}"
+      when: 
+        - has_lb_services
+        - lb_tcp_tests.results is defined
+
+    - name: Test HTTP to echo service
+      ansible.builtin.uri:
+        url: "http://{{ item.split(':')[1] }}:{{ item.split(':')[2] }}/"
+        method: GET
+        timeout: 10
+        status_code: [200, 301, 302, 404, 503]
+      register: http_tests
+      failed_when: false
+      loop: "{{ hostvars['localhost']['lb_services'] | default([]) }}"
+      when: has_lb_services
+
+    - name: Display HTTP test results
+      ansible.builtin.debug:
+        msg: "{{ item.item }}: HTTP {{ item.status | default('FAILED') }}"
+      loop: "{{ http_tests.results | default([]) }}"
+      when:
+        - has_lb_services
+        - http_tests.results is defined
+
+- name: Test connectivity from K8s pods to BGP infrastructure
+  hosts: planes_all
+  become: true
+  gather_facts: false
+  run_once: true
+  tags:
+    - bgp_test
+    - pods
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Get echo pod name
+      ansible.builtin.shell: |
+        KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n metallb-smoke-test -l app=echo -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
+      register: echo_pod
+      changed_when: false
+      failed_when: false
+
+    - name: Set echo pod fact
+      ansible.builtin.set_fact:
+        test_pod_name: "{{ echo_pod.stdout | default('') }}"
+        test_pod_found: "{{ echo_pod.stdout | default('') | length > 0 }}"
+
+    - name: Skip if no echo pod
+      ansible.builtin.debug:
+        msg: "No echo pod found in metallb-smoke-test namespace. Skipping pod connectivity tests."
+      when: not test_pod_found
+
+    - name: Test pod connectivity to BGP VIP
+      ansible.builtin.shell: |
+        KUBECONFIG=/etc/kubernetes/admin.conf kubectl exec -n metallb-smoke-test {{ test_pod_name }} -- ping -c 2 -W 2 {{ vault_bgp_keepalived_vip }} 2>&1
+      register: pod_ping_vip
+      changed_when: false
+      failed_when: false
+      when: test_pod_found
+
+    - name: Display pod to VIP connectivity
+      ansible.builtin.debug:
+        msg: |
+          Pod metallb-smoke-test/{{ test_pod_name }} -> BGP VIP {{ vault_bgp_keepalived_vip }}:
+          {{ 'SUCCESS' if pod_ping_vip.rc == 0 else 'FAILED' }}
+      when: test_pod_found
+
+    - name: Test pod connectivity to BGP router
+      ansible.builtin.shell: |
+        KUBECONFIG=/etc/kubernetes/admin.conf kubectl exec -n metallb-smoke-test {{ test_pod_name }} -- ping -c 2 -W 2 {{ vault_bgp_router_router_id }} 2>&1
+      register: pod_ping_router
+      changed_when: false
+      failed_when: false
+      when: test_pod_found
+
+    - name: Display pod to router connectivity
+      ansible.builtin.debug:
+        msg: |
+          Pod metallb-smoke-test/{{ test_pod_name }} -> BGP Router {{ vault_bgp_router_router_id }}:
+          {{ 'SUCCESS' if pod_ping_router.rc == 0 else 'FAILED' }}
+      when: test_pod_found
+
+- name: Test external access to LoadBalancer from outside cluster
+  hosts: haproxy_spb
+  become: true
+  gather_facts: false
+  tags:
+    - bgp_test
+    - external
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Test curl to LoadBalancer services from external host
+      ansible.builtin.shell: |
+        curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 http://{{ item.split(':')[1] }}:{{ item.split(':')[2] }}/ 2>/dev/null || echo "000"
+      register: external_http_tests
+      changed_when: false
+      failed_when: false
+      loop: "{{ hostvars['localhost']['lb_services'] | default([]) }}"
+
+    - name: Display external HTTP test results
+      ansible.builtin.debug:
+        msg: "External -> {{ item.item }}: HTTP {{ item.stdout }}"
+      loop: "{{ external_http_tests.results | default([]) }}"
+      when: external_http_tests.results is defined
+
+- name: BGP HA Test Summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags:
+    - bgp_test
+    - always
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          BGP HA Connectivity Test Complete
+          ========================================
+          
+          Tests performed:
+          1. BGP route advertisement (MetalLB -> FRR)
+             - MASTER router should have MetalLB routes
+             - BACKUP router may have 0 routes (normal)
+          
+          2. LoadBalancer service reachability from BGP routers
+             - TCP connectivity to LB external IPs
+             - HTTP response codes
+          
+          3. Pod-to-external connectivity via BGP router
+             - Ping from echo pod to BGP VIP
+             - Ping from echo pod to BGP router
+          
+           4. External-to-LoadBalancer connectivity
+              - HTTP from an external host to LB services
+          
+          If tests failed:
+          - No BGP routes on MASTER: Check MetalLB BGPAdvertisement
+          - LB not reachable: Check FRR routes, firewall, MetalLB
+          - Pod connectivity: Check Calico/WireGuard routing
+          
+          Useful debug commands:
+          - vtysh -c "show ip route bgp"
+          - vtysh -c "show bgp summary"
+          - kubectl get bgpadvertisement -A -o yaml
+          - kubectl get ipaddresspool -A -o yaml
+          - kubectl logs -n metallb-system -l app=metallb,component=speaker

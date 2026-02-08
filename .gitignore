@@ -65,3 +65,9 @@ __pycache__/
 
 # Ansible retry files
 *.retry
+
+# Temp files
+sec-test.yml
+
+# Local backups (never commit)
+vault_secrets.yml.back

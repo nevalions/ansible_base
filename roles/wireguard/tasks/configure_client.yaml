@@ -30,7 +30,7 @@
 - name: Backup existing peer WireGuard config
   ansible.builtin.copy:
     src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
-    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_date_time.iso8601 }}"
+    dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_facts['date_time']['iso8601'] }}"
     remote_src: yes
     mode: '0600'
   when:

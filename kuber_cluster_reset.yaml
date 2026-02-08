@@ -15,7 +15,7 @@
 #   # Reset with MetalLB cleanup
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=true
 #
-#   # Reset with BGP router cleanup
+#   # Reset with BGP HA cleanup (FRR + Keepalived)
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_bgp=true
 #
 #   # Reset with Helm cleanup (remove helm binary/cache from control-plane nodes)
@@ -27,7 +27,7 @@
 #   # Reset with cert-manager cleanup
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_cert_manager=true
 #
-#   # Full cleanup (MetalLB + BGP + Kubernetes)
+#   # Full cleanup (MetalLB + BGP HA + Kubernetes)
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
 
 # Step 1: Remove Traefik (optional)
@@ -55,12 +55,13 @@
     - metallb
     - cleanup
 
-# Step 4: Remove BGP router config (optional)
-- name: "Reset Step 4/7: Remove BGP router configuration"
-  import_playbook: bgp_router_remove.yaml
+# Step 4: Remove BGP HA (FRR + Keepalived) (optional)
+- name: "Reset Step 4/7: Remove BGP HA configuration"
+  import_playbook: bgp_ha_remove.yaml
   when: cleanup_bgp | default(false) | bool
   tags:
     - bgp
+    - bgp_ha
     - cleanup
 
 # Step 5: Remove Helm from control-plane nodes (optional)

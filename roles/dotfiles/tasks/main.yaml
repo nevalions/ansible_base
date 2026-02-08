@@ -8,13 +8,24 @@
   ansible.builtin.set_fact:
     user_home: "{{ user_info.stdout.split(':')[5] }}"
 
+- name: Remove existing dotfiles directory if it exists
+  ansible.builtin.file:
+    path: "{{ user_home }}/dotfiles"
+    state: absent
+  become: true
+  become_user: "{{ ansible_user }}"
+  when: install_dotfiles | default(false)
+
 - name: Clone dotfiles repository
   ansible.builtin.git:
     repo: "{{ dotfiles_repo }}"
     dest: "{{ user_home }}/dotfiles"
     version: "{{ dotfiles_version }}"
+    force: yes
+    update: yes
   become: true
   become_user: "{{ ansible_user }}"
+  when: install_dotfiles | default(false)
 
 - name: Ensure correct ownership of dotfiles
   ansible.builtin.file:
@@ -31,8 +42,9 @@
   become: true
 
 - name: Apply dotfiles using stow
-  ansible.builtin.shell: "cd {{ user_home }}/dotfiles && stow */"
+  ansible.builtin.shell: "cd {{ user_home }}/dotfiles && stow -R */"
   become: true
   become_user: "{{ ansible_user }}"
   register: stow_result
   changed_when: stow_result.rc == 0
+  when: install_dotfiles | default(false)

@@ -140,6 +140,7 @@ This removes all keys from memory.
 - Vault password files
 - SSH key passphrases
 - Real hostnames or domain names (except inventory group names in playbooks' `hosts:` field)
+- Real usernames for SSH connections (e.g., `ansible_user: [real-username]` in inventory)
 
 ✅ **Safe to commit:**
 - Playbooks and roles
@@ -148,6 +149,8 @@ This removes all keys from memory.
 - Documentation
 - ansible.cfg
 - .ansible-lint
+- Public GitHub repository URLs (e.g., `dotfiles_repo: "https://github.com/[your-username]/dotfiles.git"`)
+  - Public GitHub usernames are acceptable since the repository is already public
 
 ## Recommended: GPG-Secured Vault Password
 

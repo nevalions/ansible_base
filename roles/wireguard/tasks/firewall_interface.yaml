@@ -6,7 +6,7 @@
   changed_when: "'Skipping' not in wg_route_to.stdout"
   failed_when: false
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_interface is defined
 
 - name: Allow routed traffic through WireGuard interface (from network)
@@ -16,7 +16,7 @@
   changed_when: "'Skipping' not in wg_route_from.stdout"
   failed_when: false
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_interface is defined
 
 - name: Display interface routing rules
@@ -25,5 +25,5 @@
       - "UFW route allow on {{ vault_wg_interface }} to {{ vault_wg_network_cidr }}: {{ 'ADDED' if 'Skipping' not in wg_route_to.stdout else 'EXISTS' }}"
       - "UFW route allow on {{ vault_wg_interface }} from {{ vault_wg_network_cidr }}: {{ 'ADDED' if 'Skipping' not in wg_route_from.stdout else 'EXISTS' }}"
   when:
-    - ansible_os_family == 'Debian'
+    - ansible_facts['os_family'] == 'Debian'
     - vault_wg_interface is defined

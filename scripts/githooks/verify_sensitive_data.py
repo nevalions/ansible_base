@@ -131,6 +131,9 @@ ACCEPTABLE_PATTERNS = [
     r'^ansible_port:',
     # Google DNS in examples (very restrictive)
     r'dns_servers:\s*\["?8\.8\.8\.8"?,\s*"?1\.1\.1\.1"?\]',
+    # Public GitHub repository URLs (allowed usernames are public)
+    r'https://github\.com/[^/\s]+/[^/\s]+\.git',
+    r'git@github\.com:[^/\s]+/[^/\s]+\.git',
     # Documentation examples showing what NOT to do
     r'^\s*❌\s+.*\(e\.g\.',
     r'^\s*\*\*❌ WRONG',
@@ -188,6 +191,12 @@ def check_line_for_violations(line, line_num, filepath):
     
     # Skip hosts: field in YAML playbooks (inventory group names are allowed here)
     if 'hosts:' in line and line_content.startswith('hosts:'):
+        return violations
+    
+    # Skip public GitHub repository URLs (allowed since usernames are public)
+    if re.search(r'https://github\.com/[^/\s]+/[^/\s]+\.git', line_content):
+        return violations
+    if re.search(r'git@github\.com:[^/\s]+/[^/\s]+\.git', line_content):
         return violations
     
     # Check if line has acceptable patterns

@@ -1,0 +1,20 @@
+#!/bin/bash
+# BGP health check for keepalived
+# Managed by Ansible - DO NOT EDIT MANUALLY
+#
+# Returns 0 (healthy) if at least one BGP neighbor is Established
+# Returns 1 (unhealthy) if FRR/bgpd is not running or no sessions established
+
+# Check if bgpd is running
+if ! pgrep -x bgpd > /dev/null 2>&1; then
+    exit 1
+fi
+
+# Check for at least one Established BGP session
+# vtysh returns BGP summary with neighbor states
+if vtysh -c "show bgp summary" 2>/dev/null | grep -qE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+.*[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9:]+"; then
+    # Found at least one neighbor with established session (has timers/counters)
+    exit 0
+else
+    exit 1
+fi

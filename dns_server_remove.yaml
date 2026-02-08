@@ -1,0 +1,21 @@
+---
+- name: Remove DNS server configuration
+  hosts: dns_servers
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - dns
+    - remove
+    - server
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    dns_operation: remove
+    dns_records: "{{ vault_dns_records }}"
+    dns_zone: "{{ vault_dns_zone }}"
+    dns_servers_list: "{{ vault_dns_servers }}"
+
+  tasks:
+    - name: Run DNS removal tasks
+      ansible.builtin.include_tasks: roles/dns_server/tasks/remove.yaml

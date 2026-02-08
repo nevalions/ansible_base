@@ -1,0 +1,75 @@
+---
+# Deploy BGP HA: FRR + Keepalived on BGP routers
+#
+# This playbook deploys high availability for BGP routing:
+# - FRR BGP router on each host (peers with K8s MetalLB speakers)
+# - Keepalived VRRP for floating VIP between routers
+#
+# Usage:
+#   ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml
+#
+# Prerequisites:
+#   - vault_secrets.yml with BGP HA variables
+#   - [bgp_routers] inventory group with both BGP router hosts
+#   - WireGuard connectivity between BGP routers and K8s nodes
+
+- name: Deploy BGP HA - FRR and Keepalived on BGP routers
+  hosts: bgp_routers
+  become: true
+  gather_facts: true
+  serial: 1  # One router at a time for safety during deployment
+  tags:
+    - bgp_ha
+    - bgp
+  vars_files:
+    - vault_secrets.yml
+
+  pre_tasks:
+    - name: Validate BGP HA prerequisites
+      ansible.builtin.assert:
+        that:
+          - vault_bgp_routers is defined
+          - vault_bgp_routers | length >= 1
+          - vault_bgp_keepalived_vip is defined
+          - vault_bgp_router_asn is defined
+          - vault_bgp_router_neighbors is defined
+        success_msg: "BGP HA prerequisites validated"
+        fail_msg: "Missing required vault variables for BGP HA. Check vault_secrets.yml"
+      tags:
+        - always
+
+  roles:
+    - role: bgp_router_frr
+      tags:
+        - frr
+        - bgp_router
+
+    - role: bgp_keepalived
+      tags:
+        - keepalived
+        - vrrp
+
+  post_tasks:
+    - name: Display BGP HA deployment summary
+      ansible.builtin.debug:
+        msg: |
+          BGP HA Deployment Complete on {{ inventory_hostname }}
+          ================================================
+          FRR BGP Router:
+            - ASN: {{ vault_bgp_router_asn }}
+            - Router ID: {{ vault_bgp_router_router_id }}
+            - Neighbors: {{ vault_bgp_router_neighbors | length }} MetalLB speakers
+
+          Keepalived VRRP:
+            - VIP: {{ vault_bgp_keepalived_vip }}/{{ vault_bgp_keepalived_vip_cidr | default('32') }}
+            - Interface: {{ vault_bgp_keepalived_vip_interface | default('wg99') }}
+            - State: {{ bgp_keepalived_state }}
+            - Priority: {{ bgp_keepalived_priority }}
+
+          Next Steps:
+            1. Verify BGP sessions: vtysh -c "show bgp summary"
+            2. Verify VIP: ip addr show {{ vault_bgp_keepalived_vip_interface | default('wg99') }}
+            3. Update MetalLB peers if not done: ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml
+            4. Test failover: systemctl stop frr (on MASTER)
+      tags:
+        - always

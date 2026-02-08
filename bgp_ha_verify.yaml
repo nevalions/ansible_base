@@ -1,0 +1,206 @@
+---
+# Verify BGP HA deployment
+#
+# This playbook verifies the BGP HA setup:
+# - FRR BGP sessions are established
+# - Keepalived VRRP is running
+# - VIP is active on expected node
+# - K8s nodes can reach the VIP
+#
+# Usage:
+#   ansible-playbook -i hosts_bay.ini bgp_ha_verify.yaml
+#
+# Tags:
+#   - bgp_ha_verify: Full verification
+#   - verify: Alias for bgp_ha_verify
+#   - k8s_connectivity: Only test K8s node connectivity to VIP
+
+- name: Verify BGP HA deployment on routers
+  hosts: bgp_routers
+  become: true
+  gather_facts: true
+  tags:
+    - bgp_ha_verify
+    - verify
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Check FRR bgpd is running
+      ansible.builtin.command: pgrep -x bgpd
+      register: bgpd_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert bgpd is running
+      ansible.builtin.assert:
+        that:
+          - bgpd_check.rc == 0
+        success_msg: "FRR bgpd is running"
+        fail_msg: "FRR bgpd is NOT running on {{ inventory_hostname }}"
+
+    - name: Get BGP summary
+      ansible.builtin.command: vtysh -c "show bgp summary"
+      register: bgp_summary
+      changed_when: false
+
+    - name: Display BGP summary
+      ansible.builtin.debug:
+        msg: "{{ bgp_summary.stdout_lines }}"
+
+    - name: Count established BGP sessions
+      ansible.builtin.shell: |
+        vtysh -c "show bgp summary" | grep -cE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+.*[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9:]+" || echo "0"
+      register: bgp_established_count
+      changed_when: false
+
+    - name: Assert at least one BGP session is established
+      ansible.builtin.assert:
+        that:
+          - bgp_established_count.stdout | int > 0
+        success_msg: "{{ bgp_established_count.stdout }} BGP sessions established"
+        fail_msg: "No BGP sessions established on {{ inventory_hostname }}"
+
+    - name: Check keepalived is running
+      ansible.builtin.command: pgrep -x keepalived
+      register: keepalived_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert keepalived is running
+      ansible.builtin.assert:
+        that:
+          - keepalived_check.rc == 0
+        success_msg: "Keepalived is running"
+        fail_msg: "Keepalived is NOT running on {{ inventory_hostname }}"
+
+    - name: Check VIP status
+      ansible.builtin.shell: |
+        ip addr show {{ vault_bgp_keepalived_vip_interface | default('wg99') }} | grep -q {{ vault_bgp_keepalived_vip }} && echo "ACTIVE" || echo "INACTIVE"
+      register: vip_status
+      changed_when: false
+
+    - name: Display VIP status
+      ansible.builtin.debug:
+        msg: "BGP VIP {{ vault_bgp_keepalived_vip }} on {{ inventory_hostname }}: {{ vip_status.stdout }}"
+
+    - name: Run BGP health check script
+      ansible.builtin.command: /usr/local/bin/check_bgp.sh
+      register: health_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display health check result
+      ansible.builtin.debug:
+        msg: "BGP health check: {{ 'HEALTHY' if health_check.rc == 0 else 'UNHEALTHY' }}"
+
+- name: Verify K8s nodes can reach BGP VIP
+  hosts: planes_all:workers_all
+  become: true
+  gather_facts: false
+  tags:
+    - bgp_ha_verify
+    - verify
+    - k8s_connectivity
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Check WireGuard interface exists
+      ansible.builtin.command: ip link show wg99
+      register: wg_interface
+      changed_when: false
+      failed_when: false
+
+    - name: Skip if WireGuard not configured
+      ansible.builtin.meta: end_host
+      when: wg_interface.rc != 0
+
+    - name: Check VIP in WireGuard allowed-ips
+      ansible.builtin.shell: |
+        wg show wg99 allowed-ips | grep -q "{{ vault_bgp_keepalived_vip }}" && echo "CONFIGURED" || echo "MISSING"
+      register: vip_allowed
+      changed_when: false
+
+    - name: Warn if VIP not in allowed-ips
+      ansible.builtin.debug:
+        msg: "WARNING: VIP {{ vault_bgp_keepalived_vip }} not in WireGuard allowed-ips. Run wireguard_manage.yaml to fix."
+      when: vip_allowed.stdout == "MISSING"
+
+    - name: Test ping to BGP VIP
+      ansible.builtin.command: ping -c 3 -W 2 {{ vault_bgp_keepalived_vip }}
+      register: vip_ping
+      changed_when: false
+      failed_when: false
+
+    - name: Assert VIP is reachable
+      ansible.builtin.assert:
+        that:
+          - vip_ping.rc == 0
+        success_msg: "VIP {{ vault_bgp_keepalived_vip }} is reachable from {{ inventory_hostname }}"
+        fail_msg: "VIP {{ vault_bgp_keepalived_vip }} is NOT reachable from {{ inventory_hostname }}"
+
+    - name: Display ping results
+      ansible.builtin.debug:
+        msg: "{{ vip_ping.stdout_lines[-3:] }}"
+      when: vip_ping.rc == 0
+
+- name: Summary of BGP HA status
+  hosts: bgp_routers
+  become: true
+  gather_facts: false
+  tags:
+    - bgp_ha_verify
+    - verify
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Collect VIP status from all routers
+      ansible.builtin.shell: |
+        ip addr show {{ vault_bgp_keepalived_vip_interface | default('wg99') }} | grep -q {{ vault_bgp_keepalived_vip }} && echo "MASTER" || echo "BACKUP"
+      register: vip_role
+      changed_when: false
+
+    - name: Get BGP neighbor count
+      ansible.builtin.shell: |
+        vtysh -c "show bgp summary" | grep -cE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+.*[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9]+ +[0-9:]+" || echo "0"
+      register: bgp_count
+      changed_when: false
+
+    - name: Display BGP HA cluster status
+      ansible.builtin.debug:
+        msg: |
+          BGP HA Cluster Status
+          =====================
+          Host: {{ inventory_hostname }}
+          Role: {{ vip_role.stdout }}
+          VIP: {{ vault_bgp_keepalived_vip }}
+          BGP Sessions: {{ bgp_count.stdout }} established
+      run_once: false
+
+- name: Final cluster summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags:
+    - bgp_ha_verify
+    - verify
+  vars_files:
+    - vault_secrets.yml
+
+  tasks:
+    - name: Display verification complete message
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          BGP HA Verification Complete
+          ========================================
+          VIP: {{ vault_bgp_keepalived_vip }}
+          Routers: {{ groups['bgp_routers'] | join(', ') }}
+
+          If any checks failed:
+          1. VIP not in allowed-ips: Run wireguard_manage.yaml
+          2. BGP sessions not established: Check MetalLB config
+          3. Keepalived not running: Run bgp_ha_deploy.yaml
+          4. VIP not reachable: Check WireGuard connectivity

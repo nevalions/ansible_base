@@ -1,0 +1,214 @@
+---
+# BGP Router Keepalived for VIP failover
+# Provides HA between two FRR BGP routers using VRRP
+
+- name: Ensure keepalived is installed
+  ansible.builtin.apt:
+    name:
+      - keepalived
+    state: present
+    update_cache: true
+
+- name: Determine whether keepalived should use unicast
+  ansible.builtin.set_fact:
+    bgp_keepalived_use_unicast: "{{ bgp_keepalived_unicast | default((bgp_keepalived_vip_interface | regex_search('^wg')) is not none) }}"
+
+- name: Determine unicast source IP from interface
+  ansible.builtin.set_fact:
+    bgp_keepalived_unicast_src_ip: >-
+      {{
+        bgp_keepalived_unicast_src_ip
+        | default(
+            (
+              ansible_facts.get(bgp_keepalived_vip_interface, {})
+              .get('ipv4', {})
+              .get('address', '')
+            ),
+            true
+          )
+        | default(
+            (
+              bgp_routers
+              | selectattr('name', 'in', [inventory_hostname, ansible_host | default('')])
+              | map(attribute='wireguard_ip')
+              | list
+              | first
+              | default('')
+            ),
+            true
+          )
+      }}
+  when: bgp_keepalived_use_unicast
+
+- name: Assert unicast source IP is set when required
+  ansible.builtin.assert:
+    that:
+      - bgp_keepalived_unicast_src_ip is defined
+      - bgp_keepalived_unicast_src_ip | length > 0
+    success_msg: "BGP Keepalived unicast source IP is set: {{ bgp_keepalived_unicast_src_ip }}"
+    fail_msg: "BGP Keepalived unicast source IP is required for {{ bgp_keepalived_vip_interface }}. Set bgp_keepalived_unicast_src_ip."
+  when: bgp_keepalived_use_unicast
+
+- name: Assert BGP routers list is defined
+  ansible.builtin.assert:
+    that:
+      - bgp_routers is defined
+      - bgp_routers | length > 0
+    success_msg: "BGP routers list is defined"
+    fail_msg: "vault_bgp_routers must be defined (at least one BGP router entry)"
+
+- name: Determine keepalived priority for this host
+  ansible.builtin.set_fact:
+    bgp_keepalived_priority: >-
+      {{
+        bgp_keepalived_priority
+        | default(
+            (
+              bgp_routers
+              | selectattr('name', 'in', [inventory_hostname, ansible_host | default('')])
+              | map(attribute='priority')
+              | list
+              | first
+              | default('')
+            ),
+            true
+          )
+        | default(
+            (
+              bgp_routers
+              | selectattr('wireguard_ip', 'in', [inventory_hostname, ansible_host | default('')])
+              | map(attribute='priority')
+              | list
+              | first
+              | default('')
+            ),
+            true
+          )
+        | default(100, true)
+      }}
+  when: bgp_routers is defined and bgp_routers | length > 0
+
+- name: Determine keepalived state for this host
+  ansible.builtin.set_fact:
+    bgp_keepalived_state: >-
+      {{
+        'MASTER'
+        if (bgp_routers | length == 1)
+        else (
+          'MASTER'
+          if bgp_keepalived_priority | int
+             == (bgp_routers | map(attribute='priority') | list | max)
+          else 'BACKUP'
+        )
+      }}
+  when: bgp_routers is defined and bgp_routers | length > 0
+
+- name: Check if UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: ufw_installed
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: ufw_status
+  changed_when: false
+  failed_when: false
+  when: ufw_installed.stat.exists
+
+- name: Set UFW active fact
+  ansible.builtin.set_fact:
+    ufw_is_active: "{{ ufw_installed.stat.exists and ufw_status.stdout is defined and 'Status: active' in ufw_status.stdout }}"
+
+- name: Configure UFW to allow VRRP protocol (via iptables - UFW doesn't support proto 112)
+  ansible.builtin.iptables:
+    chain: INPUT
+    protocol: vrrp
+    source: "{{ bgp_keepalived_vrrp_allowed_network | default(vault_wg_network_cidr | default('[network-cidr]')) }}"
+    jump: ACCEPT
+    comment: "Allow VRRP for BGP Keepalived"
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - not (bgp_keepalived_vip_interface | regex_search('^wg'))
+  ignore_errors: true
+
+# Count unicast peers for VRRP
+- name: Count unicast peers
+  ansible.builtin.set_fact:
+    bgp_keepalived_unicast_peers: >-
+      {{ bgp_routers 
+         | rejectattr('wireguard_ip', 'equalto', bgp_keepalived_unicast_src_ip) 
+         | list }}
+  when:
+    - bgp_keepalived_use_unicast
+    - bgp_routers is defined
+    - bgp_routers | length > 0
+
+- name: Set single node mode
+  ansible.builtin.set_fact:
+    bgp_keepalived_single_node: "{{ (bgp_keepalived_unicast_peers | default([]) | length) == 0 }}"
+
+# Deploy BGP health check script
+- name: Deploy BGP health check script
+  ansible.builtin.template:
+    src: check_bgp.sh.j2
+    dest: /usr/local/bin/check_bgp.sh
+    mode: "0755"
+    owner: root
+    group: root
+
+# Deploy Keepalived configuration
+- name: Deploy keepalived configuration for BGP VIP
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    mode: "0644"
+    validate: "keepalived -t -f %s"
+  notify: Restart keepalived
+
+- name: Ensure keepalived is enabled and started
+  ansible.builtin.systemd:
+    name: keepalived
+    state: started
+    enabled: true
+  when:
+    - not ansible_check_mode
+
+- name: Wait for VIP to stabilize
+  ansible.builtin.pause:
+    seconds: 2
+  when: not ansible_check_mode
+
+- name: Verify VIP is active on this host
+  ansible.builtin.shell: ip addr show {{ bgp_keepalived_vip_interface }} | grep -q {{ bgp_keepalived_vip }}
+  register: vip_check
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Report VIP status
+  ansible.builtin.debug:
+    msg: "BGP VIP {{ bgp_keepalived_vip }} on {{ bgp_keepalived_vip_interface }}: {{ 'ACTIVE (this is MASTER)' if vip_check.rc == 0 else 'INACTIVE (this is BACKUP)' }}"
+  when: not ansible_check_mode
+
+- name: Assert VIP is active on MASTER node
+  ansible.builtin.assert:
+    that:
+      - vip_check.rc == 0
+    success_msg: "BGP VIP {{ bgp_keepalived_vip }} is active on {{ bgp_keepalived_vip_interface }} (MASTER)"
+    fail_msg: "BGP VIP {{ bgp_keepalived_vip }} is NOT active - expected on MASTER node"
+  when:
+    - not ansible_check_mode
+    - bgp_keepalived_state == 'MASTER'
+
+- name: Log BGP VIP configuration summary
+  ansible.builtin.debug:
+    msg: |
+      BGP Keepalived Configuration:
+      - VIP: {{ bgp_keepalived_vip }}/{{ bgp_keepalived_vip_cidr }}
+      - Interface: {{ bgp_keepalived_vip_interface }}
+      - Mode: {{ 'Single Node (Keepalived)' if bgp_keepalived_single_node else 'Multi-Node (VRRP)' }}
+      - State: {{ bgp_keepalived_state }}
+      - Priority: {{ bgp_keepalived_priority }}
+      - Unicast Peers: {{ bgp_keepalived_unicast_peers | default([]) | map(attribute='wireguard_ip') | list | join(', ') | default('None') }}
+      - BGP Routers: {{ bgp_routers | map(attribute='name') | list | join(', ') }}
+  when: not ansible_check_mode

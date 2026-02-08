@@ -1,0 +1,6 @@
+---
+- name: Remove DNS server and client
+  import_playbook: dns_server_remove.yaml
+
+- name: Remove DNS client configuration
+  import_playbook: dns_client_remove.yaml
