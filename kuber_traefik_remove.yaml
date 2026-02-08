@@ -1,5 +1,5 @@
 ---
-- name: Install and configure MetalLB (BGP mode)
+- name: Remove Traefik ingress controller
   hosts: kuber_small_planes
   become: true
   gather_facts: true
@@ -7,9 +7,13 @@
   tags:
     - kubernetes
     - k8s
-    - metallb
+    - traefik
+    - ingress
+    - remove
     - addon
   vars_files:
     - vault_secrets.yml
+  vars:
+    traefik_operation: remove
   roles:
-    - metallb
+    - traefik

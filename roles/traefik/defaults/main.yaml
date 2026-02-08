@@ -1,0 +1,40 @@
+---
+traefik_enabled: "{{ vault_traefik_enabled | default(true) }}"
+
+# Operation mode for this role
+# - install: install/configure Traefik via Helm
+# - verify: verify Traefik resources and external IP
+# - remove: uninstall Traefik (and optionally the namespace)
+traefik_operation: "{{ vault_traefik_operation | default('install') }}"
+
+traefik_namespace: "{{ vault_traefik_namespace | default('traefik') }}"
+traefik_release_name: "{{ vault_traefik_release_name | default('traefik') }}"
+
+traefik_chart_ref: "{{ vault_traefik_chart_ref | default('traefik/traefik') }}"
+traefik_chart_version: "{{ vault_traefik_chart_version | default('') }}"  # empty = latest
+
+traefik_helm_binary_path: "{{ vault_traefik_helm_binary_path | default('/usr/local/bin/helm') }}"
+
+# MetalLB integration
+# Auto-assign is the default; set a specific IP only if you need it.
+traefik_load_balancer_ip: "{{ vault_traefik_load_balancer_ip | default('') }}"
+
+# Optional: force selection of a specific MetalLB pool (usually not needed when only 1 pool exists)
+traefik_metallb_address_pool_name: "{{ vault_traefik_metallb_address_pool_name | default('') }}"
+
+# IngressClass behavior
+traefik_ingress_class_enabled: "{{ vault_traefik_ingress_class_enabled | default(true) }}"
+traefik_ingress_class_is_default: "{{ vault_traefik_ingress_class_is_default | default(true) }}"
+
+# Security defaults
+traefik_dashboard_enabled: "{{ vault_traefik_dashboard_enabled | default(false) }}"
+
+# HTTPS readiness (cert-manager recommended for real certs)
+traefik_tls_enabled: "{{ vault_traefik_tls_enabled | default(true) }}"
+traefik_http_redirect_to_https: "{{ vault_traefik_http_redirect_to_https | default(true) }}"
+
+# Removal behavior
+traefik_remove_namespace: "{{ vault_traefik_remove_namespace | default(false) }}"
+
+# Optional: wait for EXTERNAL-IP on install
+traefik_wait_for_external_ip: "{{ vault_traefik_wait_for_external_ip | default(true) }}"

@@ -1,0 +1,170 @@
+---
+- name: Skip when Helm disabled
+  ansible.builtin.meta: end_play
+  when: not (helm_enabled | bool)
+
+- name: End play when operation is verify
+  block:
+    - name: Check if Helm binary exists
+      ansible.builtin.stat:
+        path: "{{ helm_binary_path }}"
+      register: helm_binary_check
+      failed_when: false
+
+    - name: Display Helm installation status
+      ansible.builtin.debug:
+        msg: "Helm {{ 'is installed' if helm_binary_check.stat.exists else 'is NOT installed' }}"
+
+    - name: Get Helm version
+      ansible.builtin.command: "{{ helm_binary_path }} version"
+      register: helm_version_output
+      changed_when: false
+      failed_when: false
+      when: helm_binary_check.stat.exists
+
+    - name: Display Helm version
+      ansible.builtin.debug:
+        msg: "{{ helm_version_output.stdout_lines }}"
+      when: helm_binary_check.stat.exists
+
+    - name: List configured Helm repositories
+      ansible.builtin.command: "{{ helm_binary_path }} repo list"
+      register: helm_repo_list
+      changed_when: false
+      failed_when: false
+      when: helm_binary_check.stat.exists
+
+    - name: Display Helm repositories
+      ansible.builtin.debug:
+        msg: "{{ helm_repo_list.stdout_lines if helm_repo_list.rc == 0 else ['No repositories configured'] }}"
+      when: helm_binary_check.stat.exists
+  when: helm_operation == 'verify'
+
+- name: End play after verification
+  ansible.builtin.meta: end_play
+  when: helm_operation == 'verify'
+
+- name: Remove Helm when operation is remove
+  block:
+    - name: Remove configured Helm repositories
+      ansible.builtin.shell: "{{ helm_binary_path }} repo remove {{ item }}"
+      register: helm_repo_remove
+      changed_when: helm_repo_remove.rc == 0
+      failed_when: false
+      loop: "{{ helm_repos_to_remove | default([]) }}"
+      when: helm_repos_to_remove is defined
+
+    - name: Remove all Helm repositories if none specified
+      ansible.builtin.shell: |
+        {{ helm_binary_path }} repo list 2>/dev/null | tail -n +2 | awk '{print $1}' | xargs -I {} {{ helm_binary_path }} repo remove {}
+      register: helm_remove_all_repos
+      changed_when: "'removed' in helm_remove_all_repos.stdout or helm_remove_all_repos.stdout == ''"
+      failed_when: false
+      when: helm_repos_to_remove is not defined
+
+    - name: Remove Helm cache directory
+      ansible.builtin.file:
+        path: "{{ helm_cache_dir }}"
+        state: absent
+      register: helm_cache_remove
+      failed_when: false
+
+    - name: Remove Helm binary
+      ansible.builtin.file:
+        path: "{{ helm_binary_path }}"
+        state: absent
+      register: helm_binary_remove
+
+    - name: Display Helm removal status
+      ansible.builtin.debug:
+        msg: "Helm removed from {{ helm_binary_path }}"
+
+    - name: Verify Helm binary is removed
+      ansible.builtin.stat:
+        path: "{{ helm_binary_path }}"
+      register: helm_binary_verify
+
+    - name: Assert Helm binary is removed
+      ansible.builtin.assert:
+        that:
+          - not helm_binary_verify.stat.exists
+        success_msg: "Helm binary successfully removed"
+        fail_msg: "Helm binary still exists"
+  when: helm_operation == 'remove'
+
+- name: End play after removal
+  ansible.builtin.meta: end_play
+  when: helm_operation == 'remove'
+
+- name: Install Helm when operation is install
+  block:
+    - name: Check if Helm is already installed
+      ansible.builtin.stat:
+        path: "{{ helm_binary_path }}"
+      register: helm_installed_check
+
+    - name: Skip installation if Helm already exists
+      ansible.builtin.debug:
+        msg: "Helm is already installed at {{ helm_binary_path }}"
+      when: helm_installed_check.stat.exists
+
+    - name: End host when Helm already exists
+      ansible.builtin.meta: end_host
+      when: helm_installed_check.stat.exists
+
+    - name: Skip Helm installation in check mode when Helm is not present
+      ansible.builtin.debug:
+        msg: >-
+          Check mode: Helm is not installed; this role would download and install Helm to
+          {{ helm_binary_path }}.
+      when: ansible_check_mode
+
+    - name: End host in check mode before installing Helm
+      ansible.builtin.meta: end_host
+      when: ansible_check_mode
+
+    - name: Install curl dependency
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Download Helm installation script
+      ansible.builtin.get_url:
+        url: "{{ helm_script_url }}"
+        dest: /tmp/get-helm-3.sh
+        mode: '0755'
+      register: helm_script_download
+
+    - name: Execute Helm installation script
+      ansible.builtin.command: /tmp/get-helm-3.sh
+      register: helm_install
+      changed_when: true
+
+    - name: Verify Helm installation
+      ansible.builtin.stat:
+        path: "{{ helm_binary_path }}"
+      register: helm_verify
+
+    - name: Assert Helm binary exists
+      ansible.builtin.assert:
+        that:
+          - helm_verify.stat.exists
+        success_msg: "Helm successfully installed at {{ helm_binary_path }}"
+        fail_msg: "Helm binary not found after installation"
+
+    - name: Get Helm version
+      ansible.builtin.command: "{{ helm_binary_path }} version"
+      register: helm_version
+      changed_when: false
+
+    - name: Display Helm version
+      ansible.builtin.debug:
+        msg: "{{ helm_version.stdout_lines }}"
+
+    - name: Initialize Helm cache directory
+      ansible.builtin.file:
+        path: "{{ helm_cache_dir }}"
+        state: directory
+        mode: '0755'
+      when: helm_cache_dir is defined
+  when: helm_operation == 'install'

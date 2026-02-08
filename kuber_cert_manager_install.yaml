@@ -1,5 +1,5 @@
 ---
-- name: Install and configure MetalLB (BGP mode)
+- name: Install cert-manager and ClusterIssuer (staging)
   hosts: kuber_small_planes
   become: true
   gather_facts: true
@@ -7,9 +7,12 @@
   tags:
     - kubernetes
     - k8s
-    - metallb
+    - cert_manager
+    - tls
     - addon
   vars_files:
     - vault_secrets.yml
+  vars:
+    cert_manager_operation: install
   roles:
-    - metallb
+    - cert_manager

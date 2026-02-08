@@ -1,5 +1,5 @@
 ---
-- name: Install and configure MetalLB (BGP mode)
+- name: Verify Traefik ingress controller
   hosts: kuber_small_planes
   become: true
   gather_facts: true
@@ -7,9 +7,13 @@
   tags:
     - kubernetes
     - k8s
-    - metallb
+    - traefik
+    - ingress
+    - verify
     - addon
   vars_files:
     - vault_secrets.yml
+  vars:
+    traefik_operation: verify
   roles:
-    - metallb
+    - traefik

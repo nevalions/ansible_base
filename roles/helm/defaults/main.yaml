@@ -1,0 +1,14 @@
+---
+helm_enabled: "{{ vault_helm_enabled | default(true) }}"
+
+helm_operation: "{{ vault_helm_operation | default('install') }}"
+
+helm_version: "{{ vault_helm_version | default('latest') }}"
+
+helm_binary_path: "/usr/local/bin/helm"
+
+helm_script_url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+
+# Avoid relying on top-level injected facts (ansible_env.*).
+# Use ansible_facts so this still works when INJECT_FACTS_AS_VARS changes.
+helm_cache_dir: "{{ ansible_facts.get('env', {}).get('HOME', '/root') }}/.helm"

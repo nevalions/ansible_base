@@ -181,7 +181,11 @@
   no_log: true
   when:
     - metallb_manage_memberlist_secret | bool
+    # NOTE: a skipped task with 'register' still defines the variable, but it will not
+    # include stdout. Guard against that so we don't fail when the secret already exists.
     - metallb_memberlist_key is defined
+    - not (metallb_memberlist_key.skipped | default(false) | bool)
+    - (metallb_memberlist_key.stdout | default('') | trim | length) > 0
 
 - name: Apply memberlist secret manifest
   ansible.builtin.command: kubectl apply -f /tmp/metallb-memberlist-secret.yaml
@@ -195,6 +199,8 @@
   when:
     - metallb_manage_memberlist_secret | bool
     - metallb_memberlist_key is defined
+    - not (metallb_memberlist_key.skipped | default(false) | bool)
+    - (metallb_memberlist_key.stdout | default('') | trim | length) > 0
 
 - name: Restart MetalLB components after memberlist secret change
   ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout restart deploy/controller ds/speaker
@@ -223,7 +229,8 @@
   delegate_to: "{{ metallb_kubectl_delegate }}"
   when:
     - metallb_restart is defined
-    - metallb_restart.rc == 0
+    - not (metallb_restart.skipped | default(false) | bool)
+    - (metallb_restart.rc | default(1)) == 0
 
 - name: Wait for MetalLB speaker rollout after restart
   ansible.builtin.command: kubectl -n {{ metallb_namespace }} rollout status ds/speaker --timeout=300s
@@ -239,7 +246,8 @@
   delegate_to: "{{ metallb_kubectl_delegate }}"
   when:
     - metallb_restart is defined
-    - metallb_restart.rc == 0
+    - not (metallb_restart.skipped | default(false) | bool)
+    - (metallb_restart.rc | default(1)) == 0
 
 - name: Wait for MetalLB controller deployment to be available
   ansible.builtin.command: kubectl wait -n {{ metallb_namespace }} --for=condition=available deploy/controller --timeout=300s

@@ -18,35 +18,69 @@
 #   # Reset with BGP router cleanup
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_bgp=true
 #
+#   # Reset with Helm cleanup (remove helm binary/cache from control-plane nodes)
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_helm=true
+#
+#   # Reset with Traefik cleanup
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_traefik=true
+#
+#   # Reset with cert-manager cleanup
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_cert_manager=true
+#
 #   # Full cleanup (MetalLB + BGP + Kubernetes)
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
 
-# Step 1: Remove MetalLB (optional)
-- name: "Reset Step 1/4: Remove MetalLB"
+# Step 1: Remove Traefik (optional)
+- name: "Reset Step 1/7: Remove Traefik"
+  import_playbook: kuber_traefik_remove.yaml
+  when: cleanup_traefik | default(false) | bool
+  tags:
+    - traefik
+    - cleanup
+
+# Step 2: Remove cert-manager (optional)
+- name: "Reset Step 2/7: Remove cert-manager"
+  import_playbook: kuber_cert_manager_remove.yaml
+  when: cleanup_cert_manager | default(false) | bool
+  tags:
+    - cert_manager
+    - tls
+    - cleanup
+
+# Step 3: Remove MetalLB (optional)
+- name: "Reset Step 3/7: Remove MetalLB"
   import_playbook: kuber_metallb_remove.yaml
   when: cleanup_metallb | default(false) | bool
   tags:
     - metallb
     - cleanup
 
-# Step 2: Remove BGP router config (optional)
-- name: "Reset Step 2/4: Remove BGP router configuration"
+# Step 4: Remove BGP router config (optional)
+- name: "Reset Step 4/7: Remove BGP router configuration"
   import_playbook: bgp_router_remove.yaml
   when: cleanup_bgp | default(false) | bool
   tags:
     - bgp
     - cleanup
 
-# Step 3: Reset workers first (they need to leave cluster before control plane goes down)
-- name: "Reset Step 3/4: Reset Kubernetes workers"
+# Step 5: Remove Helm from control-plane nodes (optional)
+- name: "Reset Step 5/7: Remove Helm"
+  import_playbook: kuber_helm_remove.yaml
+  when: cleanup_helm | default(false) | bool
+  tags:
+    - helm
+    - cleanup
+
+# Step 6: Reset workers first (they need to leave cluster gracefully before control plane goes down)
+- name: "Reset Step 6/7: Reset Kubernetes workers"
   import_playbook: "{{ 'kuber_worker_soft_reset.yaml' if (reset_mode | default('full')) == 'soft' else 'kuber_worker_reset.yaml' }}"
   tags:
     - kubernetes
     - workers
     - reset
 
-# Step 4: Reset control plane last
-- name: "Reset Step 4/4: Reset Kubernetes control plane"
+# Step 7: Reset control plane last
+- name: "Reset Step 7/7: Reset Kubernetes control plane"
   import_playbook: "{{ 'kuber_plane_soft_reset.yaml' if (reset_mode | default('full')) == 'soft' else 'kuber_plane_reset.yaml' }}"
   tags:
     - kubernetes

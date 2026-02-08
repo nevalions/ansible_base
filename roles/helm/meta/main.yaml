@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Install and manage Helm package manager on Kubernetes control-plane nodes
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Arch
+      versions:
+        - all
+
+  galaxy_tags:
+    - kubernetes
+    - k8s
+    - helm
+    - package-manager
+    - deployment
+
+dependencies: []

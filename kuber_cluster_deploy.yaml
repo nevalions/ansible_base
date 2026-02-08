@@ -17,6 +17,15 @@
 #   # Skip MetalLB/BGP (no LoadBalancer needed)
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_metallb=true
 #
+#   # Skip Helm installation
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_helm=true
+#
+#   # Skip Traefik ingress controller
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_traefik=true
+#
+#   # Skip cert-manager and ClusterIssuer
+#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_cert_manager=true
+#
 #   # Kubernetes only (skip infra and metallb)
 #   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
 #
@@ -127,6 +136,26 @@
     - kubernetes
     - verify
 
+# Step 3.4: Install Helm (cluster client tooling)
+- name: "Phase 3.4: Install Helm"
+  import_playbook: kuber_helm_install.yaml
+  when: not (skip_helm | default(false) | bool)
+  tags:
+    - phase3
+    - kubernetes
+    - helm
+    - addon
+
+# Step 3.5: Verify Helm
+- name: "Phase 3.5: Verify Helm"
+  import_playbook: kuber_helm_verify.yaml
+  when: not (skip_helm | default(false) | bool)
+  tags:
+    - phase3
+    - kubernetes
+    - helm
+    - verify
+
 ###############################################################################
 # PHASE 4: LoadBalancer (MetalLB with BGP)
 ###############################################################################
@@ -143,7 +172,7 @@
 
 # Step 4.2: Configure BGP router
 - name: "Phase 4.2: Configure BGP router (FRR)"
-  import_playbook: bgp_router_manage.yaml
+  import_playbook: kuber_bgp_router_install.yaml
   when: not (skip_metallb | default(false) | bool)
   tags:
     - phase4
@@ -160,7 +189,7 @@
 
 # Step 4.4: Verify BGP router
 - name: "Phase 4.4: Verify BGP router"
-  import_playbook: bgp_router_verify.yaml
+  import_playbook: kuber_bgp_router_verify.yaml
   when: not (skip_metallb | default(false) | bool)
   tags:
     - phase4
@@ -175,4 +204,54 @@
   tags:
     - phase4
     - metallb
+    - verify
+
+###############################################################################
+# PHASE 5: Ingress Controller (Traefik)
+###############################################################################
+
+# Step 5.1: Install Traefik
+- name: "Phase 5.1: Install Traefik ingress controller"
+  import_playbook: kuber_traefik_install.yaml
+  when:
+    - not (skip_traefik | default(false) | bool)
+    - not (skip_metallb | default(false) | bool)
+  tags:
+    - phase5
+    - traefik
+    - ingress
+
+# Step 5.2: Verify Traefik
+- name: "Phase 5.2: Verify Traefik ingress controller"
+  import_playbook: kuber_traefik_verify.yaml
+  when:
+    - not (skip_traefik | default(false) | bool)
+    - not (skip_metallb | default(false) | bool)
+  tags:
+    - phase5
+    - traefik
+    - ingress
+    - verify
+
+###############################################################################
+# PHASE 6: TLS (cert-manager)
+###############################################################################
+
+# Step 6.1: Install cert-manager + Let's Encrypt staging ClusterIssuer
+- name: "Phase 6.1: Install cert-manager"
+  import_playbook: kuber_cert_manager_install.yaml
+  when: not (skip_cert_manager | default(false) | bool)
+  tags:
+    - phase6
+    - cert_manager
+    - tls
+
+# Step 6.2: Verify cert-manager
+- name: "Phase 6.2: Verify cert-manager"
+  import_playbook: kuber_cert_manager_verify.yaml
+  when: not (skip_cert_manager | default(false) | bool)
+  tags:
+    - phase6
+    - cert_manager
+    - tls
     - verify

@@ -1,0 +1,187 @@
+---
+- name: Skip when Traefik disabled
+  ansible.builtin.meta: end_play
+  when: not (traefik_enabled | bool)
+
+- name: Compute kubectl/helm delegate host
+  ansible.builtin.set_fact:
+    traefik_kubectl_delegate: "{{ ansible_play_hosts | first }}"
+  run_once: true
+
+- name: Fail if Traefik operation is invalid
+  ansible.builtin.assert:
+    that:
+      - traefik_operation in ['install', 'verify', 'remove']
+    fail_msg: "traefik_operation must be 'install', 'verify', or 'remove'"
+    success_msg: "Traefik operation is valid: {{ traefik_operation }}"
+
+- name: Check Helm binary exists
+  ansible.builtin.stat:
+    path: "{{ traefik_helm_binary_path }}"
+  register: traefik_helm_stat
+  run_once: true
+  delegate_to: "{{ traefik_kubectl_delegate }}"
+
+- name: Assert Helm is installed (required for Traefik role)
+  ansible.builtin.assert:
+    that:
+      - traefik_helm_stat.stat.exists
+    fail_msg: "Helm binary not found at {{ traefik_helm_binary_path }}. Run kuber_helm_install.yaml first."
+    success_msg: "Helm binary found at {{ traefik_helm_binary_path }}"
+  run_once: true
+  delegate_to: "{{ traefik_kubectl_delegate }}"
+
+- name: Verify Traefik when operation is verify
+  block:
+    - name: Check Traefik namespace exists
+      ansible.builtin.command: kubectl get ns {{ traefik_namespace }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_ns_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display namespace status
+      ansible.builtin.debug:
+        msg: "Traefik namespace {{ traefik_namespace }} {{ 'exists' if traefik_ns_check.rc == 0 else 'does NOT exist' }}"
+
+    - name: Get Traefik pods
+      ansible.builtin.command: kubectl -n {{ traefik_namespace }} get pods -o wide
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_pods
+      changed_when: false
+      failed_when: false
+      when: traefik_ns_check.rc == 0
+
+    - name: Display Traefik pods
+      ansible.builtin.debug:
+        msg: "{{ traefik_pods.stdout_lines | default([]) }}"
+      when: traefik_ns_check.rc == 0
+
+    - name: Get Traefik service
+      ansible.builtin.command: kubectl -n {{ traefik_namespace }} get svc {{ traefik_release_name }} -o wide
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_svc
+      changed_when: false
+      failed_when: false
+      when: traefik_ns_check.rc == 0
+
+    - name: Display Traefik service
+      ansible.builtin.debug:
+        msg: "{{ traefik_svc.stdout_lines | default([]) }}"
+      when: traefik_ns_check.rc == 0
+
+    - name: Get Traefik external IP
+      ansible.builtin.command: >-
+        kubectl -n {{ traefik_namespace }} get svc {{ traefik_release_name }}
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_external_ip
+      changed_when: false
+      failed_when: false
+      when: traefik_ns_check.rc == 0
+
+    - name: Display Traefik external IP
+      ansible.builtin.debug:
+        msg: "Traefik EXTERNAL-IP: {{ traefik_external_ip.stdout | default('') | trim }}"
+      when: traefik_ns_check.rc == 0
+  run_once: true
+  delegate_to: "{{ traefik_kubectl_delegate }}"
+  when: traefik_operation == 'verify'
+
+- name: End play after verification
+  ansible.builtin.meta: end_play
+  when: traefik_operation == 'verify'
+
+- name: Remove Traefik when operation is remove
+  block:
+    - name: Uninstall Traefik release (best-effort)
+      ansible.builtin.command: >-
+        {{ traefik_helm_binary_path }} uninstall {{ traefik_release_name }}
+        --namespace {{ traefik_namespace }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_uninstall
+      changed_when: traefik_uninstall.rc == 0
+      failed_when: false
+
+    - name: Optionally delete Traefik namespace
+      ansible.builtin.command: kubectl delete ns {{ traefik_namespace }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_ns_delete
+      changed_when: false
+      failed_when: false
+      when: traefik_remove_namespace | bool
+  run_once: true
+  delegate_to: "{{ traefik_kubectl_delegate }}"
+  when: traefik_operation == 'remove'
+
+- name: End play after removal
+  ansible.builtin.meta: end_play
+  when: traefik_operation == 'remove'
+
+- name: Install Traefik when operation is install
+  block:
+    - name: Add Traefik Helm repo
+      ansible.builtin.command: >-
+        {{ traefik_helm_binary_path }} repo add traefik https://traefik.github.io/charts --force-update
+      register: traefik_repo_add
+      changed_when: "'has been added' in traefik_repo_add.stdout or 'updated' in traefik_repo_add.stdout"
+
+    - name: Update Helm repos
+      ansible.builtin.command: "{{ traefik_helm_binary_path }} repo update"
+      register: traefik_repo_update
+      changed_when: false
+
+    - name: Render Traefik values file
+      ansible.builtin.template:
+        src: values.yaml.j2
+        dest: /tmp/traefik-values.yaml
+        mode: "0644"
+
+    - name: Install/upgrade Traefik via Helm
+      ansible.builtin.command: >-
+        {{ traefik_helm_binary_path }} upgrade --install {{ traefik_release_name }} {{ traefik_chart_ref }}
+        --namespace {{ traefik_namespace }}
+        --create-namespace
+        -f /tmp/traefik-values.yaml
+        {% if traefik_chart_version | default('') | length > 0 %}--version {{ traefik_chart_version }}{% endif %}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_helm_install
+      changed_when: "'deployed' in traefik_helm_install.stdout or 'upgraded' in traefik_helm_install.stdout"
+
+    - name: Wait for Traefik deployment rollout
+      ansible.builtin.command: kubectl -n {{ traefik_namespace }} rollout status deploy/{{ traefik_release_name }} --timeout=300s
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_rollout
+      changed_when: false
+      retries: 10
+      delay: 10
+      until: traefik_rollout.rc == 0
+
+    - name: Wait for Traefik external IP assignment
+      ansible.builtin.command: >-
+        kubectl -n {{ traefik_namespace }} get svc {{ traefik_release_name }}
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_external_ip_wait
+      changed_when: false
+      retries: 60
+      delay: 5
+      until: traefik_external_ip_wait.stdout | default('') | trim | length > 0
+      when: traefik_wait_for_external_ip | bool
+
+    - name: Display assigned Traefik EXTERNAL-IP
+      ansible.builtin.debug:
+        msg: "Traefik assigned EXTERNAL-IP: {{ traefik_external_ip_wait.stdout | default('') | trim }}"
+      when: traefik_wait_for_external_ip | bool
+  run_once: true
+  delegate_to: "{{ traefik_kubectl_delegate }}"
+  when: traefik_operation == 'install'

@@ -186,6 +186,10 @@ def check_line_for_violations(line, line_num, filepath):
     if any(marker in line_content for marker in ["SENSITIVE_PATTERNS", "ACCEPTABLE_PATTERNS", "[", "]", "SENSITIVE_FILE_PATTERNS"]):
         return violations
     
+    # Skip hosts: field in YAML playbooks (inventory group names are allowed here)
+    if 'hosts:' in line and line_content.startswith('hosts:'):
+        return violations
+    
     # Check if line has acceptable patterns
     if is_line_acceptable(line):
         return violations

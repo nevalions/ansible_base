@@ -1,0 +1,38 @@
+---
+cert_manager_enabled: "{{ vault_cert_manager_enabled | default(true) }}"
+
+# Operation mode for this role
+# - install: install/configure cert-manager via Helm and create ClusterIssuer
+# - verify: verify cert-manager and ClusterIssuer readiness
+# - remove: uninstall cert-manager and optionally delete the namespace
+cert_manager_operation: "{{ vault_cert_manager_operation | default('install') }}"
+
+cert_manager_namespace: "{{ vault_cert_manager_namespace | default('cert-manager') }}"
+cert_manager_release_name: "{{ vault_cert_manager_release_name | default('cert-manager') }}"
+
+cert_manager_chart_ref: "{{ vault_cert_manager_chart_ref | default('jetstack/cert-manager') }}"
+cert_manager_chart_version: "{{ vault_cert_manager_chart_version | default('') }}"  # empty = latest
+
+cert_manager_helm_binary_path: "{{ vault_cert_manager_helm_binary_path | default('/usr/local/bin/helm') }}"
+
+# CRD install behavior (recommended)
+cert_manager_crds_enabled: "{{ vault_cert_manager_crds_enabled | default(true) }}"
+cert_manager_crds_keep: "{{ vault_cert_manager_crds_keep | default(true) }}"
+
+# ClusterIssuer (Let's Encrypt staging)
+cert_manager_clusterissuer_staging_enabled: "{{ vault_cert_manager_clusterissuer_staging_enabled | default(true) }}"
+cert_manager_clusterissuer_staging_name: "{{ vault_cert_manager_clusterissuer_staging_name | default('letsencrypt-staging') }}"
+cert_manager_clusterissuer_staging_private_key_secret_name: >-
+  {{ vault_cert_manager_clusterissuer_staging_private_key_secret_name | default('letsencrypt-staging') }}
+
+cert_manager_acme_email: "{{ vault_cert_manager_acme_email | default('[your-email]') }}"
+cert_manager_acme_server_staging: >-
+  {{ vault_cert_manager_acme_server_staging | default('https://acme-staging-v02.api.letsencrypt.org/directory') }}
+
+# HTTP-01 solver (Traefik)
+cert_manager_http01_ingress_class: "{{ vault_cert_manager_http01_ingress_class | default('traefik') }}"
+
+cert_manager_wait_for_clusterissuer_ready: "{{ vault_cert_manager_wait_for_clusterissuer_ready | default(true) }}"
+
+# Removal behavior
+cert_manager_remove_namespace: "{{ vault_cert_manager_remove_namespace | default(false) }}"

@@ -81,7 +81,8 @@ calico_typha_replicas: "{{ vault_calico_typha_replicas | default(1) }}"
 
 # Kubeconfig Configuration
 kubeconfig_user: "{{ vault_admin_user | default(ansible_user | default(ansible_user_id)) }}"
-kubeconfig_user_home: "{{ ansible_env.HOME | default(ansible_user_dir | default('/home/' ~ kubeconfig_user)) }}"
+# Avoid relying on top-level injected facts (ansible_env.*).
+kubeconfig_user_home: "{{ ansible_facts.get('env', {}).get('HOME', ansible_user_dir | default('/home/' ~ kubeconfig_user)) }}"
 kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"
 
 # Refresh API server certs and kubeconfig on re-run

@@ -1,0 +1,45 @@
+---
+# Traefik Helm values managed by Ansible
+
+service:
+  enabled: true
+  type: LoadBalancer
+{% if traefik_metallb_address_pool_name | default('') | length > 0 %}
+  annotations:
+    # Support both legacy and current MetalLB annotation keys.
+    metallb.universe.tf/address-pool: "{{ traefik_metallb_address_pool_name }}"
+    metallb.io/address-pool: "{{ traefik_metallb_address_pool_name }}"
+{% endif %}
+{% if traefik_load_balancer_ip | default('') | length > 0 %}
+  spec:
+    loadBalancerIP: "{{ traefik_load_balancer_ip }}"
+{% endif %}
+
+ingressClass:
+  enabled: {{ traefik_ingress_class_enabled | bool | lower }}
+  isDefaultClass: {{ traefik_ingress_class_is_default | bool | lower }}
+
+ingressRoute:
+  dashboard:
+    enabled: {{ traefik_dashboard_enabled | bool | lower }}
+
+ports:
+  web:
+    expose:
+      default: true
+    exposedPort: 80
+{% if traefik_http_redirect_to_https | bool %}
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+{% endif %}
+  websecure:
+    expose:
+      default: true
+    exposedPort: 443
+    http:
+      tls:
+        enabled: {{ traefik_tls_enabled | bool | lower }}
