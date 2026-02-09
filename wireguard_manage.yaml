@@ -76,9 +76,12 @@
     # conflicts with Calico's per-node /26 routes via tunl0, breaking
     # ClusterIP connectivity from pods (e.g. MetalLB controller cannot
     # reach kubernetes API at 10.96.0.1).
-    - name: Set WireGuard routed CIDRs (K8s API VIP only)
+    #
+    # MetalLB pool IS included so HAProxy can reach Traefik LoadBalancer IP
+    # through WireGuard, allowing external HTTP/HTTPS traffic to reach K8s ingress.
+    - name: Set WireGuard routed CIDRs (K8s API VIP and MetalLB pool)
       ansible.builtin.set_fact:
-        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32'] | select | list }}"
+        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32', vault_metallb_pool_cidr + '/24' ] | select | list }}"
 
     - name: Apply WireGuard role
       ansible.builtin.include_role:
