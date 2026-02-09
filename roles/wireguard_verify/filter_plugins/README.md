@@ -401,7 +401,7 @@ Then the filters are available globally without importing the role.
 - **Connection status:** All status information
 - **Handshake timestamps:** All timestamps
 - **Transfer statistics:** All statistics (without keys)
-- **Allowed IP ranges:** CIDR notation (e.g., 9.11.0.***/24)
+- **Allowed IP ranges:** CIDR notation (e.g., [vpn-network-cidr] or [vpn-network-cidr]/24)
 
 ### First/Last Masking Behavior
 

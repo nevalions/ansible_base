@@ -177,7 +177,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
   ```
 
 **MetalLB speaker port conflict:**
-- **Symptoms:** `listen tcp 9.11.0.41:7946: bind: address already in use`
+- **Symptoms:** `listen tcp [node-ip]:7946: bind: address already in use`
 - **Root Cause:** Orphaned speaker process from crashed pod
 - **Solution:** Kill orphaned process and restart pod
   ```bash

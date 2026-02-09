@@ -34,11 +34,15 @@
   failed_when: false
   when: ufw_bin.stat.exists
 
-- name: Configure UFW to allow WireGuard network access to HAProxy
+- name: Set UFW active fact
+  ansible.builtin.set_fact:
+    ufw_is_active: "{{ ufw_bin.stat.exists | default(false) and (ufw_status.stdout | default('')) is search('Status: active') }}"
+
+- name: Configure UFW to allow WireGuard network access to HAProxy (K8s API)
   community.general.ufw:
     rule: allow
     proto: tcp
-    port: "{{ haproxy_k8s_frontend_port }}"
+    port: "{{ haproxy_k8s_frontend_port | int }}"
     from: "{{ net }}"
     direction: in
   loop: "{{ haproxy_k8s_allowed_networks }}"
@@ -46,8 +50,31 @@
     loop_var: net
   when:
     - ansible_facts['os_family'] == 'Debian'
-    - ufw_bin.stat.exists
-    - ufw_status.stdout is search('Status: active')
+    - ufw_is_active | bool
+    - not (haproxy_k8s_skip_ufw | default(false) | bool)
+    - haproxy_k8s_allowed_networks | length > 0
+
+- name: Configure UFW to allow HTTP from anywhere (ingress)
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ haproxy_ingress_http_port | int }}"
+    direction: in
+  when:
+    - haproxy_ingress_enabled | default(false) | bool
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_is_active | bool
+
+- name: Configure UFW to allow HTTPS from anywhere (ingress)
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ haproxy_ingress_https_port | int }}"
+    direction: in
+  when:
+    - haproxy_ingress_enabled | default(false) | bool
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_is_active | bool
 
 - name: Check if HAProxy config exists
   ansible.builtin.stat:
@@ -76,9 +103,9 @@
     state: started
     enabled: true
 
-- name: Wait for HAProxy to be ready
+- name: Wait for HAProxy to be ready (K8s API port)
   ansible.builtin.wait_for:
-    port: "{{ haproxy_k8s_frontend_port }}"
+    port: "{{ haproxy_k8s_frontend_port | int }}"
     delay: 2
     timeout: 30
 
@@ -92,12 +119,88 @@
   ansible.builtin.debug:
     msg: "Port {{ haproxy_k8s_frontend_port }} listening: {{ 'YES' if haproxy_listening.rc == 0 else 'NO' }} (rc={{ haproxy_listening.rc }})"
 
-- name: Assert HAProxy is listening
+- name: Assert HAProxy is listening (K8s API)
   ansible.builtin.assert:
     that:
       - haproxy_listening.rc == 0
     success_msg: "HAProxy is listening on port {{ haproxy_k8s_frontend_port }}"
     fail_msg: "HAProxy is not listening on port {{ haproxy_k8s_frontend_port }}"
+
+- name: Verify HAProxy is listening on HTTP ingress port
+  ansible.builtin.shell: ss -tlnp | grep ':{{ haproxy_ingress_http_port }}'
+  register: haproxy_http_listening
+  changed_when: false
+  failed_when: false
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Assert HAProxy is listening (HTTP ingress)
+  ansible.builtin.assert:
+    that:
+      - haproxy_http_listening.rc == 0
+    success_msg: "HAProxy is listening on port {{ haproxy_ingress_http_port }} (HTTP ingress)"
+    fail_msg: "HAProxy is not listening on port {{ haproxy_ingress_http_port }} (HTTP ingress)"
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Verify HAProxy is listening on HTTPS ingress port
+  ansible.builtin.shell: ss -tlnp | grep ':{{ haproxy_ingress_https_port }}'
+  register: haproxy_https_listening
+  changed_when: false
+  failed_when: false
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Assert HAProxy is listening (HTTPS ingress)
+  ansible.builtin.assert:
+    that:
+      - haproxy_https_listening.rc == 0
+    success_msg: "HAProxy is listening on port {{ haproxy_ingress_https_port }} (HTTPS ingress)"
+    fail_msg: "HAProxy is not listening on port {{ haproxy_ingress_https_port }} (HTTPS ingress)"
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Wait for HAProxy ingress HTTP port
+  ansible.builtin.wait_for:
+    port: "{{ haproxy_ingress_http_port | int }}"
+    delay: 2
+    timeout: 30
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Wait for HAProxy ingress HTTPS port
+  ansible.builtin.wait_for:
+    port: "{{ haproxy_ingress_https_port | int }}"
+    delay: 2
+    timeout: 30
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Verify ingress backend (BGP VIP) is reachable on HTTP
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_ingress_backend_ip }}"
+    port: "{{ haproxy_ingress_backend_http_port | int }}"
+    timeout: 10
+  register: ingress_http_backend_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: true
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Display ingress HTTP backend connectivity
+  ansible.builtin.debug:
+    msg: "Ingress HTTP backend {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_http_port }} {{ 'reachable' if ingress_http_backend_check is not failed else 'NOT reachable (check BGP VIP and Traefik)' }}"
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Verify ingress backend (BGP VIP) is reachable on HTTPS
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_ingress_backend_ip }}"
+    port: "{{ haproxy_ingress_backend_https_port | int }}"
+    timeout: 10
+  register: ingress_https_backend_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: true
+  when: haproxy_ingress_enabled | default(false) | bool
+
+- name: Display ingress HTTPS backend connectivity
+  ansible.builtin.debug:
+    msg: "Ingress HTTPS backend {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_https_port }} {{ 'reachable' if ingress_https_backend_check is not failed else 'NOT reachable (check BGP VIP and Traefik)' }}"
+  when: haproxy_ingress_enabled | default(false) | bool
 
 - name: Verify HAProxy backend hosts are reachable
   ansible.builtin.wait_for:

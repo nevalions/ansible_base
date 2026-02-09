@@ -39,10 +39,6 @@ wg_keys.yaml
 # Ignore WireGuard configuration files (may contain endpoints and IPs)
 wg*.conf
 
- # Ignore implementation guides (contains network details)
- WIREGUARD_IMPLEMENTATION.md
- WIREGUARD_SETUP.md
-
 # SSH keys for Ansible connections
 ansible_id_*
 !ansible_id_*.pub.example

@@ -1,10 +1,10 @@
 ---
-- name: Configure HAProxy on haproxy_spb for Kubernetes API
+- name: Configure HAProxy for Kubernetes API on load balancer
   hosts: haproxy_spb
   become: true
   gather_facts: true
   vars_files:
-    - ../../vault_secrets.yml
+    - ../vault_secrets.yml
     - vars/packages.yaml
   tags:
     - haproxy

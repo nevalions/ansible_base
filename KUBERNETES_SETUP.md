@@ -42,7 +42,7 @@ Running Kubernetes with Calico CNI over WireGuard requires specific configuratio
 
 | Setting | Required Value | Why |
 |---------|---------------|-----|
-| `natOutgoing` | `true` | Pods must NAT to reach node WireGuard IPs (9.11.0.x) |
+| `natOutgoing` | `true` | Pods must NAT to reach node WireGuard IPs ([vpn-network-cidr]) |
 | `vault_ipPools_encapsulation` | `IPIP` | Required for L3 WireGuard networks |
 | `mtu` | `1380` | WireGuard (1420) - IPIP (20) - safety (20) |
 | `vault_calico_typha_replicas` | `1` | Prevents port conflicts on small clusters |
@@ -50,7 +50,7 @@ Running Kubernetes with Calico CNI over WireGuard requires specific configuratio
 ### Network Flow
 
 ```
-Pod (10.244.x.x) → IPIP Tunnel → WireGuard (9.11.0.x) → Remote Node
+Pod (10.244.x.x) → IPIP Tunnel → WireGuard ([vpn-network-cidr]) → Remote Node
                       ↓
               NAT (MASQUERADE)
                       ↓
@@ -61,8 +61,8 @@ Pod (10.244.x.x) → IPIP Tunnel → WireGuard (9.11.0.x) → Remote Node
 
 Without `natOutgoing: true`:
 - Pods can reach other pods via IPIP tunnels ✓
-- Pods CANNOT reach node WireGuard IPs (9.11.0.x) ✗
-- Pods CANNOT reach Kubernetes API (10.96.0.1 → 9.11.0.11:6443) ✗
+- Pods CANNOT reach node WireGuard IPs ([vpn-network-cidr]) ✗
+- Pods CANNOT reach Kubernetes API (10.96.0.1 → [control-plane-wg-ip]:6443) ✗
 - MetalLB controller crashes with API timeout ✗
 
 ### Typha Anti-Affinity
@@ -369,7 +369,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
 # 3.5 (Optional) Configure BGP router and install MetalLB (LoadBalancer)
 # Recommended for WireGuard/L3 clusters. Keeps Calico IPIP unchanged.
 #
-# 1) Configure FRR on the BGP router host (e.g., bay_bgp)
+# 1) Configure FRR on the BGP router host (e.g., [bgp-router-hostname])
 ansible-playbook -i hosts_bay.ini bgp_router_manage.yaml --tags bgp
 #
 # 2) Install and configure MetalLB (BGP mode)

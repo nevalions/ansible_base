@@ -1,16 +1,39 @@
 ---
-haproxy_k8s_frontend_port: "{{ vault_k8s_api_port | default(vault_haproxy_k8s_frontend_port | default('[k8s-api-port]')) }}"
-haproxy_k8s_backend_port: "{{ vault_haproxy_k8s_backend_port | default('[haproxy-backend-port]') }}"
+# =============================================================================
+# Kubernetes API Load Balancing (existing)
+# =============================================================================
+haproxy_k8s_frontend_port: "{{ vault_k8s_api_port | default(vault_haproxy_k8s_frontend_port | default(6443)) }}"
+haproxy_k8s_backend_port: "{{ vault_haproxy_k8s_backend_port | default(6443) }}"
 
 haproxy_k8s_backend_hosts:
   - name: "control-plane-1"
-    wireguard_ip: "{{ vault_haproxy_k8s_backend_ip | default('[control-plane-ip]') }}"
+    wireguard_ip: "{{ vault_haproxy_k8s_backend_ip | default('[control-plane-wg-ip]') }}"
     backend_port: "{{ haproxy_k8s_backend_port }}"
 
-haproxy_k8s_allowed_networks:
-  - "{{ vault_wg_network_cidr | default('[vpn-network-cidr]') }}"
-  - "[control-plane-ip]"
+# Networks allowed to access K8s API via HAProxy (empty list = skip UFW rules for K8s API)
+haproxy_k8s_allowed_networks: "{{ vault_haproxy_k8s_allowed_networks | default([]) }}"
 
+# Skip UFW configuration for K8s API (useful if already configured or not needed)
+haproxy_k8s_skip_ufw: "{{ vault_haproxy_k8s_skip_ufw | default(true) }}"
+
+# =============================================================================
+# Ingress Load Balancing (HTTP/HTTPS to Kubernetes via BGP VIP)
+# =============================================================================
+# Enable/disable ingress forwarding (ports 80/443)
+haproxy_ingress_enabled: "{{ vault_haproxy_ingress_enabled | default(false) }}"
+
+# Frontend ports (what HAProxy listens on)
+haproxy_ingress_http_port: "{{ vault_haproxy_ingress_http_port | default(80) }}"
+haproxy_ingress_https_port: "{{ vault_haproxy_ingress_https_port | default(443) }}"
+
+# Backend target (BGP VIP that routes to MetalLB/Traefik)
+haproxy_ingress_backend_ip: "{{ vault_haproxy_ingress_backend_ip | default('[bgp-vip-address]') }}"
+haproxy_ingress_backend_http_port: "{{ vault_haproxy_ingress_backend_http_port | default(80) }}"
+haproxy_ingress_backend_https_port: "{{ vault_haproxy_ingress_backend_https_port | default(443) }}"
+
+# =============================================================================
+# Common Settings
+# =============================================================================
 haproxy_k8s_maxconn: 1000
 haproxy_k8s_timeout_connect: 5000
 haproxy_k8s_timeout_client: 30000

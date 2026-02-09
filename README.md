@@ -45,7 +45,7 @@ Notes:
 - WireGuard management: `wireguard_manage.yaml`
 - BGP HA for MetalLB (FRR + Keepalived): `bgp_ha_deploy.yaml`, `bgp_ha_verify.yaml`, `bgp_ha_test.yaml`, `bgp_ha_remove.yaml`
 - DNS deploy/remove: `dns_full_deployment_remove.yaml`, `dns_server_remove.yaml`, `dns_client_remove.yaml`
-- HAProxy remove (K8s API LB): `haproxy_k8s_remove.yaml`
+- HAProxy K8s API load balancer: `playbooks/haproxy_start_and_verify.yaml`, `playbooks/haproxy_verify.yaml`, `haproxy_k8s_remove.yaml`
 
 ## Documentation
 
@@ -53,6 +53,7 @@ Notes:
 - Kubernetes:
   - Setup guide: `KUBERNETES_SETUP.md`
   - Quick reference: `KUBERNETES_QUICKREF.md`
+- HAProxy K8s API load balancer: `HAPROXY_K8S_IMPLEMENTATION.md`, `roles/haproxy_k8s/README.md`, `roles/haproxy_verify/README.md`
 - WireGuard:
   - Setup: `WIREGUARD_SETUP.md`
   - Add node: `WIREGUARD_ADD_NODE.md`

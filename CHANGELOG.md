@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-02-09
+
+### Added
+- **haproxy_verify Role**:
+  - Comprehensive HAProxy verification for Kubernetes API load balancing
+  - Service status checks (active state, enabled state, PIDs)
+  - Configuration validation (syntax, frontend port, backend servers)
+  - Network verification (listening ports, firewall rules)
+  - Backend connectivity tests (TCP connections, ping tests)
+  - Non-failing design - continues even when checks fail
+  - Support for custom timeouts and retry counts
+  - Vault Variables:
+  - `vault_haproxy_k8s_frontend_port`: HAProxy frontend port
+  - `vault_k8s_control_planes`: List of control plane backends
+  - `vault_wg_network_cidr`: WireGuard network CIDR for firewall checks
+  - **Role Variables**:
+  - `verify_timeout_seconds`: Timeout for checks (default: 30)
+  - `verify_retry_count`: Retry count for checks (default: 3)
+  - `verify_sleep_seconds`: Sleep between retries (default: 2)
+
+- **Playbooks**:
+  - `playbooks/haproxy_spb_k8s.yaml`: Configure HAProxy on [haproxy-hostname] for Kubernetes API
+  - `playbooks/haproxy_start_and_verify.yaml`: Combined configuration and verification playbook
+  - `playbooks/haproxy_verify.yaml`: Standalone HAProxy verification playbook
+
+- **Unit Tests**:
+  - `tests/unit/test_haproxy_verify_variables.yaml`: Validate haproxy_verify role variables
+
+### Documentation
+- **HAPROXY_K8S_IMPLEMENTATION.md**:
+  - Complete HAProxy for Kubernetes API implementation summary
+  - Architecture diagrams showing WireGuard network integration
+  - Usage examples for start & verify playbooks
+  - Verification report template
+  - Troubleshooting guides
+- **roles/haproxy_verify/README.md**:
+  - Role requirements and variables documentation
+  - Usage examples with tags
+  - Detailed checks performed breakdown
+  - Example output and troubleshooting section
+- **roles/haproxy_k8s/README.md**:
+  - Updated architecture section with multi-control plane VIP support
+  - Enhanced usage examples
+
+### Changed
+- **vault_secrets.example.yml**:
+  - Added HAProxy Kubernetes API variables structure
+  - Enhanced vault variable documentation
+
+### Security
+- **Verification Script** (`scripts/verify_sensitive_data.py`):
+  - Updated to allow standard K8s API port (6443) in hosts: field
+  - Improved false positive handling for inventory group names
+  - Better detection of real infrastructure identifiers
+
 ## [1.6.0] - 2026-02-03
 
 ### Added
@@ -211,7 +266,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `meta/main.yaml` for all 11 roles with galaxy_info, platforms, tags, and dependencies
 - **Variable Organization**:
   - `group_vars/` directory structure for inventory variables
-  - 8 group variable files: `bgp.yml`, `lb.yml`, `planes.yml`, `workers_super.yml`, `workers_vas.yml`, `cloud_workers.yml`, `cloud_planes.yml`, `bay_cluster_all.yml`
+  - Group variable files for BGP routers, load balancers, control planes, and workers
 - **Playbook Enhancements**:
   - `tags:` parameter to all 12 playbooks for selective execution
   - `gather_facts:` explicit declarations to all playbooks
@@ -284,7 +339,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `meta/main.yaml` for all 11 roles with author, description, platforms, tags, and dependencies
 - **Variable Organization**:
   - `group_vars/` directory structure for inventory variables
-  - 8 group variable files: `bgp.yml`, `lb.yml`, `planes.yml`, `workers_super.yml`, `workers_vas.yml`, `cloud_workers.yml`, `cloud_planes.yml`, `bay_cluster_all.yml`
+  - Group variable files for BGP routers, load balancers, control planes, and workers
 - **Playbook Enhancements**:
   - `tags:` parameter to all 12 playbooks for selective execution
   - `gather_facts:` explicit declarations to all playbooks

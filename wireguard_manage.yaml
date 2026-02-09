@@ -71,7 +71,7 @@
         wg_allowed_networks_merged: "{{ (vault_wg_allowed_networks | default([])) + [vault_k8s_pod_subnet] | unique }}"
 
     # NOTE: Pod CIDR is NOT included in routed_cidrs because Calico IPIP
-    # encapsulates pod traffic and sends it to node WireGuard IPs (9.11.0.x).
+    # encapsulates pod traffic and sends it to node WireGuard IPs ([vpn-network-cidr]).
     # Including pod CIDR creates a broad 10.244.0.0/16 route via wg99 that
     # conflicts with Calico's per-node /26 routes via tunl0, breaking
     # ClusterIP connectivity from pods (e.g. MetalLB controller cannot

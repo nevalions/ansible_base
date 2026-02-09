@@ -1,4 +1,4 @@
-# HAProxy Configuration for Kubernetes API Server
+# HAProxy Configuration for Kubernetes
 # Managed by Ansible - DO NOT EDIT MANUALLY
 
 global
@@ -44,7 +44,50 @@ backend k8s-api-backend
     option tcp-check
     timeout connect {{ haproxy_k8s_timeout_connect }}
     timeout server  {{ haproxy_k8s_timeout_server }}
- {% for host in haproxy_k8s_backend_hosts_dynamic | default(haproxy_k8s_backend_hosts) %}
-     server {{ host.name }} {{ host.wireguard_ip }}:{{ host.backend_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
- {% endfor %}
+{% for host in haproxy_k8s_backend_hosts_dynamic | default(haproxy_k8s_backend_hosts) %}
+    server {{ host.name }} {{ host.wireguard_ip }}:{{ host.backend_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+{% endfor %}
 # END ANSIBLE MANAGED SECTION - Kubernetes API Backend
+
+{% if haproxy_ingress_enabled | default(false) | bool %}
+# =============================================================================
+# INGRESS LOAD BALANCING (HTTP/HTTPS to Kubernetes via BGP VIP)
+# =============================================================================
+# Traffic flow: Internet -> HAProxy -> BGP VIP -> FRR -> MetalLB -> Traefik -> App
+
+# BEGIN ANSIBLE MANAGED SECTION - Ingress HTTP Frontend
+frontend ingress-http
+    bind *:{{ haproxy_ingress_http_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_k8s_timeout_client }}
+    default_backend ingress-http-backend
+# END ANSIBLE MANAGED SECTION - Ingress HTTP Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Ingress HTTP Backend
+backend ingress-http-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_k8s_timeout_server }}
+    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_http_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+# END ANSIBLE MANAGED SECTION - Ingress HTTP Backend
+
+# BEGIN ANSIBLE MANAGED SECTION - Ingress HTTPS Frontend
+frontend ingress-https
+    bind *:{{ haproxy_ingress_https_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_k8s_timeout_client }}
+    default_backend ingress-https-backend
+# END ANSIBLE MANAGED SECTION - Ingress HTTPS Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Ingress HTTPS Backend
+backend ingress-https-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_k8s_timeout_server }}
+    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_https_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+# END ANSIBLE MANAGED SECTION - Ingress HTTPS Backend
+{% endif %}

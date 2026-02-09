@@ -1,0 +1,135 @@
+---
+# Verify HAProxy ingress configuration on haproxy_spb
+#
+# Usage:
+#   ansible-playbook -i hosts_bay.ini haproxy_ingress_verify.yaml
+#
+# This playbook verifies:
+#   1. HAProxy service is running
+#   2. HAProxy is listening on ports 80, 443, 6443
+#   3. BGP VIP is reachable from HAProxy
+#   4. End-to-end HTTP connectivity through the ingress chain
+
+- name: Verify HAProxy Ingress Configuration
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - haproxy
+    - ingress
+    - verify
+  vars:
+    haproxy_k8s_port: "{{ vault_k8s_api_port | default(6443) }}"
+    haproxy_http_port: "{{ vault_haproxy_ingress_http_port | default(80) }}"
+    haproxy_https_port: "{{ vault_haproxy_ingress_https_port | default(443) }}"
+    bgp_vip: "{{ vault_haproxy_ingress_backend_ip | default('[bgp-vip-address]') }}"
+
+  tasks:
+    - name: Check HAProxy service status
+      ansible.builtin.systemd:
+        name: haproxy
+      register: haproxy_service
+
+    - name: Display HAProxy service status
+      ansible.builtin.debug:
+        msg: "HAProxy service: {{ 'RUNNING' if haproxy_service.status.ActiveState == 'active' else 'NOT RUNNING' }}"
+
+    - name: Assert HAProxy is running
+      ansible.builtin.assert:
+        that:
+          - haproxy_service.status.ActiveState == 'active'
+        success_msg: "HAProxy service is running"
+        fail_msg: "HAProxy service is NOT running. Start with: systemctl start haproxy"
+
+    - name: Check HAProxy listening on K8s API port
+      ansible.builtin.shell: ss -tln | grep -q ':{{ haproxy_k8s_port }}'
+      register: k8s_port_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check HAProxy listening on HTTP port
+      ansible.builtin.shell: ss -tln | grep -q ':{{ haproxy_http_port }}'
+      register: http_port_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check HAProxy listening on HTTPS port
+      ansible.builtin.shell: ss -tln | grep -q ':{{ haproxy_https_port }}'
+      register: https_port_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display port status
+      ansible.builtin.debug:
+        msg:
+          - "Port {{ haproxy_k8s_port }} (K8s API): {{ 'LISTENING' if k8s_port_check.rc == 0 else 'NOT LISTENING' }}"
+          - "Port {{ haproxy_http_port }} (HTTP):    {{ 'LISTENING' if http_port_check.rc == 0 else 'NOT LISTENING' }}"
+          - "Port {{ haproxy_https_port }} (HTTPS):   {{ 'LISTENING' if https_port_check.rc == 0 else 'NOT LISTENING' }}"
+
+    - name: Assert all ports are listening
+      ansible.builtin.assert:
+        that:
+          - k8s_port_check.rc == 0
+          - http_port_check.rc == 0
+          - https_port_check.rc == 0
+        success_msg: "All HAProxy ports are listening"
+        fail_msg: "Some HAProxy ports are not listening"
+
+    - name: Check BGP VIP reachability (ping)
+      ansible.builtin.shell: ping -c 2 -W 2 {{ bgp_vip }}
+      register: bgp_vip_ping
+      changed_when: false
+      failed_when: false
+
+    - name: Display BGP VIP ping result
+      ansible.builtin.debug:
+        msg: "BGP VIP {{ bgp_vip }}: {{ 'REACHABLE' if bgp_vip_ping.rc == 0 else 'NOT REACHABLE' }}"
+
+    - name: Check HTTP connectivity to BGP VIP
+      ansible.builtin.uri:
+        url: "http://{{ bgp_vip }}"
+        method: GET
+        timeout: 10
+        follow_redirects: none
+        status_code: [200, 301, 302, 307, 308, 404]
+      register: http_check
+      failed_when: false
+
+    - name: Display HTTP connectivity result
+      ansible.builtin.debug:
+        msg: "HTTP to BGP VIP: {{ 'OK (status ' ~ http_check.status ~ ')' if http_check.status is defined else 'FAILED - ' ~ (http_check.msg | default('unknown error')) }}"
+
+    - name: Check Nginx is not running (conflict prevention)
+      ansible.builtin.shell: systemctl is-active nginx
+      register: nginx_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display Nginx status
+      ansible.builtin.debug:
+        msg: "Nginx service: {{ 'STOPPED (OK)' if nginx_check.rc != 0 else 'RUNNING (WARNING - may conflict with HAProxy)' }}"
+
+    - name: Warn if Nginx is running
+      ansible.builtin.debug:
+        msg: "WARNING: Nginx is running and may conflict with HAProxy on ports 80/443. Consider stopping it: systemctl stop nginx && systemctl disable nginx"
+      when: nginx_check.rc == 0
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================"
+          - "        HAProxy Ingress Verification        "
+          - "============================================"
+          - "HAProxy Service:  {{ 'OK' if haproxy_service.status.ActiveState == 'active' else 'FAILED' }}"
+          - "Port {{ haproxy_k8s_port }} (K8s API): {{ 'OK' if k8s_port_check.rc == 0 else 'FAILED' }}"
+          - "Port {{ haproxy_http_port }} (HTTP):    {{ 'OK' if http_port_check.rc == 0 else 'FAILED' }}"
+          - "Port {{ haproxy_https_port }} (HTTPS):   {{ 'OK' if https_port_check.rc == 0 else 'FAILED' }}"
+          - "BGP VIP Ping:     {{ 'OK' if bgp_vip_ping.rc == 0 else 'FAILED' }}"
+          - "HTTP to BGP VIP:  {{ 'OK' if http_check.status is defined else 'FAILED' }}"
+          - "Nginx Stopped:    {{ 'OK' if nginx_check.rc != 0 else 'WARNING' }}"
+          - "============================================"
+          - "Public endpoint:  http://{{ ansible_host }}"
+          - "                  https://{{ ansible_host }}"
+          - "============================================"
