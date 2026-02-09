@@ -43,3 +43,16 @@ ports:
     http:
       tls:
         enabled: {{ traefik_tls_enabled | bool | lower }}
+{% if traefik_certresolver_enabled | bool %}
+        certResolver: {{ traefik_certresolver_name | default('letsencrypt') }}
+{% endif %}
+
+{% if traefik_certresolver_enabled | bool %}
+certificatesResolvers:
+  {{ traefik_certresolver_name | default('letsencrypt') }}:
+    acme:
+      email: {{ traefik_acme_email }}
+      storage: {{ traefik_acme_storage | default('/data/acme.json') }}
+      httpChallenge:
+        entryPoint: {{ traefik_acme_httpchallenge_entrypoint | default('web') }}
+{% endif %}
