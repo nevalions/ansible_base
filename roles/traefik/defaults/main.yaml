@@ -33,6 +33,13 @@ traefik_dashboard_enabled: "{{ vault_traefik_dashboard_enabled | default(false) 
 traefik_tls_enabled: "{{ vault_traefik_tls_enabled | default(true) }}"
 traefik_http_redirect_to_https: "{{ vault_traefik_http_redirect_to_https | default(true) }}"
 
+# ACME certificate resolver (Let's Encrypt)
+traefik_certresolver_enabled: "{{ vault_traefik_certresolver_enabled | default(false) }}"
+traefik_certresolver_name: "{{ vault_traefik_certresolver_name | default('letsencrypt') }}"
+traefik_acme_email: "{{ vault_traefik_acme_email }}"
+traefik_acme_storage: "{{ vault_traefik_acme_storage | default('/data/acme.json') }}"
+traefik_acme_httpchallenge_entrypoint: "{{ vault_traefik_acme_httpchallenge_entrypoint | default('web') }}"
+
 # Removal behavior
 traefik_remove_namespace: "{{ vault_traefik_remove_namespace | default(false) }}"
 
