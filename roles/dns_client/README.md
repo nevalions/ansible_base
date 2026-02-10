@@ -24,6 +24,13 @@ Configure DNS client settings on Debian/Ubuntu systems by managing `/etc/resolv.
 |----------|-------------|---------|
 | `vault_dns_client_options` | List of resolv.conf options | `["timeout:2", "attempts:3", "rotate"]` |
 
+### Kubernetes (Optional)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `vault_dns_client_node_local_enabled` | Enable node-local `dnsmasq` on Kubernetes nodes to filter AAAA answers (helps when IPv6 is not routed) | Auto-enabled for common k8s inventory groups |
+| `vault_dns_client_filter_aaaa` | Filter AAAA DNS answers in node-local dnsmasq | `true` |
+
 ## Dependencies
 
 None
@@ -88,9 +95,10 @@ ansible-playbook your_playbook.yaml
 1. Stops and disables `systemd-resolved` (Debian/Ubuntu only)
 2. Removes the systemd-resolved stub `/etc/resolv.conf`
 3. Backs up the original `/etc/resolv.conf` to `/etc/resolv.conf.original`
-4. Deploys a new `/etc/resolv.conf` with your custom DNS settings
-5. Tests DNS resolution to verify connectivity
-6. Asserts that DNS is working correctly
+4. Optionally configures node-local `dnsmasq` to forward DNS and filter AAAA responses (Kubernetes-friendly)
+5. Deploys a new `/etc/resolv.conf` with your custom DNS settings
+6. Tests DNS resolution to verify connectivity
+7. Asserts that DNS is working correctly
 
 ### On Remove:
 
@@ -161,6 +169,14 @@ dig @[dns-server-vpn-ip] google.com
    ```bash
    cat /etc/resolv.conf
    ```
+
+### Kubernetes nodes can resolve, but containerd/ACME fails (IPv6 AAAA selected)
+
+If your nodes have no IPv6 default route but your upstream resolver returns AAAA records,
+some clients (containerd pulls, ACME) may try IPv6 first and fail.
+
+For Kubernetes nodes, enable node-local dnsmasq AAAA filtering so both the node and CoreDNS
+(when using `dnsPolicy: Default`) get IPv4-only upstream answers.
 
 ### systemd-resolved keeps taking over:
 

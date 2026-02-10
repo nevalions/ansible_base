@@ -81,7 +81,7 @@ ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=tr
 
 | Group | Hosts | Purpose |
 |-------|-------|---------|
-| `dns_servers` | [dns-server-1], [bgp-router] | DNS servers (dnsmasq) |
+| `dns_servers` | [dns-server-1], [bgp-router] | DNS servers (unbound) |
 | `dns_clients` | [control-plane-1], [worker-host-2], [worker-host-1] | DNS clients |
 | `wireguard_servers` | [dns-server-1], [bgp-router], [control-plane-1] | WG servers (accept connections) |
 | `wireguard_clients` | [worker-host-2], [worker-host-1] | WG clients (connect to servers) |
@@ -99,7 +99,7 @@ ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=tr
 Deploy DNS servers first - required for hostname resolution.
 
 ```bash
-# Deploy DNS servers (dnsmasq on [dns-server-1] and [bgp-router])
+# Deploy DNS servers (unbound on [dns-server-1] and [bgp-router])
 ansible-playbook -i hosts_bay.ini dns_server_manage.yaml --tags dns
 ```
 

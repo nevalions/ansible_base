@@ -1,0 +1,22 @@
+# Managed by Ansible (dns_client role) - DO NOT EDIT
+
+# Listen on the node's WireGuard interface address so CoreDNS pods (dnsPolicy: Default)
+# can reach it via the node IP. Do not bind to 127.0.0.1 to avoid CoreDNS forward loops.
+interface={{ dns_client_node_local_interface }}
+listen-address={{ dns_client_node_local_listen_ip }}
+bind-interfaces
+
+# Only act as a forwarder
+port=53
+no-resolv
+strict-order
+
+# Upstreams (avoid self)
+{% for ns in dns_client_dnsmasq_upstreams | default([]) %}
+server={{ ns }}
+{% endfor %}
+
+{% if dns_client_filter_aaaa | bool %}
+# Drop AAAA answers (forces IPv4 usage for clients like containerd/ACME)
+filter-AAAA
+{% endif %}

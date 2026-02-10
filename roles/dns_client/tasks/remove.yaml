@@ -1,4 +1,19 @@
 ---
+- name: Stop and disable dnsmasq (best-effort)
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: stopped
+    enabled: false
+  failed_when: false
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Remove dnsmasq config managed by dns_client role
+  ansible.builtin.file:
+    path: "{{ dns_client_dnsmasq_config_path | default('/etc/dnsmasq.d/99-k8s-filter-aaaa.conf') }}"
+    state: absent
+  failed_when: false
+  when: ansible_facts['os_family'] == 'Debian'
+
 - name: Check for original resolv.conf backup
   ansible.builtin.stat:
     path: /etc/resolv.conf.original

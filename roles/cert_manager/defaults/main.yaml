@@ -25,9 +25,18 @@ cert_manager_clusterissuer_staging_name: "{{ vault_cert_manager_clusterissuer_st
 cert_manager_clusterissuer_staging_private_key_secret_name: >-
   {{ vault_cert_manager_clusterissuer_staging_private_key_secret_name | default('letsencrypt-staging') }}
 
+# ClusterIssuer (Let's Encrypt production)
+cert_manager_clusterissuer_prod_enabled: "{{ vault_cert_manager_clusterissuer_prod_enabled | default(false) }}"
+cert_manager_clusterissuer_prod_name: "{{ vault_cert_manager_clusterissuer_prod_name | default('letsencrypt-prod') }}"
+cert_manager_clusterissuer_prod_private_key_secret_name: >-
+  {{ vault_cert_manager_clusterissuer_prod_private_key_secret_name | default('letsencrypt-prod') }}
+
 cert_manager_acme_email: "{{ vault_cert_manager_acme_email | default('[your-email]') }}"
 cert_manager_acme_server_staging: >-
   {{ vault_cert_manager_acme_server_staging | default('https://acme-staging-v02.api.letsencrypt.org/directory') }}
+
+cert_manager_acme_server_prod: >-
+  {{ vault_cert_manager_acme_server_prod | default('https://acme-v02.api.letsencrypt.org/directory') }}
 
 # HTTP-01 solver (Traefik)
 cert_manager_http01_ingress_class: "{{ vault_cert_manager_http01_ingress_class | default('traefik') }}"

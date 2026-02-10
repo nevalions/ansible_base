@@ -68,6 +68,15 @@
       failed_when: false
       when: cert_manager_clusterissuer_staging_enabled | bool
 
+    - name: Check ClusterIssuer production exists
+      ansible.builtin.command: kubectl get clusterissuer {{ cert_manager_clusterissuer_prod_name }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: cert_manager_issuer_prod_check
+      changed_when: false
+      failed_when: false
+      when: cert_manager_clusterissuer_prod_enabled | bool
+
     - name: Display ClusterIssuer status (wide)
       ansible.builtin.command: kubectl get clusterissuer {{ cert_manager_clusterissuer_staging_name }} -o wide
       environment:
@@ -103,6 +112,15 @@
       changed_when: false
       failed_when: false
       when: cert_manager_clusterissuer_staging_enabled | bool
+
+    - name: Delete ClusterIssuer production (best-effort)
+      ansible.builtin.command: kubectl delete clusterissuer {{ cert_manager_clusterissuer_prod_name }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: cert_manager_issuer_prod_delete
+      changed_when: false
+      failed_when: false
+      when: cert_manager_clusterissuer_prod_enabled | bool
 
     - name: Uninstall cert-manager release (best-effort)
       ansible.builtin.command: >-
@@ -191,6 +209,13 @@
         mode: "0644"
       when: cert_manager_clusterissuer_staging_enabled | bool
 
+    - name: Render ClusterIssuer (Let's Encrypt production)
+      ansible.builtin.template:
+        src: clusterissuer-prod.yaml.j2
+        dest: /tmp/cert-manager-clusterissuer-prod.yaml
+        mode: "0644"
+      when: cert_manager_clusterissuer_prod_enabled | bool
+
     - name: Apply ClusterIssuer (Let's Encrypt staging)
       ansible.builtin.command: kubectl apply -f /tmp/cert-manager-clusterissuer-staging.yaml
       environment:
@@ -198,6 +223,14 @@
       register: cert_manager_issuer_apply
       changed_when: "'created' in cert_manager_issuer_apply.stdout or 'configured' in cert_manager_issuer_apply.stdout"
       when: cert_manager_clusterissuer_staging_enabled | bool
+
+    - name: Apply ClusterIssuer (Let's Encrypt production)
+      ansible.builtin.command: kubectl apply -f /tmp/cert-manager-clusterissuer-prod.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: cert_manager_issuer_prod_apply
+      changed_when: "'created' in cert_manager_issuer_prod_apply.stdout or 'configured' in cert_manager_issuer_prod_apply.stdout"
+      when: cert_manager_clusterissuer_prod_enabled | bool
 
     - name: Wait for ClusterIssuer staging to be Ready
       ansible.builtin.command: >-

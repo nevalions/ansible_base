@@ -6,3 +6,38 @@ dns_nameservers: "{{ [vault_dns_server_primary, vault_dns_server_secondary] | se
 dns_search_domains: "{{ [vault_dns_zone] | select('defined') | select('ne', '') | list }}"
 dns_options: "{{ vault_dns_client_options | default(['timeout:2', 'attempts:3', 'rotate']) }}"
 dns_test_host: "google.com"
+
+# Kubernetes / WireGuard note:
+# In this repo CoreDNS commonly runs with dnsPolicy: Default, meaning it uses the node's
+# /etc/resolv.conf as upstream. If the upstream resolver returns AAAA records but the
+# nodes have no working IPv6 egress, some clients (containerd, ACME) may try IPv6 first
+# and fail without falling back.
+#
+# Enable node-local dnsmasq to filter AAAA answers and forward to the real DNS servers.
+# IMPORTANT: Do NOT use 127.0.0.1 here because CoreDNS pods would forward to themselves.
+# We bind dnsmasq to the node's wg99 IP and set /etc/resolv.conf to that node IP.
+
+# Enable node-local DNS forwarder (dnsmasq) with AAAA filtering.
+# Can be overridden via vault vars if needed.
+dns_client_node_local_enabled: >-
+  {{
+    vault_dns_client_node_local_enabled
+    | default(
+        inventory_hostname in (
+          (groups.get('kuber_small_all', [])
+           + groups.get('kuber_small_all_with_services', [])
+           + groups.get('planes_all', [])
+           + groups.get('workers_all', []))
+        ),
+        true
+      )
+  }}
+
+# WireGuard interface name to bind dnsmasq on (node IP is derived from facts)
+dns_client_node_local_interface: "{{ vault_wg_interface | default('wg99') }}"
+
+# Filter AAAA responses (forces IPv4-only upstream resolution)
+dns_client_filter_aaaa: "{{ vault_dns_client_filter_aaaa | default(true) }}"
+
+# dnsmasq config path managed by this role
+dns_client_dnsmasq_config_path: "/etc/dnsmasq.d/99-k8s-filter-aaaa.conf"

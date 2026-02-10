@@ -50,7 +50,7 @@ Running Kubernetes with Calico CNI over WireGuard requires specific configuratio
 ### Network Flow
 
 ```
-Pod (10.244.x.x) → IPIP Tunnel → WireGuard ([vpn-network-cidr]) → Remote Node
+Pod ([pod-network-cidr]) → IPIP Tunnel → WireGuard ([vpn-network-cidr]) → Remote Node
                       ↓
               NAT (MASQUERADE)
                       ↓
@@ -62,7 +62,7 @@ Pod (10.244.x.x) → IPIP Tunnel → WireGuard ([vpn-network-cidr]) → Remote N
 Without `natOutgoing: true`:
 - Pods can reach other pods via IPIP tunnels ✓
 - Pods CANNOT reach node WireGuard IPs ([vpn-network-cidr]) ✗
-- Pods CANNOT reach Kubernetes API (10.96.0.1 → [control-plane-wg-ip]:6443) ✗
+- Pods CANNOT reach Kubernetes API ([kube-service-cidr] → [control-plane-wg-ip]:6443) ✗
 - MetalLB controller crashes with API timeout ✗
 
 ### Typha Anti-Affinity
@@ -121,8 +121,79 @@ typhaDeployment:
 - Loads required kernel modules (overlay, br_netfilter)
 - Configures IP forwarding and bridge networking
 - Configures containerd cgroup driver (systemd)
-- Configures UFW firewall with required ports
-- Enables UFW
+- Disables UFW on Kubernetes nodes (to avoid Calico/WireGuard forwarding issues)
+
+---
+
+## TLS Certificates (Traefik)
+
+This repository supports two approaches:
+
+### Recommended: cert-manager issues certs (no Traefik ACME storage)
+
+Use cert-manager to obtain/renew certificates and store them as Kubernetes TLS Secrets.
+Traefik then serves those secrets.
+
+Why this is recommended:
+- Traefik OSS ACME storage is file-based (`acme.json`). Without persistence, certs/state disappear when the Traefik pod is recreated.
+- Traefik docs recommend cert-manager for Kubernetes HA scenarios.
+
+Steps:
+```bash
+# Install cert-manager and ClusterIssuer
+ansible-playbook -i hosts_bay.ini kuber_cert_manager_install.yaml
+
+# Install/upgrade Traefik (with Traefik ACME disabled)
+# In vault_secrets.yml: vault_traefik_certresolver_enabled: false
+ansible-playbook -i hosts_bay.ini kuber_traefik_install.yaml
+```
+
+Optional cleanup after the switch:
+- Keep `vault_traefik_certresolver_enabled: false`
+- Ensure Traefik is not configured with:
+  - `--entryPoints.websecure.http.tls.certResolver=...`
+  - `--certificatesresolvers.*.acme.*`
+
+In this repo, those values are only rendered when `vault_traefik_certresolver_enabled: true`.
+
+Example `Certificate` + `IngressRoute` (placeholders):
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: butakov-su
+  namespace: web-test
+spec:
+  secretName: butakov-su-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-prod
+  dnsNames:
+    - example.com
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: butakov-https
+  namespace: web-test
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`example.com`)
+      services:
+        - name: nginx-test-svc
+          port: 80
+  tls:
+    secretName: butakov-su-tls
+```
+
+### Alternative: Traefik issues certs itself (ACME)
+
+If you enable Traefik ACME (`vault_traefik_certresolver_enabled: true`), you should also persist
+`/data/acme.json` using a PVC (see Traefik role persistence variables).
 
 **Pre-flight Variables** (roles/kuber/defaults/main.yaml):
 ```yaml
@@ -514,6 +585,56 @@ kubectl delete pod test-pod
 - Check Calico IP pools: `kubectl get ippool -o wide`
 - Check Calico configuration: `kubectl get installation -o yaml`
 - Test DNS: `kubectl run dns-test --image=busybox --rm -it -- nslookup [k8s-service]`
+
+**3.1 Kubernetes + WireGuard: UFW blocks pod egress (DNS/ACME fails)**
+
+**Symptoms:**
+- Traefik serves `TRAEFIK DEFAULT CERT`
+- CoreDNS logs timeouts to upstream DNS over WireGuard
+- Pod DNS lookups to upstream DNS over WireGuard time out while node `dig` works
+
+**Root cause:** UFW (or a default FORWARD drop) blocks forwarded pod traffic (`cali*` interfaces) to `wg99`.
+
+**Fix (repo default):** disable UFW on all Kubernetes nodes (planes + workers). The `kuber` role does this best-effort.
+
+**Quick check (on the affected node):**
+```bash
+sudo systemctl is-active ufw || true
+sudo iptables -S FORWARD
+sudo iptables -L FORWARD -v -n --line-numbers
+```
+
+**3.2 ImagePullBackOff / ACME failures due to AAAA records (no IPv6 route)**
+
+**Symptoms:**
+- Pods cannot start because images fail to pull (e.g. `busybox`, `nginx`)
+- containerd/crictl errors show `dial tcp [2600:...]:443: network is unreachable`
+- ACME clients may fail if they pick IPv6 first
+
+**Root cause:** upstream DNS returns AAAA records, but nodes do not have working IPv6 egress.
+Some clients do not fall back cleanly to IPv4.
+
+**Fix (recommended in this repo):** enable node-local dnsmasq on the node's `wg99` IP with `filter-AAAA`, and point
+the node `/etc/resolv.conf` at that node IP. This is Kubernetes-safe when CoreDNS runs with `dnsPolicy: Default`
+(CoreDNS forwards using the node's resolv.conf).
+
+**Apply:**
+```bash
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+
+# CoreDNS pods need a restart to pick up updated node resolv.conf
+kubectl -n kube-system rollout restart deploy/coredns
+kubectl -n kube-system rollout status deploy/coredns
+```
+
+**Verify:**
+```bash
+sudo crictl pull docker.io/library/busybox:1.36
+
+# Get CoreDNS (kube-dns) ClusterIP and query through it
+KUBEDNS_IP=$(kubectl -n kube-system get svc kube-dns -o jsonpath='{.spec.clusterIP}')
+dig +short @${KUBEDNS_IP} registry-1.docker.io AAAA   # should be empty after filtering
+```
 
 **4. Token Issues**
 - Join playbook generates fresh token automatically

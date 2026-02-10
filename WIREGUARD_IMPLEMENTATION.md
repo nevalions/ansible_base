@@ -307,7 +307,7 @@ The playbook will:
 4. **Generate peer keys** (auto-generated for each peer)
 5. **Deploy server config** to `/etc/wireguard/wg99.conf`
 6. **Deploy client configs** to all peers in `host_group`
-7. **Configure UFW firewall** on servers and clients
+7. **Configure firewall** (optional)
 8. **Start WireGuard service** on all hosts
 9. **Backup existing configs** (if any) to `/etc/wireguard/backups/`
 
@@ -439,11 +439,11 @@ Expected output:
  3 packets transmitted, 3 received, 0% packet loss
  ```
 
-### 6.5 Check UFW Status
+### 6.5 Check firewall status
 
  ```bash
  # Check WireGuard server port
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "ufw status | grep [server-port]"
+ ansible -i hosts_bay.ini wireguard_servers -m shell -a "ufw status | grep [server-port]"  # if UFW is in use
 
  # Check NAT port
  ansible -i hosts_bay.ini wireguard_servers -m shell -a "ufw status | grep [unique-port]"
@@ -603,8 +603,15 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "journalctl -u wg-quick@w
 # Follow logs in real-time
 ansible -i hosts_bay.ini wireguard_servers -m shell -a "journalctl -u wg-quick@wg99 -f"
 
-# Check UFW logs
+# Check UFW logs (only if UFW is enabled)
 ansible -i hosts_bay.ini wireguard_servers -m shell -a "grep wg99 /var/log/ufw.log | tail -20"
+
+## Kubernetes Note: Avoid UFW on K8s Nodes
+
+When using Kubernetes (Calico) over WireGuard:
+- Prefer disabling UFW on Kubernetes nodes (control planes + workers).
+- UFW defaults can drop forwarded pod traffic (`cali*` -> `wg99`) and break pod DNS/egress.
+- This repository's Kubernetes role disables UFW on K8s nodes by default.
 ```
 
 ### 9.4 Verify Backup Files
@@ -622,6 +629,23 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "cat /etc/wireguard/backu
 ## Step 10: Troubleshooting
 
 ### 10.1 Common Issues
+
+#### Issue: Routed CIDRs not added to AllowedIPs for `is_server: true` peers
+
+**Symptoms:** configs deploy successfully, but `AllowedIPs` contains only the peer VPN /32s and is missing the routed CIDRs (VIPs / LoadBalancer pools). This typically shows up as application connectivity failures through the cluster network even though WireGuard handshakes are established.
+
+**Root cause (historical):** the server-side port assignment step previously rebuilt `vault_wg_peers` and unintentionally dropped optional keys like `is_server`. Since routed CIDRs are appended only when `peer.is_server` is true, the template condition evaluated to false and the routed CIDRs were skipped.
+
+**Resolution:** ensure your role version preserves the full peer dict when assigning ports (only adds `client_listen_port`), and that your peer entries in `vault_wg_peers` explicitly include `is_server: true` for nodes expected to route.
+
+**Verification:**
+```bash
+# Re-render and inspect diff for server config
+ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit wireguard_servers --tags wireguard --diff
+
+# After deploy, inspect AllowedIPs on the server
+sudo grep -n "^AllowedIPs" /etc/wireguard/[interface-name].conf
+```
 
 #### Issue: Peers not connecting
 

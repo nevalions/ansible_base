@@ -98,6 +98,21 @@ verify_timeout_seconds: "300"
 
 ## Troubleshooting
 
+### Common Networking Gotchas (WireGuard + Calico)
+
+```bash
+# UFW should be inactive on k8s nodes (forwarding + Calico)
+systemctl is-active ufw || true
+
+# Quick pod DNS sanity (requires image pulls to work)
+kubectl run -it --rm dns-test --image=busybox:1.36 --restart=Never -- nslookup acme-v02.api.letsencrypt.org
+
+# If you see ImagePullBackOff with IPv6 (2600:...) errors:
+# Enable node-local dnsmasq AAAA filtering on wg99 via dns_client_manage.yaml
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+kubectl -n kube-system rollout restart deploy/coredns
+```
+
 ```bash
 # Reset everything
 ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --tags reset

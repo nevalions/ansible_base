@@ -1,0 +1,24 @@
+---
+- name: Disable IPv6 on Kubernetes nodes
+  hosts: "{{ k8s_disable_ipv6_hosts | default('kuber_small_all') }}"
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../vault_secrets.yml
+  tags:
+    - network
+    - ipv6
+    - k8s
+  tasks:
+    - name: Disable IPv6 on non-loopback interfaces via sysctl
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        # Avoid disabling IPv6 globally (which can remove ::1 and break some clients).
+        # Prefer filtering AAAA via node-local DNS instead.
+        - { name: "net.ipv6.conf.{{ vault_wg_interface | default('wg99') }}.disable_ipv6", value: "1" }
+        - { name: "net.ipv6.conf.{{ ansible_default_ipv4.interface }}.disable_ipv6", value: "1" }

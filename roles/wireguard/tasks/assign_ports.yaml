@@ -7,13 +7,9 @@
   ansible.builtin.set_fact:
     vault_wg_peers_with_ports: >-
       {{ vault_wg_peers_with_ports +
-         [{
-           'name': item.name,
-           'host_group': item.host_group,
-           'allowed_ips': item.allowed_ips,
-           'endpoint': item.endpoint,
-           'client_listen_port': item.client_listen_port | default((vault_wg_client_port_start | int + ansible_loop.index0) | string)
-         }] }}
+         [ item | combine({
+             'client_listen_port': (item.client_listen_port | default((vault_wg_client_port_start | int + ansible_loop.index0) | string))
+           }) ] }}
   loop: "{{ vault_wg_peers | default([]) }}"
   loop_control:
     extended: yes

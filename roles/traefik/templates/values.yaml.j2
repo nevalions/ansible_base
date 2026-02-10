@@ -23,6 +23,20 @@ ingressRoute:
   dashboard:
     enabled: {{ traefik_dashboard_enabled | bool | lower }}
 
+{% if traefik_persistence_enabled | default(false) | bool %}
+persistence:
+  enabled: true
+{%   if traefik_persistence_existing_claim | default('') | length > 0 %}
+  existingClaim: "{{ traefik_persistence_existing_claim }}"
+{%   else %}
+  accessMode: "{{ traefik_persistence_access_mode | default('ReadWriteOnce') }}"
+  size: "{{ traefik_persistence_size | default('1Gi') }}"
+{%     if traefik_persistence_storage_class | default('') | length > 0 %}
+  storageClass: "{{ traefik_persistence_storage_class }}"
+{%     endif %}
+{%   endif %}
+{% endif %}
+
 ports:
   web:
     expose:

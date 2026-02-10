@@ -4,6 +4,90 @@
     path: /etc/resolv.conf
   register: resolv_conf_stat
 
+- name: Compute DNS client effective settings
+  ansible.builtin.set_fact:
+    dns_client_upstream_nameservers: "{{ dns_nameservers }}"
+    dns_client_node_local_listen_ip: >-
+      {{
+        ansible_facts.get(dns_client_node_local_interface, {})
+        .get('ipv4', {})
+        .get('address', '')
+      }}
+    dns_client_node_local_effective: >-
+      {{
+        (dns_client_node_local_enabled | default(false) | bool)
+        and (dns_client_node_local_interface | default('') | length > 0)
+      }}
+
+- name: Validate node-local DNS prerequisites
+  ansible.builtin.assert:
+    that:
+      - dns_client_node_local_listen_ip is defined
+      - dns_client_node_local_listen_ip | length > 0
+      - dns_client_upstream_nameservers is defined
+      - dns_client_upstream_nameservers | length > 0
+    fail_msg: >-
+      Node-local DNS is enabled but prerequisites are missing.
+      Ensure the WireGuard interface {{ dns_client_node_local_interface }} exists and
+      vault_dns_server_primary/vault_dns_server_secondary are set.
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
+- name: Build dnsmasq upstream list (exclude self)
+  ansible.builtin.set_fact:
+    dns_client_dnsmasq_upstreams: >-
+      {{
+        dns_client_upstream_nameservers
+        | reject('equalto', dns_client_node_local_listen_ip)
+        | list
+      }}
+    dns_nameservers: "{{ [dns_client_node_local_listen_ip] }}"
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
+- name: Install dnsmasq (node-local DNS forwarder)
+  ansible.builtin.apt:
+    name: dnsmasq
+    state: present
+    update_cache: false
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
+- name: Deploy dnsmasq config (AAAA filtering)
+  ansible.builtin.template:
+    src: dnsmasq-k8s-filter-aaaa.conf.j2
+    dest: "{{ dns_client_dnsmasq_config_path }}"
+    mode: "0644"
+    backup: true
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+  notify: Restart dnsmasq
+
+- name: Apply dnsmasq config immediately
+  ansible.builtin.meta: flush_handlers
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
+- name: Ensure dnsmasq is enabled and started
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: started
+    enabled: true
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
 - name: Display DNS client management start
   ansible.builtin.debug:
     msg:

@@ -20,7 +20,14 @@ DNS = {{ vault_wg_dns_primary | default(vault_dns_server_primary | default('[dns
 # {{ server_peer.name }} - {{ server_peer.host_group | default('unknown') }}
 PublicKey = {{ vault_wg_peer_public_keys[server_peer.name] }}
 Endpoint = {{ server_peer.endpoint }}
-AllowedIPs = {{ server_peer.allowed_ips | default(server_peer.address) }}{% if (server_peer.is_server | default(false)) and (vault_wg_routed_cidrs | default([]) | length > 0) %}, {{ vault_wg_routed_cidrs | join(', ') }}{% endif %}
+{% set peer_ips = server_peer.allowed_ips | default(server_peer.address) | string | replace(' ', '') | split(',') | list %}
+{% if (server_peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
+{%   set routed_ips = vault_wg_routed_cidrs %}
+{%   set all_ips = (peer_ips + routed_ips) | unique | list %}
+AllowedIPs = {{ all_ips | join(', ') }}
+{% else %}
+AllowedIPs = {{ peer_ips | join(', ') }}
+{% endif %}
 
 PersistentKeepalive = 25
 {%   endif %}

@@ -143,27 +143,20 @@ sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-c
 8. **Configure containerd**
    - Sets up containerd with systemd cgroup driver
 
-9. **Configure firewall**
-   - Opens required ports and ranges via UFW
-   - Enables UFW with deny policy
+9. **Firewall posture**
+   - This repository disables UFW on Kubernetes nodes by default.
+   - Reason: Calico (iptables/nft) + WireGuard forwarding is easy to break with UFW's default forward policy and chains.
+   - If you need a host firewall, implement it outside UFW (cloud security groups / upstream firewall) or explicitly
+     manage FORWARD + cali*/wg* allowances.
 
 ## Firewall Configuration
 
-The role configures UFW with the following rules:
+Kubernetes networking (especially with Calico and tunneled/overlay traffic) expects a permissive FORWARD path.
+UFW is frequently a source of subtle forwarding drops.
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| [custom-ssh-port] | TCP | Custom SSH |
-| 6443 | TCP | Kubernetes API Server |
-| 80, 443 | TCP | HTTP/HTTPS |
-| 8443 | TCP | Secure API |
-| 30000:32767 | TCP | NodePort Services |
-| 7946 | TCP | Overlay Network |
-| 2379:2380 | TCP | etcd |
-| 10250:10255 | TCP | Kubelet API |
-| 64512 | TCP | CNI |
-| 179 | TCP | BGP |
-| 10260 | TCP | Metrics Server |
+In this repo:
+- Kubernetes nodes: UFW is disabled (best-effort)
+- WireGuard role: does not enable UFW automatically
 
 ## OS Compatibility
 
@@ -270,14 +263,17 @@ sudo systemctl restart containerd
 ### Network Issues
 
 ```bash
-# Check UFW status
-sudo ufw status
+ # Check UFW is not active (Kubernetes nodes)
+ systemctl is-active ufw || true
 
 # Check IP forwarding
 sysctl net.ipv4.ip_forward
 
 # Check bridge networking
 sysctl net.bridge.bridge-nf-call-iptables
+
+# Check forwarding policy
+sudo iptables -S FORWARD
 
 # Test node connectivity
 ping <other-node-ip>

@@ -81,7 +81,7 @@
     # through WireGuard, allowing external HTTP/HTTPS traffic to reach K8s ingress.
     - name: Set WireGuard routed CIDRs (K8s API VIP and MetalLB pool)
       ansible.builtin.set_fact:
-        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32', vault_metallb_pool_cidr + '/24' ] | select | list }}"
+        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32', vault_metallb_pool_cidr | regex_replace('\\/\\d+$', '') + '/24' ] | select | list }}"
 
     - name: Apply WireGuard role
       ansible.builtin.include_role:

@@ -1,6 +1,6 @@
 # WireGuard Role
 
-Manage WireGuard VPN network with automatic peer configuration, NAT support, and UFW firewall integration.
+Manage WireGuard VPN network with automatic peer configuration, NAT support, and optional UFW firewall integration.
 
 ## Overview
 This role manages WireGuard VPN with a hybrid topology:
@@ -37,7 +37,7 @@ Clients (Multi-Server):
 - Ansible 2.16+
 - Debian/Ubuntu hosts
 - WireGuard package available in repository
-- UFW firewall (optional but recommended)
+- UFW firewall (optional)
 
 ## Role Variables
 
@@ -201,6 +201,19 @@ sudo cat /etc/wireguard/wg99.conf
 ```
 
 ## Troubleshooting
+
+### Routed CIDRs missing from AllowedIPs
+**Symptoms:** WireGuard handshakes work, but traffic to routed networks (e.g., VIPs / LoadBalancer pools) does not flow; generated config shows:
+`AllowedIPs = <peer VPN IPs only>`
+
+**Why it happened:** on WireGuard servers the role assigns per-peer `client_listen_port` values. An older implementation rebuilt `vault_wg_peers` from scratch during that step and accidentally dropped optional peer fields like `is_server` (and sometimes `address`). The templates gate routed CIDRs on `peer.is_server`, so once that key was lost the condition evaluated to false and routed CIDRs were not appended.
+
+**Fix:** keep peer dictionaries intact when assigning ports (only add/override `client_listen_port`) and cast `is_server` with `| bool` in templates.
+
+**Quick checks:**
+1. Confirm the peer entry in `vault_wg_peers` includes `is_server: true` (in `vault_secrets.yml`).
+2. On the WireGuard server, confirm `/etc/wireguard/<iface>.conf` contains the routed CIDRs in `AllowedIPs` for the server peers.
+3. Re-run `ansible-playbook wireguard_manage.yaml -e wg_operation=install --diff` on the WireGuard server(s).
 
 ### No Handshake with Peer
 **Symptoms:** `latest handshake` not updating, 0 B received
@@ -407,7 +420,10 @@ After rotation, update `vault_secrets.yml` with new keys.
 
 ## Firewall Configuration
 
-This role automatically configures UFW:
+This role can configure UFW rules, but it does not enable UFW automatically.
+
+Kubernetes note:
+- For Calico-over-WireGuard clusters, avoid UFW on Kubernetes nodes unless you are explicitly managing FORWARD rules.
 
 ### Server Side
 - Opens `vault_wg_server_port` for all WireGuard connections
