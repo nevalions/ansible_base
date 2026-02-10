@@ -1,8 +1,9 @@
 ---
-- name: Check if Docker is installed
-  ansible.builtin.command: docker --version
-  register: docker_check
-  ignore_errors: true
+- name: Check if Docker binary exists
+  ansible.builtin.stat:
+    path: /usr/bin/docker
+  become: false
+  register: docker_binary
   changed_when: false
 
 - name: Create directory for Docker GPG key
@@ -12,7 +13,7 @@
     mode: "0755"
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
 
 - name: Download Docker GPG key
   ansible.builtin.get_url:
@@ -21,13 +22,13 @@
     mode: "0644"
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
 
 - name: Add GPG key to apt-key
   ansible.builtin.command: gpg --dearmor -o /etc/apt/keyrings/docker.gpg /etc/apt/keyrings/docker.asc
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
   register: gpg_key_added
   changed_when: gpg_key_added.rc == 0
 
@@ -42,7 +43,7 @@
     filename: docker
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
 
 - name: Update apt package index
   ansible.builtin.apt:
@@ -50,9 +51,9 @@
     cache_valid_time: 3600
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
 
-- name: Install Docker and related packages
+- name: Install Docker and related packages (Debian)
   ansible.builtin.apt:
     name:
       - docker-ce
@@ -64,24 +65,44 @@
     update_cache: true
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+    - not docker_binary.stat.exists
 
-- name: Add user to Docker group
+- name: Install Docker and related packages (Arch)
+  community.general.pacman:
+    name:
+      - docker
+      - docker-compose
+      - docker-buildx
+    state: present
+    update_cache: true
+  when:
+    - ansible_facts['os_family'] == "Archlinux"
+    - not docker_binary.stat.exists
+
+- name: Add user to Docker group (Debian)
   ansible.builtin.user:
     name: "{{ ansible_user }}"
     groups: docker
     append: true
   when:
     - ansible_facts['os_family'] == "Debian"
-    - docker_check.rc != 0
+  notify: Start docker
+
+- name: Add user to Docker group (Arch)
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+  when:
+    - ansible_facts['os_family'] == "Archlinux"
   notify: Start docker
 
 - name: Verify Docker installation
   ansible.builtin.command: docker --version
+  become: false
   register: docker_version
   changed_when: false
-  when:
-    - ansible_facts['os_family'] == "Debian"
+  ignore_errors: true
 
 - name: Assert Docker is installed
   ansible.builtin.assert:
@@ -89,5 +110,28 @@
       - docker_version.rc == 0
     success_msg: "Docker successfully installed: {{ docker_version.stdout }}"
     fail_msg: "Docker installation verification failed"
-  when:
-    - ansible_facts['os_family'] == "Debian"
+
+- name: Verify Docker service is running
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Check if docker compose plugin is available
+  ansible.builtin.command: docker compose version
+  become: false
+  register: docker_compose_plugin_version
+  changed_when: false
+  failed_when: false
+
+- name: Check if docker-compose standalone is available
+  ansible.builtin.command: docker-compose --version
+  become: false
+  register: docker_compose_standalone_version
+  changed_when: false
+  failed_when: false
+
+- name: Display Docker Compose status
+  ansible.builtin.debug:
+    msg: "{{ 'Docker Compose plugin available' if docker_compose_plugin_version.rc == 0 else 'Docker Compose standalone available' if docker_compose_standalone_version.rc == 0 else 'Docker Compose not installed (optional)' }}"
+  when: docker_compose_enabled | default(true)

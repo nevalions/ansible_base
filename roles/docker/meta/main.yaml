@@ -1,6 +1,6 @@
 galaxy_info:
   author: [your-username]
-  description: Install Docker and Docker Compose on Debian-based systems
+  description: Install Docker and Docker Compose on Debian and Arch-based systems
   company: null
   license: MIT
   min_ansible_version: 2.16
@@ -14,10 +14,14 @@ galaxy_info:
       versions:
         - focal
         - jammy
+    - name: Arch
+      versions:
+        - all
 
   galaxy_tags:
     - containers
     - docker
     - runtime
+    - compose
 
 dependencies: []

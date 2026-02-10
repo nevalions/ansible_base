@@ -1,2 +1,2 @@
 ---
-install_docker: true
+docker_compose_enabled: true
