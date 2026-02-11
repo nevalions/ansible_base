@@ -1,0 +1,126 @@
+---
+- name: Remove PostgreSQL 17 Docker deployment
+  hosts: db
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - postgres
+    - docker
+    - database
+    - remove
+
+  vars:
+    postgres_container_name: "{{ vault_postgres_container_name | default('postgres17') }}"
+    postgres_host_port: "{{ vault_postgres_port | default(vault_postgres_host_port | default('5432')) }}"
+    postgres_volume_name: "{{ vault_postgres_volume_name | default('postgres17_data') }}"
+    postgres_network_name: "{{ vault_postgres_network_name | default('postgres17_net') }}"
+    postgres_env_file_path: "{{ vault_postgres_env_file_path | default('/etc/postgres_docker/postgres.env') }}"
+    postgres_manage_ufw: "{{ vault_postgres_manage_ufw | default(true) | bool }}"
+    postgres_allowed_networks: "{{ vault_postgres_allowed_networks | default([]) }}"
+    postgres_remove_env_file: "{{ vault_postgres_remove_env_file | default(false) | bool }}"
+    postgres_remove_volume: "{{ vault_postgres_remove_volume | default(false) | bool }}"
+    postgres_remove_network: "{{ vault_postgres_remove_network | default(false) | bool }}"
+
+  tasks:
+    - name: Install Docker SDK for Python (Debian)
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Docker SDK for Python (Arch)
+      community.general.pacman:
+        name: python-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Archlinux"
+
+    - name: Remove PostgreSQL container
+      community.docker.docker_container:
+        name: "{{ postgres_container_name }}"
+        state: absent
+
+    - name: Check if UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: postgres_ufw_bin
+      when: postgres_manage_ufw
+
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: postgres_ufw_status
+      changed_when: false
+      failed_when: false
+      when:
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+
+    - name: Remove PostgreSQL UFW rule for restricted networks
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postgres_host_port }}"
+        from: "{{ net }}"
+        direction: in
+        delete: true
+      loop: "{{ postgres_allowed_networks }}"
+      loop_control:
+        loop_var: net
+      failed_when: false
+      when:
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+        - "'Status: active' in postgres_ufw_status.stdout"
+        - postgres_allowed_networks | length > 0
+
+    - name: Remove PostgreSQL UFW rule for any source
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postgres_host_port }}"
+        direction: in
+        delete: true
+      failed_when: false
+      when:
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+        - "'Status: active' in postgres_ufw_status.stdout"
+        - postgres_allowed_networks | length == 0
+
+    - name: Explain UFW cleanup skip behavior
+      ansible.builtin.debug:
+        msg: "UFW is not installed or not active; skipping firewall rule cleanup"
+      when:
+        - postgres_manage_ufw
+        - postgres_ufw_bin is defined
+        - "(not postgres_ufw_bin.stat.exists) or ('Status: active' not in postgres_ufw_status.stdout)"
+
+    - name: Optionally remove PostgreSQL env file
+      ansible.builtin.file:
+        path: "{{ postgres_env_file_path }}"
+        state: absent
+      when: postgres_remove_env_file
+
+    - name: Optionally remove PostgreSQL volume (deletes data)
+      community.docker.docker_volume:
+        name: "{{ postgres_volume_name }}"
+        state: absent
+      when: postgres_remove_volume
+
+    - name: Optionally remove PostgreSQL network
+      community.docker.docker_network:
+        name: "{{ postgres_network_name }}"
+        state: absent
+      when: postgres_remove_network
+
+    - name: Show removal summary
+      ansible.builtin.debug:
+        msg:
+          - "PostgreSQL container removed: {{ postgres_container_name }}"
+          - "UFW rule cleanup attempted: {{ postgres_manage_ufw }}"
+          - "Environment file removed: {{ postgres_remove_env_file }}"
+          - "Volume removed: {{ postgres_remove_volume }}"
+          - "Network removed: {{ postgres_remove_network }}"

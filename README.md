@@ -47,6 +47,29 @@ Notes:
 - BGP HA for MetalLB (FRR + Keepalived): `bgp_ha_deploy.yaml`, `bgp_ha_verify.yaml`, `bgp_ha_test.yaml`, `bgp_ha_remove.yaml`
 - DNS deploy/remove: `dns_full_deployment_remove.yaml`, `dns_server_remove.yaml`, `dns_client_remove.yaml`
 - HAProxy K8s API load balancer: `playbooks/haproxy_start_and_verify.yaml`, `playbooks/haproxy_verify.yaml`, `haproxy_k8s_remove.yaml`
+- PostgreSQL 17 in Docker:
+  - Deploy/update: `postgres_docker_manage.yaml`
+  - Verify from Kubernetes test pod: `postgres_docker_verify.yaml`
+  - Remove: `postgres_docker_remove.yaml`
+
+## PostgreSQL Docker Quick Commands
+
+```bash
+# Deploy or update PostgreSQL 17 container
+ansible-playbook -i hosts_bay.ini postgres_docker_manage.yaml
+
+# Verify DB connectivity from a Kubernetes test pod
+ansible-playbook -i hosts_bay.ini postgres_docker_verify.yaml
+
+# Remove PostgreSQL container (keeps volume data by default)
+ansible-playbook -i hosts_bay.ini postgres_docker_remove.yaml
+```
+
+Notes:
+
+- PostgreSQL settings come from `vault_secrets.yml` (`vault_postgres_*` keys).
+- UFW rules are managed only when UFW is installed and active.
+- Keep secrets only in encrypted vault files; never commit real passwords, keys, or host-specific credentials.
 
 ## Documentation
 

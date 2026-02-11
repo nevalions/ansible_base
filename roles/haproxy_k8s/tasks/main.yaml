@@ -84,7 +84,7 @@
 - name: Backup existing HAProxy config
   ansible.builtin.copy:
     src: /etc/haproxy/haproxy.cfg
-    dest: /etc/haproxy/haproxy.cfg.backup.{{ ansible_date_time.epoch }}
+    dest: /etc/haproxy/haproxy.cfg.backup.{{ ansible_facts['date_time']['epoch'] }}
     remote_src: true
     mode: "0640"
   when: haproxy_config.stat.exists

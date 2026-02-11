@@ -26,7 +26,7 @@
     msg:
       - "=== DNS Infrastructure Verification Report ==="
       - "========================================="
-      - "Run Date: {{ ansible_date_time.date }} {{ ansible_date_time.time }}"
+      - "Run Date: {{ ansible_facts['date_time']['date'] }} {{ ansible_facts['date_time']['time'] }}"
       - "Total Hosts Checked: {{ ansible_play_hosts | length }}"
       - "Overall Status: {{ '✅ HEALTHY' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else '❌ CRITICAL' }}"
       - "========================================="

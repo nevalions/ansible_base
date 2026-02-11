@@ -1,0 +1,314 @@
+---
+- name: Run PostgreSQL 17 in Docker
+  hosts: db
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - postgres
+    - docker
+    - database
+  roles:
+    - docker
+
+  vars:
+    postgres_operation: "{{ vault_postgres_operation | default('install') }}"
+    postgres_container_name: "{{ vault_postgres_container_name | default('postgres17') }}"
+    postgres_image: "{{ vault_postgres_image | default('postgres:17') }}"
+    postgres_host_port: "{{ vault_postgres_port | default(vault_postgres_host_port | default('5432')) }}"
+    postgres_db_name: "{{ vault_postgres_db_name | default(vault_postgres_name | default('')) }}"
+    postgres_user: "{{ vault_postgres_user | default(vault_postgres_username | default('')) }}"
+    postgres_password: "{{ vault_postgres_password | default(vault_postgres_pass | default('')) }}"
+    postgres_volume_name: "{{ vault_postgres_volume_name | default('postgres17_data') }}"
+    postgres_network_name: "{{ vault_postgres_network_name | default('postgres17_net') }}"
+    postgres_bind_address: "{{ vault_postgres_bind_address | default('127.0.0.1') }}"
+    postgres_env_file_path: "{{ vault_postgres_env_file_path | default('/etc/postgres_docker/postgres.env') }}"
+    postgres_pids_limit: "{{ vault_postgres_pids_limit | default(256) }}"
+    postgres_memory: "{{ vault_postgres_memory | default('1g') }}"
+    postgres_manage_ufw: "{{ vault_postgres_manage_ufw | default(true) | bool }}"
+    postgres_allowed_networks: "{{ vault_postgres_allowed_networks | default([]) }}"
+    postgres_remove_env_file: "{{ vault_postgres_remove_env_file | default(false) | bool }}"
+    postgres_remove_volume: "{{ vault_postgres_remove_volume | default(false) | bool }}"
+    postgres_remove_network: "{{ vault_postgres_remove_network | default(false) | bool }}"
+
+  tasks:
+    - name: Validate postgres operation value
+      ansible.builtin.assert:
+        that:
+          - postgres_operation in ['install', 'remove']
+        fail_msg: "postgres_operation must be 'install' or 'remove'"
+        success_msg: "PostgreSQL operation is {{ postgres_operation }}"
+
+    - name: Validate required PostgreSQL vault variables
+      ansible.builtin.assert:
+        that:
+          - postgres_db_name is defined
+          - postgres_db_name is not none
+          - postgres_db_name | string | length > 0
+          - postgres_user is defined
+          - postgres_user is not none
+          - postgres_user | string | length > 0
+          - postgres_password is defined
+          - postgres_password is not none
+          - postgres_password | string | length >= 12
+          - postgres_host_port | string | int >= 1
+          - postgres_host_port | string | int <= 65535
+        fail_msg: |
+          Missing or invalid PostgreSQL vault values in vault_secrets.yml.
+          Required:
+          - vault_postgres_db_name (or vault_postgres_name)
+          - vault_postgres_user (or vault_postgres_username)
+          - vault_postgres_password (or vault_postgres_pass), minimum 12 characters
+          - vault_postgres_port (or vault_postgres_host_port), range 1-65535
+        success_msg: "PostgreSQL vault variables are valid"
+      when: postgres_operation == 'install'
+
+    - name: Install Docker SDK for Python (Debian)
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Docker SDK for Python (Arch)
+      community.general.pacman:
+        name: python-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Archlinux"
+
+    - name: Ensure PostgreSQL environment file directory exists
+      ansible.builtin.file:
+        path: "{{ postgres_env_file_path | dirname }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      when: postgres_operation == 'install'
+
+    - name: Write PostgreSQL environment file from vault variables
+      ansible.builtin.copy:
+        dest: "{{ postgres_env_file_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          POSTGRES_DB={{ postgres_db_name }}
+          POSTGRES_USER={{ postgres_user }}
+          POSTGRES_PASSWORD={{ postgres_password }}
+      no_log: true
+      when: postgres_operation == 'install'
+
+    - name: Ensure dedicated Docker network exists
+      community.docker.docker_network:
+        name: "{{ postgres_network_name }}"
+        state: present
+      when: postgres_operation == 'install'
+
+    - name: Ensure persistent Docker volume exists
+      community.docker.docker_volume:
+        name: "{{ postgres_volume_name }}"
+        state: present
+      when: postgres_operation == 'install'
+
+    - name: Pull PostgreSQL image
+      community.docker.docker_image:
+        name: "{{ postgres_image }}"
+        source: pull
+      when: postgres_operation == 'install'
+
+    - name: Check whether requested host port is already in use
+      ansible.builtin.command:
+        argv:
+          - ss
+          - -ltnpH
+          - "sport = :{{ postgres_host_port }}"
+      register: postgres_host_port_check
+      changed_when: false
+      failed_when: false
+      when: postgres_operation == 'install'
+
+    - name: Assert requested host port is available
+      ansible.builtin.assert:
+        that:
+          - postgres_host_port_check.stdout_lines | length == 0
+        fail_msg: >-
+          Host port {{ postgres_host_port }} is already in use on {{ inventory_hostname }}.
+          Choose another vault_postgres_port (or vault_postgres_host_port) or stop the process/container
+          using this port. Current listeners: {{ postgres_host_port_check.stdout | default('unknown') }}
+        success_msg: "Host port {{ postgres_host_port }} is available"
+      when: postgres_operation == 'install'
+
+    - name: Check if UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: postgres_ufw_bin
+      when:
+        - postgres_operation == 'install'
+        - postgres_manage_ufw
+
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: postgres_ufw_status
+      changed_when: false
+      failed_when: false
+      when:
+        - postgres_operation == 'install'
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+
+    - name: Allow PostgreSQL port in UFW from restricted networks
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postgres_host_port }}"
+        from: "{{ net }}"
+        direction: in
+      loop: "{{ postgres_allowed_networks }}"
+      loop_control:
+        loop_var: net
+      when:
+        - postgres_operation == 'install'
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+        - "'Status: active' in postgres_ufw_status.stdout"
+        - postgres_allowed_networks | length > 0
+
+    - name: Allow PostgreSQL port in UFW from any source
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postgres_host_port }}"
+        direction: in
+      when:
+        - postgres_operation == 'install'
+        - postgres_manage_ufw
+        - postgres_ufw_bin.stat.exists
+        - "'Status: active' in postgres_ufw_status.stdout"
+        - postgres_allowed_networks | length == 0
+
+    - name: Explain UFW skip behavior
+      ansible.builtin.debug:
+        msg: "UFW is not installed or not active; skipping firewall rule management"
+      when:
+        - postgres_operation == 'install'
+        - postgres_manage_ufw
+        - postgres_ufw_bin is defined
+        - "(not postgres_ufw_bin.stat.exists) or ('Status: active' not in postgres_ufw_status.stdout)"
+
+    - name: Run hardened PostgreSQL container
+      community.docker.docker_container:
+        name: "{{ postgres_container_name }}"
+        image: "{{ postgres_image }}"
+        state: started
+        restart_policy: unless-stopped
+        env_file: "{{ postgres_env_file_path }}"
+        networks:
+          - name: "{{ postgres_network_name }}"
+        published_ports:
+          - "{{ postgres_bind_address }}:{{ postgres_host_port }}:5432"
+        mounts:
+          - type: volume
+            source: "{{ postgres_volume_name }}"
+            target: /var/lib/postgresql/data
+        read_only: true
+        tmpfs:
+          - /tmp:size=64m,mode=1777
+          - /var/run/postgresql:size=16m,mode=2775
+        security_opts:
+          - no-new-privileges:true
+        pids_limit: "{{ postgres_pids_limit }}"
+        memory: "{{ postgres_memory }}"
+        healthcheck:
+          test:
+            - CMD-SHELL
+            - pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          interval: 30s
+          timeout: 5s
+          retries: 5
+          start_period: 20s
+        log_driver: json-file
+        log_options:
+          max-size: "10m"
+          max-file: "3"
+      no_log: true
+      when:
+        - postgres_operation == 'install'
+        - not ansible_check_mode
+
+    - name: Wait for PostgreSQL container to become healthy
+      community.docker.docker_container_info:
+        name: "{{ postgres_container_name }}"
+      register: postgres_container_info
+      retries: 20
+      delay: 3
+      until: >-
+        postgres_container_info.exists and
+        postgres_container_info.container.State.Running and
+        (
+          postgres_container_info.container.State.Health is not defined or
+          postgres_container_info.container.State.Health.Status == 'healthy'
+        )
+      when:
+        - postgres_operation == 'install'
+        - not ansible_check_mode
+
+    - name: Assert PostgreSQL container is running
+      ansible.builtin.assert:
+        that:
+          - postgres_container_info.exists
+          - postgres_container_info.container.State.Running
+        fail_msg: "PostgreSQL container did not start correctly"
+        success_msg: "PostgreSQL 17 container is running and reachable on configured port"
+      when:
+        - postgres_operation == 'install'
+        - not ansible_check_mode
+
+    - name: Remove PostgreSQL container
+      community.docker.docker_container:
+        name: "{{ postgres_container_name }}"
+        state: absent
+      when: postgres_operation == 'remove'
+
+    - name: Optionally remove PostgreSQL env file
+      ansible.builtin.file:
+        path: "{{ postgres_env_file_path }}"
+        state: absent
+      when:
+        - postgres_operation == 'remove'
+        - postgres_remove_env_file
+
+    - name: Optionally remove PostgreSQL volume (deletes data)
+      community.docker.docker_volume:
+        name: "{{ postgres_volume_name }}"
+        state: absent
+      when:
+        - postgres_operation == 'remove'
+        - postgres_remove_volume
+
+    - name: Optionally remove PostgreSQL network
+      community.docker.docker_network:
+        name: "{{ postgres_network_name }}"
+        state: absent
+      when:
+        - postgres_operation == 'remove'
+        - postgres_remove_network
+
+    - name: Explain check mode behavior
+      ansible.builtin.debug:
+        msg: >-
+          Check mode detected: container launch and runtime health checks are skipped.
+          Run without --check to create/update the PostgreSQL container.
+      when:
+        - ansible_check_mode
+        - postgres_operation == 'install'
+
+    - name: Report remove operation completion
+      ansible.builtin.debug:
+        msg: >-
+          Remove operation completed for {{ postgres_container_name }}.
+          Data volume removed={{ postgres_remove_volume }},
+          network removed={{ postgres_remove_network }},
+          env file removed={{ postgres_remove_env_file }}.
+      when: postgres_operation == 'remove'
