@@ -1,6 +1,6 @@
 ---
 - name: Upgrade Debian packages
-  hosts: "[cluster-group]"
+  hosts: db
   become: true
   gather_facts: true
   serial: "30%"

@@ -58,7 +58,7 @@
 
 - name: Display allowed networks status
   ansible.builtin.debug:
-    msg: "Network {{ item }}: {{ 'ALLOWED' if (item | ansible.utils.ipaddr('address') | string) in (ufw_network_status.stdout | default('')) else 'NOT FOUND' }}"
+    msg: "Network {{ item }}: {{ 'ALLOWED' if (item | string) in (ufw_network_status.stdout | default('')) else 'NOT FOUND' }}"
   loop: "{{ vault_wg_allowed_networks | default([]) }}"
   when: vault_wg_allowed_networks is defined
   ignore_errors: true
