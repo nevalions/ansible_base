@@ -79,9 +79,26 @@
     #
     # MetalLB pool IS included so HAProxy can reach Traefik LoadBalancer IP
     # through WireGuard, allowing external HTTP/HTTPS traffic to reach K8s ingress.
-    - name: Set WireGuard routed CIDRs (K8s API VIP and MetalLB pool)
+    - name: Set WireGuard routed CIDRs (K8s API VIP, MetalLB pool, optional DB WG route)
       ansible.builtin.set_fact:
-        wg_routed_cidrs: "{{ [vault_k8s_api_vip + '/32', vault_metallb_pool_cidr | regex_replace('\\/\\d+$', '') + '/24' ] | select | list }}"
+        wg_routed_cidrs: >-
+          {{
+            [
+              vault_k8s_api_vip + '/32',
+              (
+                vault_metallb_pool_cidr
+                if (vault_metallb_pool_cidr | string) is search('/')
+                else (vault_metallb_pool_cidr | string) + '/24'
+              ),
+              (
+                (vault_db_wg_route_cidr | default(''))
+                if inventory_hostname not in (groups.get('db', []))
+                else ''
+              )
+            ]
+            | reject('equalto', '')
+            | list
+          }}
 
     - name: Apply WireGuard role
       ansible.builtin.include_role:

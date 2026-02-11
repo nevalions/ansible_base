@@ -53,6 +53,9 @@ Clients (Multi-Server):
 | `vault_wg_client_port_start` | Start of NAT port range |
 | `vault_wg_client_port_end` | End of NAT port range |
 | `vault_wg_dns_primary` | DNS server for VPN clients |
+| `vault_k8s_api_vip` | Kubernetes API VIP used for routed /32 |
+| `vault_metallb_pool_cidr` | MetalLB subnet routed through WireGuard |
+| `vault_db_wg_route_cidr` | Optional DB endpoint route for non-DB peers (`[db-wg-ip]/32`) |
 
 ### Keys (Auto-generated)
 
@@ -120,6 +123,23 @@ AllowedIPs = [server-vpn-ip]/32  # Only routes to this server
 - No routing conflicts between multiple peer connections
 - Clear traffic routing per server
 - Supports multi-server redundancy
+
+### Routed CIDRs for Kubernetes + DB
+
+For peers marked with `is_server: true`, the playbook appends routed CIDRs in addition to peer /32 addresses.
+
+Current routed sources in `wireguard_manage.yaml`:
+- `vault_k8s_api_vip/32`
+- `vault_metallb_pool_cidr`
+- `vault_db_wg_route_cidr` (only for non-DB hosts)
+
+Recommended value for DB endpoint routing:
+
+```yaml
+vault_db_wg_route_cidr: "[db-wg-ip]/32"
+```
+
+This enables the simple Kubernetes model where pod traffic is SNATed to node `wg99` IPs and then routed to DB over WireGuard.
 
 ## Dependencies
 
@@ -214,6 +234,15 @@ sudo cat /etc/wireguard/wg99.conf
 1. Confirm the peer entry in `vault_wg_peers` includes `is_server: true` (in `vault_secrets.yml`).
 2. On the WireGuard server, confirm `/etc/wireguard/<iface>.conf` contains the routed CIDRs in `AllowedIPs` for the server peers.
 3. Re-run `ansible-playbook wireguard_manage.yaml -e wg_operation=install --diff` on the WireGuard server(s).
+
+### Pods cannot reach DB over WireGuard
+
+**Symptoms:** node-to-DB connectivity works, but pods cannot reach DB endpoint.
+
+**Checks:**
+1. Ensure Calico SNAT (`natOutgoing`) is enabled on pod IPPool.
+2. Ensure workers have DB WG route in `AllowedIPs` (for example `vault_db_wg_route_cidr`).
+3. Validate route on worker: `ip route get [db-wg-ip]` should use `wg99`.
 
 ### No Handshake with Peer
 **Symptoms:** `latest handshake` not updating, 0 B received

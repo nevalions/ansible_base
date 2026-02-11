@@ -129,7 +129,13 @@ Add/update these variables in `vault_secrets.yml`:
    - "[[network-cidr]]" # Remote network 2
    - "[[network-cidr]]" # Remote network 3
    - "127.0.0.0/8"           # Localhost
- ```
+
+ # Routed CIDRs for K8s + service access over WG
+ # (auto-consumed by wireguard_manage.yaml)
+ vault_k8s_api_vip: "[k8s-api-vip]"
+ vault_metallb_pool_cidr: "[metallb-subnet-cidr]"
+ vault_db_wg_route_cidr: "[db-wg-ip]/32"
+  ```
 
 ### 1.3 Save and Verify
 
@@ -645,6 +651,26 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit wireguard_server
 
 # After deploy, inspect AllowedIPs on the server
 sudo grep -n "^AllowedIPs" /etc/wireguard/[interface-name].conf
+```
+
+#### Issue: Pods cannot reach DB over WireGuard
+
+**Symptoms:** node-to-DB works, but pod-to-DB fails.
+
+**Root cause candidates:**
+- Pod egress not SNATed on Calico (`natOutgoing` disabled)
+- Worker peers missing DB endpoint route (for example `[db-wg-ip]/32`)
+
+**Fix flow:**
+```bash
+# 1) Verify Calico natOutgoing
+kubectl get ippools.crd.projectcalico.org -o yaml
+
+# 2) Verify worker route path to DB WG endpoint
+ip route get [db-wg-ip]
+
+# 3) Re-apply WireGuard after vault updates
+ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard
 ```
 
 #### Issue: Peers not connecting

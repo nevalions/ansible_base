@@ -67,3 +67,6 @@ sec-test.yml
 
 # Local backups (never commit)
 vault_secrets.yml.back
+
+# Local infrastructure schemas/notes with real hostnames and IPs
+docs/*.local.txt

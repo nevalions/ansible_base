@@ -7,6 +7,7 @@ Security is the first constraint in this repo.
 - Read and follow `SECURITY.md` before editing or committing.
 - Policy highlights: no real SSH usernames, IPs, ports, hostnames, CIDRs, passwords, keys, or tokens (use placeholders).
 - Inventory and local config are intentionally gitignored.
+- Local topology/scratch docs with real infrastructure values must stay gitignored (for example `docs/*.local.txt`).
 
 ## Quick Start
 
@@ -57,6 +58,7 @@ Notes:
 - WireGuard:
   - Setup: `WIREGUARD_SETUP.md`
   - Add node: `WIREGUARD_ADD_NODE.md`
+  - Full implementation and troubleshooting: `WIREGUARD_IMPLEMENTATION.md`
 - BGP HA architecture: `docs/BGP_HA_ARCHITECTURE.md`
 - BGP HA operations guide: `docs/BGP_HA_GUIDE.md`
 - SSH agent quickref: `SSH_AGENT_QUICKREF.md`

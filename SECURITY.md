@@ -141,6 +141,7 @@ This removes all keys from memory.
 - SSH key passphrases
 - Real hostnames or domain names (except inventory group names in playbooks' `hosts:` field)
 - Real usernames for SSH connections (e.g., `ansible_user: [real-username]` in inventory)
+- Local topology notes/schemas containing real infrastructure values (for example `docs/*.local.txt`)
 
 ✅ **Safe to commit:**
 - Playbooks and roles
