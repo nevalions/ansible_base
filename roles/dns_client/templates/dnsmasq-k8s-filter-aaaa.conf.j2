@@ -4,7 +4,7 @@
 # can reach it via the node IP. Do not bind to 127.0.0.1 to avoid CoreDNS forward loops.
 interface={{ dns_client_node_local_interface }}
 listen-address={{ dns_client_node_local_listen_ip }}
-bind-interfaces
+{{ dns_client_dnsmasq_bind_mode }}
 
 # Only act as a forwarder
 port=53

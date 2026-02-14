@@ -39,5 +39,9 @@ dns_client_node_local_interface: "{{ vault_wg_interface | default('wg99') }}"
 # Filter AAAA responses (forces IPv4-only upstream resolution)
 dns_client_filter_aaaa: "{{ vault_dns_client_filter_aaaa | default(true) }}"
 
+# Binding mode for dnsmasq listener.
+# bind-dynamic tolerates interfaces/addresses appearing after service start.
+dns_client_dnsmasq_bind_mode: "bind-dynamic"
+
 # dnsmasq config path managed by this role
 dns_client_dnsmasq_config_path: "/etc/dnsmasq.d/99-k8s-filter-aaaa.conf"

@@ -71,6 +71,37 @@
     - dns_client_node_local_effective | bool
   notify: Restart dnsmasq
 
+- name: Ensure dnsmasq systemd override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/dnsmasq.service.d
+    state: directory
+    mode: "0755"
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+
+- name: Deploy dnsmasq ordering override for WireGuard
+  ansible.builtin.template:
+    src: dnsmasq-wireguard-ordering.conf.j2
+    dest: /etc/systemd/system/dnsmasq.service.d/10-wireguard-ordering.conf
+    mode: "0644"
+  register: dnsmasq_systemd_override
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+  notify: Restart dnsmasq
+
+- name: Reload systemd daemon when dnsmasq override changes
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - dns_operation == "install"
+    - ansible_facts['os_family'] == 'Debian'
+    - dns_client_node_local_effective | bool
+    - dnsmasq_systemd_override.changed | default(false)
+
 - name: Apply dnsmasq config immediately
   ansible.builtin.meta: flush_handlers
   when:

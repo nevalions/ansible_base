@@ -1,7 +1,8 @@
 ---
 - name: Manage WireGuard network
+  hosts: wireguard_cluster
   # hosts: wireguard_servers
-  hosts: wireguard_clients
+  # hosts: wireguard_clients
   become: true
   gather_facts: true
   serial: 1
@@ -107,6 +108,118 @@
       vars:
         vault_wg_allowed_networks: "{{ wg_allowed_networks_merged }}"
         vault_wg_routed_cidrs: "{{ wg_routed_cidrs }}"
+
+    - name: Check if dnsmasq service exists
+      ansible.builtin.systemd:
+        name: dnsmasq
+      register: dnsmasq_service_status
+      failed_when: false
+      changed_when: false
+
+    - name: Set fact for dnsmasq presence
+      ansible.builtin.set_fact:
+        has_dnsmasq: "{{ dnsmasq_service_status.status is defined and dnsmasq_service_status.status.LoadState == 'loaded' }}"
+
+    - name: Set fact for dnsmasq restart requirement
+      ansible.builtin.set_fact:
+        dnsmasq_needs_restart: >-
+          {{
+            (wg_config_deployed.changed | default(false))
+            or ((dnsmasq_service_status.status.ActiveState | default('inactive')) != 'active')
+          }}
+      when:
+        - has_dnsmasq | default(false)
+        - not ansible_check_mode
+
+    - name: Wait for WireGuard interface to be fully up before restarting dnsmasq
+      ansible.builtin.wait_for:
+        timeout: 3
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - not ansible_check_mode
+
+    - name: Read dnsmasq config before restart validation
+      ansible.builtin.slurp:
+        path: "{{ dns_client_dnsmasq_config_path | default('/etc/dnsmasq.d/99-k8s-filter-aaaa.conf') }}"
+      register: dnsmasq_config_raw
+      failed_when: false
+      changed_when: false
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - not ansible_check_mode
+
+    - name: Extract dnsmasq listen IP from config
+      ansible.builtin.set_fact:
+        dnsmasq_listen_ip: >-
+          {{
+            ((dnsmasq_config_raw.content | default('') | b64decode)
+              | regex_findall('(?m)^listen-address=([0-9.]+)$')
+              | first)
+            | default('')
+          }}
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - not ansible_check_mode
+
+    - name: Get current host IPv4 addresses for dnsmasq restart check
+      ansible.builtin.command: ip -4 -o addr show
+      register: host_ipv4_addresses_show
+      changed_when: false
+      failed_when: false
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - not ansible_check_mode
+
+    - name: Set dnsmasq listen address presence fact
+      ansible.builtin.set_fact:
+        dnsmasq_listen_ip_present: >-
+          {{
+            (dnsmasq_listen_ip | length > 0)
+            and (dnsmasq_listen_ip in (
+              host_ipv4_addresses_show.stdout
+              | regex_findall('inet\\s+([0-9.]+)/')
+              | unique
+              | list
+            ))
+          }}
+      when:
+        - has_dnsmasq | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Restart dnsmasq after WireGuard config change
+      ansible.builtin.systemd:
+        name: dnsmasq
+        state: restarted
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - dnsmasq_listen_ip_present | default(false)
+        - not ansible_check_mode
+
+    - name: Skip dnsmasq restart when configured listen IP is missing
+      ansible.builtin.debug:
+        msg: >-
+          Skipping dnsmasq restart on {{ inventory_hostname }} because listen-address
+          {{ dnsmasq_listen_ip | default('UNSET') }} is not present on this host.
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - not (dnsmasq_listen_ip_present | default(false))
+        - not ansible_check_mode
+
+    - name: Notify dnsmasq restart
+      ansible.builtin.debug:
+        msg: "dnsmasq restarted on {{ inventory_hostname }} after WireGuard configuration change"
+      when:
+        - has_dnsmasq | default(false)
+        - dnsmasq_needs_restart | default(false)
+        - dnsmasq_listen_ip_present | default(false)
+        - not ansible_check_mode
 
     - name: Check if this host is a control plane or BGP router
       ansible.builtin.set_fact:

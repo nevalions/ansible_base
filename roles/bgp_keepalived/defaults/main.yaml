@@ -29,8 +29,10 @@ bgp_keepalived_advert_int: 1
 bgp_keepalived_nopreempt: false
 
 # Health check settings for BGP (FRR)
+# Note: Weight penalty should be less than priority gap (default 50) to ensure
+# MASTER election works even when health checks fail on all routers
 bgp_keepalived_check_interval: 2
-bgp_keepalived_check_weight: -50
+bgp_keepalived_check_weight: -30
 bgp_keepalived_check_fall: 3
 bgp_keepalived_check_rise: 2
 

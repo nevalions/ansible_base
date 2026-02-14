@@ -57,6 +57,24 @@
     success_msg: "BGP routers list is defined"
     fail_msg: "vault_bgp_routers must be defined (at least one BGP router entry)"
 
+- name: Get this router's index in the list for auto-priority
+  ansible.builtin.set_fact:
+    bgp_router_index: >-
+      {{
+        bgp_routers
+        | map(attribute='name')
+        | list
+        .index(inventory_hostname) if inventory_hostname in (bgp_routers | map(attribute='name') | list)
+        else (
+          bgp_routers
+          | map(attribute='wireguard_ip')
+          | list
+          .index(ansible_host | default('')) if (ansible_host | default('')) in (bgp_routers | map(attribute='wireguard_ip') | list)
+          else 0
+        )
+      }}
+  when: bgp_routers is defined and bgp_routers | length > 0
+
 - name: Determine keepalived priority for this host
   ansible.builtin.set_fact:
     bgp_keepalived_priority: >-
@@ -84,7 +102,10 @@
             ),
             true
           )
-        | default(100, true)
+        | default(
+            (150 - (bgp_router_index | int) * 50),
+            true
+          )
       }}
   when: bgp_routers is defined and bgp_routers | length > 0
 

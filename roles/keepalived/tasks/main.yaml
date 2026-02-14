@@ -70,6 +70,24 @@
     success_msg: "Keepalived control planes list is defined"
     fail_msg: "vault_k8s_control_planes must be defined (at least one control plane entry)"
 
+- name: Get this control plane's index in the list for auto-priority
+  ansible.builtin.set_fact:
+    keepalived_plane_index: >-
+      {{
+        keepalived_control_planes
+        | map(attribute='name')
+        | list
+        .index(inventory_hostname) if inventory_hostname in (keepalived_control_planes | map(attribute='name') | list)
+        else (
+          keepalived_control_planes
+          | map(attribute='wireguard_ip')
+          | list
+          .index(ansible_host | default('')) if (ansible_host | default('')) in (keepalived_control_planes | map(attribute='wireguard_ip') | list)
+          else 0
+        )
+      }}
+  when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
+
 - name: Determine keepalived priority for this host
   ansible.builtin.set_fact:
     keepalived_priority: >-
@@ -97,7 +115,10 @@
             ),
             true
           )
-        | default(100, true)
+        | default(
+            (150 - (keepalived_plane_index | int) * 50),
+            true
+          )
       }}
   when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
 

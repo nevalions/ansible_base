@@ -14,21 +14,53 @@ DNS = {{ vault_wg_dns_primary | default(vault_dns_server_primary | default('[dns
 {% endif %}
 
 # BEGIN ANSIBLE MANAGED PEERS
+{% set ns = namespace(seen_ips=[], reserved_peer_ips=[]) %}
+{% set api_vip_cidr = (vault_k8s_api_vip | default('') | string | trim) %}
+{% if api_vip_cidr | length > 0 and '/' not in api_vip_cidr %}
+{%   set api_vip_cidr = api_vip_cidr + '/32' %}
+{% endif %}
+{% for server_peer in vault_wg_peers %}
+{%   set ns.reserved_peer_ips = (
+      ns.reserved_peer_ips +
+      (
+        server_peer.allowed_ips
+        | default(server_peer.address)
+        | string
+        | replace(' ', '')
+        | split(',')
+        | reject('equalto', '')
+        | list
+      )
+    ) | unique | list %}
+{% endfor %}
 {% for server_peer in vault_wg_peers %}
 {%   if server_peer.name != peer_config.name %}
+{%     set peer_ips = server_peer.allowed_ips | default(server_peer.address) | string | replace(' ', '') | split(',') | reject('equalto', '') | unique | list %}
+{%     if (server_peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
+{%       set routed_extra_ips = (vault_wg_routed_cidrs | default([]) | list) %}
+{%       set peer_in_planes = (
+          server_peer.host_group is defined
+          and server_peer.host_group in groups
+          and ((groups[server_peer.host_group] | default([])) | intersect(groups.get('planes_all', [])) | length > 0)
+        ) %}
+{%       if api_vip_cidr | length > 0 and (api_vip_cidr in routed_extra_ips) and (not peer_in_planes) %}
+{%         set routed_extra_ips = routed_extra_ips | difference([api_vip_cidr]) %}
+{%       endif %}
+{%       set routed_extra_ips = routed_extra_ips | reject('in', ns.reserved_peer_ips) | list %}
+{%       set candidate_ips = (peer_ips + routed_extra_ips) | unique | list %}
+{%     else %}
+{%       set candidate_ips = peer_ips %}
+{%     endif %}
+{%     set effective_ips = candidate_ips | reject('in', ns.seen_ips) | list %}
+{%     if effective_ips | length > 0 %}
 [Peer]
 # {{ server_peer.name }} - {{ server_peer.host_group | default('unknown') }}
 PublicKey = {{ vault_wg_peer_public_keys[server_peer.name] }}
 Endpoint = {{ server_peer.endpoint }}
-{% set peer_ips = server_peer.allowed_ips | default(server_peer.address) | string | replace(' ', '') | split(',') | list %}
-{% if (server_peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
-{%   set routed_ips = vault_wg_routed_cidrs %}
-{%   set all_ips = (peer_ips + routed_ips) | unique | list %}
-AllowedIPs = {{ all_ips | join(', ') }}
-{% else %}
-AllowedIPs = {{ peer_ips | join(', ') }}
-{% endif %}
+AllowedIPs = {{ effective_ips | join(', ') }}
 PersistentKeepalive = 25
+{%       set ns.seen_ips = (ns.seen_ips + effective_ips) | unique | list %}
+{%     endif %}
 {%   endif %}
 {% endfor %}
 # END ANSIBLE MANAGED PEERS

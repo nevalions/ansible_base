@@ -54,6 +54,67 @@
     daemon_reload: yes
   when: wg_operation == "install"
 
+- name: Compute matching WireGuard server group for this host
+  ansible.builtin.set_fact:
+    wg_server_group_match: >-
+      {{
+        (vault_wg_server_ips | default({}) | dict2items
+         | selectattr('key', 'in', group_names | default([]))
+         | map(attribute='key')
+         | list
+         | first)
+        | default('')
+      }}
+
+- name: Compute desired WireGuard interface IP for this host
+  ansible.builtin.set_fact:
+    wg_desired_interface_ip: >-
+      {{
+        (vault_wg_server_ips[wg_server_group_match]
+         if (wg_server_group_match | length > 0)
+         else vault_wg_server_ip)
+        | string
+      }}
+  when: wg_operation == "install"
+
+- name: Get current WireGuard interface IPv4 address
+  ansible.builtin.command: ip -4 -o addr show dev {{ vault_wg_interface }}
+  register: wg_interface_ipv4_show
+  changed_when: false
+  failed_when: false
+  when:
+    - wg_operation == "install"
+    - wg_interface_running.rc | default(1) == 0
+    - not ansible_check_mode
+
+- name: Detect WireGuard interface address drift
+  ansible.builtin.set_fact:
+    wg_current_interface_ip: >-
+      {{
+        (wg_interface_ipv4_show.stdout
+         | regex_findall('inet\\s+([0-9.]+)/')
+         | first)
+        | default('')
+      }}
+  when:
+    - wg_operation == "install"
+    - wg_interface_running.rc | default(1) == 0
+    - not ansible_check_mode
+
+- name: Set WireGuard interface address drift flag
+  ansible.builtin.set_fact:
+    wg_interface_address_changed: >-
+      {{
+        (wg_interface_ipv4_show.rc | default(1) == 0)
+        and ((wg_interface_ipv4_show.stdout | default('')) | length > 0)
+        and (wg_desired_interface_ip | length > 0)
+        and ((wg_current_interface_ip | default('')) != wg_desired_interface_ip)
+      }}
+  when:
+    - wg_operation == "install"
+    - wg_interface_running.rc | default(1) == 0
+    - not ansible_check_mode
+
 - name: Sync WireGuard configuration without restart (preserves connections)
   ansible.builtin.shell: |
     wg syncconf {{ vault_wg_interface }} <(wg-quick strip {{ vault_wg_interface }})
@@ -64,8 +125,21 @@
     - wg_operation == "install"
     - wg_config_deployed.changed
     - wg_interface_running.rc | default(1) == 0
+    - not (wg_interface_address_changed | default(false))
     - not ansible_check_mode
   changed_when: true
+
+- name: Restart WireGuard service when interface address changed
+  ansible.builtin.systemd:
+    name: "wg-quick@{{ vault_wg_interface }}"
+    state: restarted
+  register: wg_service_action
+  when:
+    - wg_operation == "install"
+    - wg_config_deployed.changed
+    - wg_interface_running.rc | default(1) == 0
+    - wg_interface_address_changed | default(false)
+    - not ansible_check_mode
 
 - name: Start WireGuard service (interface not running)
   ansible.builtin.systemd:
