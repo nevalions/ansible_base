@@ -1,0 +1,38 @@
+---
+- name: Install NFS client packages
+  hosts: kuber_small_all
+  become: true
+  gather_facts: true
+  tags:
+    - nfs
+    - client
+    - packages
+    - install
+  tasks:
+    - name: Check if nfs-common is installed before
+      ansible.builtin.shell: dpkg -l | grep nfs-common
+      register: nfs_pre_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display nfs-common status before installation
+      ansible.builtin.debug:
+        msg: "nfs-common installed: {{ 'Yes' if nfs_pre_check.rc == 0 else 'No' }}"
+
+    - name: Install nfs-common package
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: yes
+
+    - name: Verify nfs-common is installed after
+      ansible.builtin.shell: dpkg -l | grep nfs-common
+      register: nfs_post_check
+      changed_when: false
+
+    - name: Verify nfs-common installation
+      ansible.builtin.assert:
+        that:
+          - nfs_post_check.rc == 0
+        success_msg: "nfs-common successfully installed"
+        fail_msg: "nfs-common installation failed"
