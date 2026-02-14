@@ -1,6 +1,6 @@
 ---
 - name: Manage NFS exports
-  hosts: nfs_clients
+  hosts: kuber_small_all
   become: true
   gather_facts: true
   serial: "50%"
