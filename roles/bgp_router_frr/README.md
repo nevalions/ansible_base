@@ -17,7 +17,7 @@ Set these in `vault_secrets.yml` (placeholders shown):
 
 ```yaml
 vault_bgp_router_asn: "[router-asn]"
-vault_bgp_router_router_id: "[bay-bgp-wg-ip]"
+vault_bgp_router_router_id: "[bay-bgp-wg-ip]"  # Optional if using bgp_routers list
 vault_bgp_router_listen_interface: "[wg-interface]"
 vault_bgp_router_update_source: "[wg-interface]"
 
@@ -27,6 +27,23 @@ vault_bgp_router_neighbors:
   - address: "[k8s-node-wg-ip]"
     asn: "[metallb-my-asn]"
 ```
+
+### Auto-Derived Router ID (BGP HA)
+
+When running multiple BGP routers, you can define a shared `bgp_routers` list in your vault.
+The role will automatically derive each router's `router_id` from its `wireguard_ip`:
+
+```yaml
+vault_bgp_routers:
+  - name: "[bgp-router-1-hostname]"
+    wireguard_ip: "[bgp-router-1-wg-ip]"
+  - name: "[bgp-router-2-hostname]"
+    wireguard_ip: "[bgp-router-2-wg-ip]"
+```
+
+The role matches the current host by `inventory_hostname`, `ansible_host`, or group membership,
+then uses the corresponding `wireguard_ip` as the BGP router ID. This eliminates the need to
+set `vault_bgp_router_router_id` per-host and ensures consistency across HA router pairs.
 
 ## Usage
 

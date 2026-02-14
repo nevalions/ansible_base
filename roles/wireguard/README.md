@@ -156,6 +156,18 @@ vault_db_wg_route_cidr: "[db-wg-ip]/32"
 
 This enables the simple Kubernetes model where pod traffic is SNATed to node `wg99` IPs and then routed to DB over WireGuard.
 
+### BGP Router Peer Routing Exception
+
+When both the current host and a peer are members of the `bgp_routers` inventory group,
+routed CIDRs (e.g., `vault_wg_routed_cidrs`) are **not** added to `AllowedIPs` for that peer.
+
+**Why:** BGP routers learn routes dynamically via BGP sessions. Adding static WireGuard
+routes for the same prefixes would conflict with or duplicate the BGP-learned routes.
+
+This logic is automatic: if your inventory has a `[bgp_routers]` group containing
+multiple hosts, WireGuard configs generated on those hosts will exclude routed CIDRs
+when peering with each other, while still including them for non-BGP peers.
+
 ## Dependencies
 
 None.
