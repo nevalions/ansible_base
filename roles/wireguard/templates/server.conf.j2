@@ -28,6 +28,7 @@ ListenPort = {{ server_port | default(vault_wg_server_port) }}
 
 # BEGIN ANSIBLE MANAGED PEERS
 {% set ns = namespace(seen_ips=[], reserved_peer_ips=[]) %}
+{% set current_in_bgp_routers = inventory_hostname in groups.get('bgp_routers', []) %}
 {% set api_vip_cidr = (vault_k8s_api_vip | default('') | string | trim) %}
 {% if api_vip_cidr | length > 0 and '/' not in api_vip_cidr %}
 {%   set api_vip_cidr = api_vip_cidr + '/32' %}
@@ -51,6 +52,14 @@ ListenPort = {{ server_port | default(vault_wg_server_port) }}
 {%     set peer_ips = peer.allowed_ips | default(peer.address) | string | replace(' ', '') | split(',') | reject('equalto', '') | unique | list %}
 {%     if (peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
 {%       set routed_extra_ips = (vault_wg_routed_cidrs | default([]) | list) %}
+{%       set peer_in_bgp_routers = (
+          peer.host_group is defined
+          and peer.host_group in groups
+          and ((groups[peer.host_group] | default([])) | intersect(groups.get('bgp_routers', [])) | length > 0)
+        ) %}
+{%       if current_in_bgp_routers and peer_in_bgp_routers %}
+{%         set routed_extra_ips = [] %}
+{%       endif %}
 {%       set peer_in_planes = (
           peer.host_group is defined
           and peer.host_group in groups

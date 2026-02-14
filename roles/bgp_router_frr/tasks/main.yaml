@@ -148,15 +148,41 @@
   when: bird_service_file.stat.exists
   failed_when: false
 
+- name: Compute effective BGP router ID for this host
+  ansible.builtin.set_fact:
+    bgp_router_router_id_effective: >-
+      {{
+        (
+          bgp_routers
+          | default([])
+          | selectattr('name', 'in', ([inventory_hostname, ansible_host | default('')] + (group_names | default([]))))
+          | map(attribute='wireguard_ip')
+          | list
+          | first
+        )
+        | default(
+            (
+              bgp_routers
+              | default([])
+              | selectattr('wireguard_ip', 'in', [inventory_hostname, ansible_host | default('')])
+              | map(attribute='wireguard_ip')
+              | list
+              | first
+            ),
+            true
+          )
+        | default(bgp_router_router_id, true)
+      }}
+
 - name: Fail if BGP router variables are missing or placeholders
   ansible.builtin.assert:
     that:
       - bgp_router_asn is defined
       - bgp_router_asn | string | length > 0
       - bgp_router_asn is not match('^\[.*\]$')
-      - bgp_router_router_id is defined
-      - bgp_router_router_id | string | length > 0
-      - bgp_router_router_id is not match('^\[.*\]$')
+      - bgp_router_router_id_effective is defined
+      - bgp_router_router_id_effective | string | length > 0
+      - bgp_router_router_id_effective is not match('^\[.*\]$')
       - bgp_router_metallb_pool_cidr is defined
       - bgp_router_metallb_pool_cidr | string | length > 0
       - bgp_router_metallb_pool_cidr is not match('^\[.*\]$')

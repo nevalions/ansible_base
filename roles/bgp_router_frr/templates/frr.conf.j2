@@ -13,7 +13,7 @@ route-map FROM-K8S permit 10
 !
 
 router bgp {{ bgp_router_asn }}
- bgp router-id {{ bgp_router_router_id }}
+ bgp router-id {{ bgp_router_router_id_effective | default(bgp_router_router_id) }}
  no bgp ebgp-requires-policy
  no bgp network import-check
 

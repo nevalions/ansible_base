@@ -31,6 +31,16 @@ vault_metallb_bgp_peers:
     peer_address: "[bay-bgp-wg-ip]"
     peer_asn: "[router-asn]"
 
+# Optional fallback: if vault_metallb_bgp_peers is omitted,
+# the role can derive peers from vault_bgp_routers + vault_bgp_router_asn.
+# This is useful for BGP HA (both routers are peered automatically).
+# vault_bgp_router_asn: "[router-asn]"
+# vault_bgp_routers:
+#   - name: "[bgp-router-1-hostname]"
+#     wireguard_ip: "[bgp-router-1-wg-ip]"
+#   - name: "[bgp-router-2-hostname]"
+#     wireguard_ip: "[bgp-router-2-wg-ip]"
+
 # Optional: also advertise an aggregate prefix (e.g., /24) in addition to per-service /32
 vault_metallb_bgp_advertise_per_service: true
 vault_metallb_bgp_aggregate_enabled: true

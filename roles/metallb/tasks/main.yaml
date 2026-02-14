@@ -81,6 +81,54 @@
     fail_msg: "metallb_address_pools must be defined"
     success_msg: "MetalLB address pools are defined"
 
+- name: Initialize effective MetalLB BGP peers
+  ansible.builtin.set_fact:
+    metallb_bgp_peers_effective: "{{ metallb_bgp_peers | default([]) }}"
+
+- name: Initialize normalized MetalLB BGP peers
+  ansible.builtin.set_fact:
+    metallb_bgp_peers_normalized: []
+
+- name: Normalize explicit MetalLB BGP peer names
+  ansible.builtin.set_fact:
+    metallb_bgp_peers_normalized: >-
+      {{
+        metallb_bgp_peers_normalized + [
+          {
+            'name': (item.name | default(item.peer_address) | lower | regex_replace('[^a-z0-9.-]+', '-')),
+            'peer_address': item.peer_address,
+            'peer_asn': item.peer_asn
+          }
+        ]
+      }}
+  loop: "{{ metallb_bgp_peers_effective | default([]) }}"
+
+- name: Set normalized explicit MetalLB BGP peers
+  ansible.builtin.set_fact:
+    metallb_bgp_peers_effective: "{{ metallb_bgp_peers_normalized }}"
+
+- name: Merge MetalLB BGP peers from vault_bgp_routers
+  ansible.builtin.set_fact:
+    metallb_bgp_peers_effective: >-
+      {{
+        metallb_bgp_peers_effective + [
+          {
+            'name': (item.name | default(item.wireguard_ip) | lower | regex_replace('[^a-z0-9.-]+', '-')),
+            'peer_address': item.wireguard_ip,
+            'peer_asn': (vault_bgp_router_asn | default('[router-asn]'))
+          }
+        ]
+      }}
+  loop: "{{ vault_bgp_routers | default([]) }}"
+  when:
+    - metallb_mode == 'bgp'
+    - item.wireguard_ip is defined
+    - item.wireguard_ip not in (metallb_bgp_peers_effective | map(attribute='peer_address') | list)
+
+- name: Set final MetalLB BGP peers
+  ansible.builtin.set_fact:
+    metallb_bgp_peers: "{{ metallb_bgp_peers_effective | default([]) }}"
+
 - name: Fail if MetalLB BGP variables are missing when mode is bgp
   ansible.builtin.assert:
     that:
