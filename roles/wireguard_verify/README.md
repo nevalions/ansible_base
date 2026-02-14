@@ -56,11 +56,11 @@ See [filter_plugins/README.md](filter_plugins/README.md) for detailed usage.
 - Displays peer transfer statistics
 
 ### 3. Connectivity Verification (`verify_connectivity.yaml`)
-- Pings server's own WireGuard IP
-- Pings each peer's VPN IP from server
-- Pings server from each client
-- Tests bidirectional peer-to-peer connectivity
+- Uses runtime routes from `wg show allowed-ips` to determine reachable peers
+- Pings all configured peer /32 routes (excluding local interface IP)
+- Tests actual WireGuard state rather than inventory assumptions
 - Counts failed connectivity tests
+- Simplified approach works for both servers and clients
 
 ### 4. Firewall Verification (`verify_firewall.yaml`)
 - Checks UFW firewall status

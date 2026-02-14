@@ -103,6 +103,19 @@ For servers behind NAT with shared public IP:
 3. Update `vault_wg_peers` with NAT endpoint
 4. Peers use public endpoints with unique ports
 
+### Interface Address Drift Detection
+
+When WireGuard configuration changes and the interface IP address changes (e.g., different server IP assignment), the role:
+
+1. Detects address drift by comparing current interface IP with desired IP
+2. Automatically restarts WireGuard service when drift is detected
+3. Uses `wg syncconf` for zero-downtime updates when address hasn't changed
+
+**Why this matters:**
+- Address changes require service restart (syncconf doesn't update interface IP)
+- Automatic detection prevents stale configurations after IP changes
+- Preserves connections when only peer configuration changes
+
 ### AllowedIPs Configuration
 
 **Why use specific server IPs instead of network CIDR?**
@@ -123,6 +136,8 @@ AllowedIPs = [server-vpn-ip]/32  # Only routes to this server
 - No routing conflicts between multiple peer connections
 - Clear traffic routing per server
 - Supports multi-server redundancy
+- Automatic deduplication of AllowedIPs across peers (prevents duplicate routes)
+- Smart CIDR routing: server peers get routed CIDRs (e.g., MetalLB pools), but API VIP is excluded for non-plane peers
 
 ### Routed CIDRs for Kubernetes + DB
 

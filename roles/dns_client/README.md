@@ -93,9 +93,12 @@ ansible-playbook your_playbook.yaml
 ### On Install:
 
 1. Stops and disables `systemd-resolved` (Debian/Ubuntu only)
-2. Removes the systemd-resolved stub `/etc/resolv.conf`
-3. Backs up the original `/etc/resolv.conf` to `/etc/resolv.conf.original`
+2. Removes systemd-resolved stub `/etc/resolv.conf`
+3. Backs up original `/etc/resolv.conf` to `/etc/resolv.conf.original`
 4. Optionally configures node-local `dnsmasq` to forward DNS and filter AAAA responses (Kubernetes-friendly)
+   - Creates systemd override to ensure dnsmasq starts after WireGuard interface
+   - Uses `bind-dynamic` mode to tolerate interfaces appearing after service start
+   - Automatically restarts dnsmasq after WireGuard configuration changes (when listen IP becomes available)
 5. Deploys a new `/etc/resolv.conf` with your custom DNS settings
 6. Tests DNS resolution to verify connectivity
 7. Asserts that DNS is working correctly
@@ -152,6 +155,27 @@ dig @[dns-server-vpn-ip] google.com
 ```
 
 ## Troubleshooting
+
+### dnsmasq fails to start on boot
+**Symptoms:** dnsmasq service fails during system startup with "address not available" errors
+
+**Cause:** WireGuard interface isn't ready when dnsmasq tries to bind to its listen IP
+
+**Solution:**
+- This role automatically creates a systemd override: `/etc/systemd/system/dnsmasq.service.d/10-wireguard-ordering.conf`
+- The override ensures dnsmasq starts after `wg-quick@wg99.service`
+- Uses `bind-dynamic` mode which tolerates interfaces appearing after service start
+- Manually verify:
+  ```bash
+  # Check override exists
+  cat /etc/systemd/system/dnsmasq.service.d/10-wireguard-ordering.conf
+
+  # Reload systemd if needed
+  sudo systemctl daemon-reload
+
+  # Restart dnsmasq
+  sudo systemctl restart dnsmasq
+  ```
 
 ### DNS resolution fails:
 

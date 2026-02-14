@@ -26,12 +26,13 @@ vault_k8s_api_vip: "[vip-address]"
 vault_k8s_api_port: "[k8s-api-port]"
 
 # Control Plane Configuration (multi-plane support)
+# Priority is optional - auto-assigned based on list position (first=150, second=100, etc.)
 vault_k8s_control_planes:
   - name: "[control-plane-hostname]"
     wireguard_ip: "[control-plane-wg-ip]"
     backend_port: "[haproxy-backend-port]"
     api_port: "[k8s-api-port]"
-    priority: 99
+    # priority: 99  # Optional: auto-assigned based on list position
   ```
 
 ## Features
@@ -116,7 +117,7 @@ HAProxy backend :[haproxy-backend-port] → localhost:[k8s-api-port]
        wireguard_ip: "[control-plane-wg-ip-2]"
        backend_port: "[haproxy-backend-port]"
        api_port: "[k8s-api-port]"
-       priority: 99
+       # priority: 99  # Optional: auto-assigned based on list position
    ```
 4. Re-run playbooks:
    ```bash
@@ -145,9 +146,10 @@ Keepalived tracks health of both HAProxy and Kubernetes API:
 - Weight: 10 (more critical)
 
 **Priority:**
-- Active master: priority 100
-- Backup planes: priority 99 (or lower)
+- Active master: priority 150 (first in list) or custom value
+- Backup planes: priority 100, 50... (auto-assigned) or custom values
 - Priority determines VRRP master election
+- Auto-assigned if not explicitly set: first=150, second=100, third=50, etc.
 
 ## Security
 

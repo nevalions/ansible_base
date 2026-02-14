@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-02-14
+
+### Added
+- **keepalived Role**:
+  - Auto-assign VRRP priority (150, 100, 50...) based on list position if not explicitly set
+  - Priority auto-assignment supports both control planes and BGP routers
+  - Simplifies multi-node HA configuration with minimal manual priority management
+
+- **bgp_keepalived Role**:
+  - Auto-assign VRRP priority for BGP routers based on position in `vault_bgp_routers` list
+  - Reduced health check weight from -50 to -30 to ensure MASTER election works even when health checks fail on all routers
+  - Priority gap (50) exceeds weight penalty, ensuring proper MASTER/BACKUP election
+
+- **dns_client Role**:
+  - systemd override for dnsmasq to start after WireGuard interface is up
+  - Use `bind-dynamic` mode to tolerate interfaces/addresses appearing after service start
+  - Automatic dnsmasq restart after WireGuard configuration changes with listen IP validation
+  - Prevents dnsmasq from binding to non-existent WireGuard IPs during boot
+
+- **wireguard Role**:
+  - Interface address drift detection and automatic service restart when IP changes
+  - Peer AllowedIPs deduplication logic to avoid duplicate routes in server/client templates
+  - Smart routing of CIDRs: API VIP excluded from non-plane peers when marked as server
+  - Improved configuration updates with `wg syncconf` for zero-downtime changes
+
+- **wireguard_verify Role**:
+  - Simplified connectivity tests using runtime routes from `wg show allowed-ips`
+  - Removed complex server/client logic - now uses actual configured peers from WireGuard
+  - More accurate testing based on live WireGuard state rather than inventory assumptions
+
+### Changed
+- **keepalived/bgp_keepalived**:
+  - Priority field is now optional in `vault_k8s_control_planes` and `vault_bgp_routers`
+  - Explicit priority values still supported for custom ordering
+  - Better documentation of auto-assignment behavior in README files
+
+- **wireguard**:
+  - Detect when interface address changes and restart service instead of using syncconf
+  - Preserve connections when address hasn't changed using `wg syncconf`
+  - Improved peer configuration generation with deduplication across all peers
+
+- **vault_secrets.example.yml**:
+  - Updated control plane and BGP router examples to show priority as optional
+  - Added comments explaining auto-assignment behavior
+
+### Fixed
+- **wireguard**:
+  - Duplicate AllowedIPs entries when multiple server peers exist
+  - Interface address changes not being applied until manual service restart
+  - Peers getting routes for VIPs they shouldn't (API VIP filtering for non-planes)
+
+- **dns_client**:
+  - dnsmasq failing to start if WireGuard interface isn't ready during boot
+  - Static binding (`bind-interfaces`) causing issues with dynamically appearing interfaces
+
+- **wireguard_verify**:
+  - Inaccurate connectivity testing based on inventory rather than actual WireGuard state
+  - Complex server/client logic that didn't reflect real peer relationships
+
 ## [1.7.0] - 2026-02-09
 
 ### Added
