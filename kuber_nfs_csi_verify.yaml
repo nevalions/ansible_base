@@ -1,0 +1,23 @@
+---
+# Verify NFS CSI driver and StorageClass
+# Usage:
+#   ansible-playbook kuber_nfs_csi_verify.yaml           # Verify NFS CSI
+#   ansible-playbook kuber_nfs_csi_verify.yaml --tags nfs  # With tags
+- name: Verify NFS CSI driver and StorageClass
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - nfs
+    - csi
+    - storage
+    - verify
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    nfs_csi_operation: verify
+  roles:
+    - nfs_csi

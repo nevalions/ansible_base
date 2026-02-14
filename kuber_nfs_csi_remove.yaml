@@ -1,0 +1,23 @@
+---
+# Remove NFS CSI driver and StorageClass
+# Usage:
+#   ansible-playbook kuber_nfs_csi_remove.yaml           # Remove NFS CSI
+#   ansible-playbook kuber_nfs_csi_remove.yaml --tags nfs  # With tags
+- name: Remove NFS CSI driver and StorageClass
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - nfs
+    - csi
+    - storage
+    - remove
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    nfs_csi_operation: remove
+  roles:
+    - nfs_csi

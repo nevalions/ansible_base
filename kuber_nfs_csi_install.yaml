@@ -1,0 +1,26 @@
+---
+# Install NFS CSI driver and StorageClass
+# Usage:
+#   ansible-playbook kuber_nfs_csi_install.yaml           # Install NFS CSI
+#   ansible-playbook kuber_nfs_csi_install.yaml --tags nfs  # With tags
+# Requirements:
+#   - Helm must be installed (run kuber_helm_install.yaml first)
+#   - NFS server IP and share must be defined in vault_secrets.yml
+- name: Install NFS CSI driver and StorageClass
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - nfs
+    - csi
+    - storage
+    - addon
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    nfs_csi_operation: install
+  roles:
+    - nfs_csi
