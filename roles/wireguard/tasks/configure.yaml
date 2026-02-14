@@ -38,29 +38,44 @@
     backup: yes
   register: wg_config_deployed
  
-- name: Stop WireGuard service before configuration change
-  ansible.builtin.systemd:
-    name: "wg-quick@{{ vault_wg_interface }}"
-    state: stopped
+- name: Check if WireGuard interface is already running
+  ansible.builtin.shell: ip link show {{ vault_wg_interface }} 2>/dev/null
+  register: wg_interface_running
+  changed_when: false
+  failed_when: false
   when:
     - wg_operation == "install"
-    - wg_config_deployed.changed
     - not ansible_check_mode
-  ignore_errors: true
- 
+
 - name: Enable WireGuard service on boot
   ansible.builtin.systemd:
     name: "wg-quick@{{ vault_wg_interface }}"
     enabled: yes
     daemon_reload: yes
   when: wg_operation == "install"
- 
-- name: Start or restart WireGuard service
+
+- name: Sync WireGuard configuration without restart (preserves connections)
+  ansible.builtin.shell: |
+    wg syncconf {{ vault_wg_interface }} <(wg-quick strip {{ vault_wg_interface }})
+  args:
+    executable: /bin/bash
+  register: wg_sync_action
+  when:
+    - wg_operation == "install"
+    - wg_config_deployed.changed
+    - wg_interface_running.rc | default(1) == 0
+    - not ansible_check_mode
+  changed_when: true
+
+- name: Start WireGuard service (interface not running)
   ansible.builtin.systemd:
     name: "wg-quick@{{ vault_wg_interface }}"
-    state: "{{ 'restarted' if wg_config_deployed.changed else 'started' }}"
+    state: started
   register: wg_service_action
-  when: wg_operation == "install"
+  when:
+    - wg_operation == "install"
+    - wg_interface_running.rc | default(1) != 0
+    - not ansible_check_mode
  
 - name: Wait for WireGuard interface to come up
   ansible.builtin.shell: ip link show {{ vault_wg_interface }}

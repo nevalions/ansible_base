@@ -1,6 +1,7 @@
 ---
 - name: Manage WireGuard network
-  hosts: wireguard_cluster
+  # hosts: wireguard_servers
+  hosts: wireguard_clients
   become: true
   gather_facts: true
   serial: 1

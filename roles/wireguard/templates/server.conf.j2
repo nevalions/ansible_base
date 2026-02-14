@@ -40,7 +40,6 @@ AllowedIPs = {{ all_ips | join(', ') }}
 {% else %}
 AllowedIPs = {{ peer_ips | join(', ') }}
 {% endif %}
-
 {%   if peer.endpoint is defined %}
 Endpoint = {{ peer.endpoint }}
 {%   endif %}
