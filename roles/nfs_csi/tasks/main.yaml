@@ -1,0 +1,427 @@
+---
+- name: Skip when NFS CSI disabled
+  ansible.builtin.meta: end_play
+  when: not (nfs_csi_enabled | bool)
+
+- name: Compute kubectl delegate host
+  ansible.builtin.set_fact:
+    nfs_csi_kubectl_delegate: "{{ ansible_play_hosts | first }}"
+  run_once: true
+
+- name: Fail when operation is invalid
+  ansible.builtin.assert:
+    that:
+      - nfs_csi_operation in ['install', 'verify', 'remove']
+    fail_msg: "nfs_csi_operation must be 'install', 'verify', or 'remove'"
+    success_msg: "NFS CSI operation is valid: {{ nfs_csi_operation }}"
+
+- name: Fail when NFS server is not defined
+  ansible.builtin.assert:
+    that:
+      - nfs_csi_server is defined
+      - nfs_csi_server is string
+      - (nfs_csi_server | trim) | length > 0
+      - nfs_csi_server is not match('^\[.*\]$')
+    fail_msg: "vault_nfs_csi_server must be defined in vault_secrets.yml as a valid IP address, e.g. vault_nfs_csi_server: '[nfs-server-ip]'"
+    success_msg: "NFS server: {{ nfs_csi_server }}"
+  when: nfs_csi_operation == 'install'
+
+- name: Fail when NFS share is not defined
+  ansible.builtin.assert:
+    that:
+      - nfs_csi_share is defined
+      - nfs_csi_share is string
+      - (nfs_csi_share | trim) | length > 0
+      - nfs_csi_share is not match('^\[.*\]$')
+    fail_msg: "vault_nfs_csi_share must be defined in vault_secrets.yml as a valid path, e.g. vault_nfs_csi_share: '[nfs-share-path]'"
+    success_msg: "NFS share: {{ nfs_csi_share }}"
+  when: nfs_csi_operation == 'install'
+
+- name: Check Helm binary exists
+  ansible.builtin.stat:
+    path: "{{ nfs_csi_helm_binary_path }}"
+  register: nfs_csi_helm_stat
+  run_once: true
+  delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+- name: Assert Helm is installed
+  ansible.builtin.assert:
+    that:
+      - nfs_csi_helm_stat.stat.exists
+    fail_msg: "Helm binary not found at {{ nfs_csi_helm_binary_path }}. Run kuber_helm_install.yaml first."
+    success_msg: "Helm binary found at {{ nfs_csi_helm_binary_path }}"
+  run_once: true
+  delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+- name: Install NFS CSI driver
+  block:
+    - name: Add NFS CSI driver Helm repository
+      ansible.builtin.command: >-
+        {{ nfs_csi_helm_binary_path }} repo add csi-driver-nfs {{ nfs_csi_chart_repo }} --force-update
+      register: nfs_csi_repo_add
+      changed_when: "'has been added' in nfs_csi_repo_add.stdout or 'updated' in nfs_csi_repo_add.stdout"
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Update Helm repos
+      ansible.builtin.command: "{{ nfs_csi_helm_binary_path }} repo update"
+      register: nfs_csi_repo_update
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: List all Helm releases in namespace
+      ansible.builtin.command: >-
+        helm -n {{ nfs_csi_namespace }} list -o json
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_helm_list
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display Helm list output for debugging
+      ansible.builtin.debug:
+        msg:
+          - "Helm list stdout: {{ nfs_csi_helm_list.stdout | default('EMPTY') }}"
+          - "Helm list stderr: {{ nfs_csi_helm_list.stderr | default('NONE') }}"
+          - "Helm list rc: {{ nfs_csi_helm_list.rc }}"
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Initialize Helm list facts (make available to all hosts)
+      ansible.builtin.set_fact:
+        nfs_csi_helm_list_stdout: "{{ hostvars[ansible_play_hosts[0]]['nfs_csi_helm_list'].stdout | default('') }}"
+      run_once: true
+
+    - name: Parse Helm releases and find target release
+      ansible.builtin.set_fact:
+        nfs_csi_releases: []
+      run_once: true
+      when: nfs_csi_helm_list_stdout == ''
+
+    - name: Parse Helm releases and find target release
+      ansible.builtin.set_fact:
+        nfs_csi_releases: "{{ nfs_csi_helm_list_stdout | from_json }}"
+      run_once: true
+      when: nfs_csi_helm_list_stdout != ''
+
+    - name: Parse Helm releases and find target release
+      ansible.builtin.set_fact:
+        nfs_csi_target_release_exists: "{{ (nfs_csi_releases | default([])) | selectattr('name', 'equalto', nfs_csi_release_name) | list | length > 0 }}"
+        nfs_csi_target_release_version: "{{ ((nfs_csi_releases | default([])) | selectattr('name', 'equalto', nfs_csi_release_name) | map(attribute='chart') | first | default('')) | regex_search('v?[0-9]+\\.[0-9]+\\.[0-9]+') | default('') }}"
+      run_once: true
+
+    - name: Parse Helm releases and find conflicting releases
+      ansible.builtin.set_fact:
+        nfs_csi_existing_releases: "{{ (nfs_csi_releases | default([])) | selectattr('name', 'match', '.*nfs.*csi.*') | list }}"
+      run_once: true
+
+    - name: Display existing NFS CSI releases
+      ansible.builtin.debug:
+        msg:
+          - "Target release {{ nfs_csi_release_name }} {{ 'exists' if nfs_csi_target_release_exists else 'does NOT exist' }} in helm list"
+          - "Target release version: {{ nfs_csi_target_release_version | default('N/A') }}"
+          - "All NFS CSI releases: {{ nfs_csi_existing_releases | map(attribute='name') | default([]) | join(', ') | default('none') }}"
+      run_once: true
+
+    - name: Uninstall existing conflicting NFS CSI releases
+      ansible.builtin.command: >-
+        helm -n {{ nfs_csi_namespace }} uninstall {{ item.name }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_uninstall
+      with_items: "{{ nfs_csi_existing_releases }}"
+      when:
+        - nfs_csi_existing_releases | length > 0
+        - item.name != nfs_csi_release_name
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Get NFS CSI Helm release status
+      ansible.builtin.command: >-
+        helm -n {{ nfs_csi_namespace }} status {{ nfs_csi_release_name }} --output json
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_helm_status
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Initialize Helm status facts (make available to all hosts)
+      ansible.builtin.set_fact:
+        nfs_csi_helm_status_rc: "{{ hostvars[ansible_play_hosts[0]]['nfs_csi_helm_status'].rc | default(1) }}"
+        nfs_csi_helm_status_stdout: "{{ hostvars[ansible_play_hosts[0]]['nfs_csi_helm_status'].stdout | default('{}') }}"
+      run_once: true
+
+    - name: Force uninstall target release if helm status fails but release exists in list
+      block:
+        - name: Force uninstall target release
+          ansible.builtin.command: >-
+            helm -n {{ nfs_csi_namespace }} uninstall {{ nfs_csi_release_name }}
+          environment:
+            KUBECONFIG: /etc/kubernetes/admin.conf
+          register: nfs_csi_force_uninstall
+          when:
+            - nfs_csi_target_release_exists
+            - nfs_csi_helm_status_rc != 0
+          run_once: true
+          delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Set facts from Helm status or list
+      ansible.builtin.set_fact:
+        nfs_csi_current_version: "{{ ((nfs_csi_helm_status_stdout | from_json).chart | default('')) | regex_search('v?[0-9]+\\.[0-9]+\\.[0-9]+') | default('') }}"
+        nfs_csi_current_chart: "{{ (nfs_csi_helm_status_stdout | from_json).chart | default('') }}"
+      run_once: true
+      when:
+        - nfs_csi_helm_status_rc == 0
+        - nfs_csi_helm_status_stdout != ''
+        - (nfs_csi_helm_status_stdout | from_json).chart is defined
+
+    - name: Display Helm release status
+      ansible.builtin.debug:
+        msg:
+          - "NFS CSI release {{ nfs_csi_release_name }} {{ 'already exists' if nfs_csi_target_release_exists else 'does NOT exist' }}"
+          - "Helm status rc: {{ nfs_csi_helm_status_rc }}"
+          - "Current version from status: {{ nfs_csi_current_version | default('N/A') }}"
+          - "Current version from list: {{ nfs_csi_target_release_version | default('N/A') }}"
+          - "Desired version: {{ nfs_csi_version }}"
+
+    - name: Skip installation if version matches and release exists
+      ansible.builtin.debug:
+        msg: "NFS CSI driver {{ nfs_csi_release_name }} is already at version {{ nfs_csi_version }}. Skipping install/upgrade."
+      run_once: true
+      when:
+        - nfs_csi_target_release_exists
+        - (nfs_csi_current_version | default(nfs_csi_target_release_version) | regex_replace('^v', '')) == (nfs_csi_version | regex_replace('^v', ''))
+
+    - name: Install NFS CSI driver via Helm
+      ansible.builtin.command: >-
+        helm install {{ nfs_csi_release_name }} {{ nfs_csi_chart_ref }}
+        --namespace {{ nfs_csi_namespace }}
+        --version {{ nfs_csi_version }}
+        --set controller.runOnControlPlane={{ nfs_csi_controller_run_on_control_plane | lower }}
+        --set controller.replicas={{ nfs_csi_controller_replicas }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_install
+      when:
+        - not nfs_csi_target_release_exists
+        - not (nfs_csi_force_uninstall is defined and nfs_csi_force_uninstall.changed)
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Upgrade NFS CSI driver via Helm
+      ansible.builtin.command: >-
+        helm upgrade {{ nfs_csi_release_name }} {{ nfs_csi_chart_ref }}
+        --namespace {{ nfs_csi_namespace }}
+        --version {{ nfs_csi_version }}
+        --set controller.runOnControlPlane={{ nfs_csi_controller_run_on_control_plane | lower }}
+        --set controller.replicas={{ nfs_csi_controller_replicas }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_upgrade
+      when:
+        - nfs_csi_target_release_exists
+        - nfs_csi_helm_status_rc == 0
+        - nfs_csi_current_version is defined
+        - (nfs_csi_current_version | regex_replace('^v', '')) != (nfs_csi_version | regex_replace('^v', ''))
+        - not (nfs_csi_force_uninstall is defined and nfs_csi_force_uninstall.changed)
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Check if NFS CSI StorageClass already exists
+      ansible.builtin.command: >-
+        kubectl get storageclass {{ nfs_csi_storageclass_name }} -o name
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_storageclass_exists
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Warn when NFS CSI StorageClass already exists
+      ansible.builtin.debug:
+        msg: "WARNING: StorageClass {{ nfs_csi_storageclass_name }} already exists. Skipping creation."
+      when: nfs_csi_storageclass_exists.rc == 0
+
+    - name: Create NFS CSI StorageClass
+      ansible.builtin.command: >-
+        kubectl apply -f -
+      args:
+        stdin: |
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: {{ nfs_csi_storageclass_name }}
+            annotations:
+              storageclass.kubernetes.io/is-default-class: "{{ nfs_csi_storageclass_is_default | lower }}"
+          provisioner: nfs.csi.k8s.io
+          parameters:
+            server: {{ nfs_csi_server }}
+            share: {{ nfs_csi_share }}
+            subDir: "${pvc.metadata.namespace}/${pvc.metadata.name}"
+          reclaimPolicy: {{ nfs_csi_reclaim_policy }}
+          volumeBindingMode: {{ nfs_csi_volume_binding_mode }}
+          allowVolumeExpansion: {{ nfs_csi_allow_volume_expansion | lower }}
+          mountOptions:
+            {% for option in nfs_csi_mount_options %}
+            - {{ option }}
+            {% endfor %}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_storageclass_apply
+      when: nfs_csi_storageclass_exists.rc != 0
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display StorageClass creation result
+      ansible.builtin.debug:
+        msg: "StorageClass {{ nfs_csi_storageclass_name }} {{ 'created/updated' if nfs_csi_storageclass_apply.changed else 'applied' }}"
+      when: nfs_csi_storageclass_exists.rc != 0
+
+    - name: Wait for NFS CSI pods to be ready
+      ansible.builtin.command: >-
+        kubectl -n {{ nfs_csi_namespace }} wait
+        --for=condition=ready pod
+        -l app.kubernetes.io/instance={{ nfs_csi_release_name }}
+        --timeout=300s
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_pods_wait
+      when:
+        - (nfs_csi_install is defined and not (nfs_csi_install.skipped | default(false))) or (nfs_csi_upgrade is defined and not (nfs_csi_upgrade.skipped | default(false)))
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display NFS CSI installation completion
+      ansible.builtin.debug:
+        msg:
+          - "=== NFS CSI Driver Installation Complete ==="
+          - "Helm release: {{ nfs_csi_release_name }}"
+          - "Namespace: {{ nfs_csi_namespace }}"
+          - "Version: {{ nfs_csi_version }}"
+          - "StorageClass: {{ nfs_csi_storageclass_name }}"
+          - "NFS server: {{ nfs_csi_server }}"
+          - "NFS share: {{ nfs_csi_share }}"
+  when: nfs_csi_operation == 'install'
+
+- name: Verify NFS CSI driver
+  block:
+    - name: Check NFS CSI Helm release
+      ansible.builtin.command: >-
+        helm -n {{ nfs_csi_namespace }} status {{ nfs_csi_release_name }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_verify_helm
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display Helm release status
+      ansible.builtin.debug:
+        msg: "Helm release status: {{ 'OK' if nfs_csi_verify_helm.rc == 0 else 'NOT FOUND' }}"
+
+    - name: Get NFS CSI controller pods
+      ansible.builtin.command: >-
+        kubectl -n {{ nfs_csi_namespace }} get pods
+        -l app.kubernetes.io/component=controller
+        -o wide
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_controller_pods
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display NFS CSI controller pods
+      ansible.builtin.debug:
+        var: nfs_csi_controller_pods.stdout_lines
+      when: nfs_csi_controller_pods.rc == 0
+
+    - name: Get NFS CSI node pods
+      ansible.builtin.command: >-
+        kubectl -n {{ nfs_csi_namespace }} get pods
+        -l app.kubernetes.io/component=node
+        -o wide
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_node_pods
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display NFS CSI node pods
+      ansible.builtin.debug:
+        var: nfs_csi_node_pods.stdout_lines
+      when: nfs_csi_node_pods.rc == 0
+
+    - name: Get StorageClass details
+      ansible.builtin.command: >-
+        kubectl get storageclass {{ nfs_csi_storageclass_name }} -o yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_storageclass_get
+      changed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display StorageClass details
+      ansible.builtin.debug:
+        var: nfs_csi_storageclass_get.stdout
+      when: nfs_csi_storageclass_get.rc == 0
+
+    - name: Display NFS CSI verification completion
+      ansible.builtin.debug:
+        msg:
+          - "=== NFS CSI Driver Verification Complete ==="
+          - "Helm release: {{ nfs_csi_release_name }}"
+          - "Namespace: {{ nfs_csi_namespace }}"
+          - "StorageClass: {{ nfs_csi_storageclass_name }}"
+  when: nfs_csi_operation == 'verify'
+
+- name: Remove NFS CSI driver
+  block:
+    - name: Delete StorageClass
+      ansible.builtin.command: >-
+        kubectl delete storageclass {{ nfs_csi_storageclass_name }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_storageclass_delete
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Uninstall NFS CSI Helm release
+      ansible.builtin.command: >-
+        helm uninstall {{ nfs_csi_release_name }} -n {{ nfs_csi_namespace }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_helm_uninstall
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Delete NFS CSI namespace
+      ansible.builtin.command: >-
+        kubectl delete namespace {{ nfs_csi_namespace }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: nfs_csi_ns_delete
+      changed_when: false
+      failed_when: false
+      when: nfs_csi_remove_namespace | bool
+      run_once: true
+      delegate_to: "{{ nfs_csi_kubectl_delegate }}"
+
+    - name: Display NFS CSI removal completion
+      ansible.builtin.debug:
+        msg:
+          - "=== NFS CSI Driver Removal Complete ==="
+          - "Helm release: {{ nfs_csi_release_name }}"
+          - "StorageClass: {{ nfs_csi_storageclass_name }}"
+          - "Namespace {{ nfs_csi_namespace }} {{ 'deleted' if nfs_csi_remove_namespace | bool else 'kept' }}"
+  when: nfs_csi_operation == 'remove'
