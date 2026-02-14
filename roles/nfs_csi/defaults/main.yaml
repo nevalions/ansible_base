@@ -1,0 +1,38 @@
+---
+nfs_csi_enabled: "{{ vault_nfs_csi_enabled | default(true) }}"
+
+nfs_csi_operation: "{{ vault_nfs_csi_operation | default('install') }}"
+
+nfs_csi_version: "{{ vault_nfs_csi_version | default('v4.11.0') }}"
+
+nfs_csi_namespace: "{{ vault_nfs_csi_namespace | default('kube-system') }}"
+
+nfs_csi_release_name: "{{ vault_nfs_csi_release_name | default('csi-driver-nfs') }}"
+
+nfs_csi_chart_ref: "{{ vault_nfs_csi_chart_ref | default('csi-driver-nfs/csi-driver-nfs') }}"
+
+nfs_csi_chart_repo: "{{ vault_nfs_csi_chart_repo | default('https://raw.githubusercontent.com/kubernetes-csi/csi-driver-nfs/master/charts') }}"
+
+nfs_csi_helm_binary_path: "{{ vault_nfs_csi_helm_binary_path | default('/usr/local/bin/helm') }}"
+
+nfs_csi_controller_run_on_control_plane: "{{ vault_nfs_csi_controller_run_on_control_plane | default(true) }}"
+
+nfs_csi_controller_replicas: "{{ vault_nfs_csi_controller_replicas | default(2) }}"
+
+nfs_csi_remove_namespace: "{{ vault_nfs_csi_remove_namespace | default(false) }}"
+
+nfs_csi_storageclass_name: "{{ vault_nfs_csi_storageclass_name | default('nfs-csi') }}"
+
+nfs_csi_storageclass_is_default: "{{ vault_nfs_csi_storageclass_is_default | default('false') }}"
+
+nfs_csi_server: "{{ vault_nfs_csi_server }}"
+
+nfs_csi_share: "{{ vault_nfs_csi_share }}"
+
+nfs_csi_reclaim_policy: "{{ vault_nfs_csi_reclaim_policy | default('Retain') }}"
+
+nfs_csi_volume_binding_mode: "{{ vault_nfs_csi_volume_binding_mode | default('Immediate') }}"
+
+nfs_csi_allow_volume_expansion: "{{ vault_nfs_csi_allow_volume_expansion | default(true) }}"
+
+nfs_csi_mount_options: "{{ vault_nfs_csi_mount_options | default(['nfsvers=4.1', 'hard', 'noatime', 'rw']) }}"
