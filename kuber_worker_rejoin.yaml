@@ -1,0 +1,64 @@
+---
+- name: Rejoin Worker Node to Kubernetes Cluster (minimal cleanup)
+  hosts: kuber_small_workers
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - kubernetes
+    - k8s
+    - rejoin
+    - worker
+  pre_tasks:
+    - name: Assert control plane inventory group exists
+      ansible.builtin.assert:
+        that:
+          - groups['planes_all'] is defined
+          - groups['planes_all'] | length > 0
+        success_msg: "Control plane inventory group found"
+        fail_msg: "No control plane hosts found in 'planes_all' group"
+
+    - name: Set delegate host for control plane tasks
+      ansible.builtin.set_fact:
+        kuber_rejoin_delegate: "{{ groups['planes_all'][0] }}"
+  tasks:
+    - name: Delete node from control plane
+      ansible.builtin.command: kubectl delete node {{ ansible_facts['hostname'] }} --ignore-not-found=true
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      delegate_to: "{{ kuber_rejoin_delegate }}"
+      run_once: true
+      changed_when: true
+      when: not ansible_check_mode
+
+    - name: Stop kubelet service
+      ansible.builtin.systemd:
+        name: kubelet
+        state: stopped
+      register: kubelet_stop
+      when: not ansible_check_mode
+
+    - name: Remove kubelet cluster credentials and PKI
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/kubernetes/kubelet.conf
+        - /etc/kubernetes/pki
+        - /var/lib/kubelet/pki
+      when: not ansible_check_mode
+
+    - name: Display rejoin status
+      ansible.builtin.debug:
+        msg:
+          - "=== Worker Rejoin Preparation Complete ==="
+          - "Node removed from API server: {{ ansible_facts['hostname'] }}"
+          - "Kubelet stopped"
+          - "Credentials removed"
+          - "Proceeding to rejoin..."
+
+    - name: Rejoin worker to cluster
+      ansible.builtin.include_role:
+        name: kuber_join

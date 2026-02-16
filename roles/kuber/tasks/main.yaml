@@ -227,7 +227,7 @@
 
 - name: Download kubelet binary
   ansible.builtin.get_url:
-    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubelet"
+    url: "https://dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubelet"
     dest: "{{ k8s_temp_dir.path }}/kubelet"
     mode: "0755"
     timeout: 300
@@ -235,7 +235,7 @@
 
 - name: Download kubectl binary
   ansible.builtin.get_url:
-    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubectl"
+    url: "https://dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubectl"
     dest: "{{ k8s_temp_dir.path }}/kubectl"
     mode: "0755"
     timeout: 300
@@ -243,7 +243,7 @@
 
 - name: Download kubeadm binary
   ansible.builtin.get_url:
-    url: "https://cdn.dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubeadm"
+    url: "https://dl.k8s.io/release/v{{ kubernetes_version }}.0/bin/linux/amd64/kubeadm"
     dest: "{{ k8s_temp_dir.path }}/kubeadm"
     mode: "0755"
     timeout: 300

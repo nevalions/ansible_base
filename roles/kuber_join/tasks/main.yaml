@@ -30,6 +30,7 @@
   changed_when: true
   delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
+  check_mode: no
 
 - name: Parse join command to extract token and CA cert hash
   ansible.builtin.set_fact:
@@ -61,6 +62,7 @@
   ansible.builtin.command: kubeadm join --config=/tmp/kube-join.yaml
   register: kubeadm_join
   changed_when: true
+  when: not ansible_check_mode
 
 - name: Wait for kubelet to be ready
   ansible.builtin.command: systemctl is-active kubelet
@@ -89,7 +91,7 @@
     msg: "Node {{ inventory_hostname }} successfully joined to cluster"
 
 - name: Verify node is visible from control plane
-  ansible.builtin.command: kubectl get nodes {{ ansible_hostname }}
+  ansible.builtin.command: kubectl get nodes {{ ansible_facts['hostname'] }}
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_check
@@ -104,7 +106,7 @@
   when: node_check.rc == 0
 
 - name: Wait for node to be Ready
-  ansible.builtin.command: kubectl wait --for=condition=ready node {{ ansible_hostname }} --timeout=600s
+  ansible.builtin.command: kubectl wait --for=condition=ready node {{ ansible_facts['hostname'] }} --timeout=600s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: node_ready
@@ -120,18 +122,19 @@
   ansible.builtin.assert:
     that:
       - node_ready.rc == 0
-    success_msg: "Worker node {{ ansible_hostname }} is Ready"
-    fail_msg: "Worker node {{ ansible_hostname }} is not Ready after 600s"
+    success_msg: "Worker node {{ ansible_facts['hostname'] }} is Ready"
+    fail_msg: "Worker node {{ ansible_facts['hostname'] }} is not Ready after 600s"
   when: node_ready.rc is defined
 
 - name: Label worker node role
-  ansible.builtin.command: kubectl label node {{ ansible_hostname }} node-role.kubernetes.io/worker= --overwrite
+  ansible.builtin.command: kubectl label node {{ ansible_facts['hostname'] }} node-role.kubernetes.io/worker= --overwrite
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
   changed_when: true
   ignore_errors: true
+  when: not ansible_check_mode
 
 - name: Get Calico pod on this worker
   ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
@@ -152,7 +155,7 @@
   ansible.builtin.debug:
     msg:
       - "=== Worker Join Complete ==="
-      - "Node: {{ ansible_hostname }}"
+      - "Node: {{ ansible_facts['hostname'] }}"
       - "Status: Ready"
       - "Calico CNI: Active"
       - "Next step: Run kuber_verify.yaml for full cluster health check"

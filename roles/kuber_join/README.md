@@ -61,6 +61,18 @@ To join to specific control plane:
 kuber_join_control_plane_host: "[control-plane-hostname]"
 ```
 
+## Check Mode
+
+This role supports Ansible check mode (`--check`):
+
+- Token generation runs even in check mode (to display what token would be used)
+- Actual join and labeling tasks are skipped in check mode
+
+```bash
+# Preview what would happen
+ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname] --check
+```
+
 ## Usage
 
 ### Playbook
@@ -71,6 +83,14 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostnam
 
 # Join all workers
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+```
+
+### Rejoin Worker (minimal cleanup)
+
+For rejoining a worker without full reset (preserves packages, containerd, CNI):
+
+```bash
+ansible-playbook -i hosts_bay.ini kuber_worker_rejoin.yaml --limit [worker-hostname]
 ```
 
 ### Direct role usage
@@ -121,10 +141,16 @@ Run `kuber_verify.yaml` for full cluster health check.
 
 **Node already joined error:**
 ```bash
-# Reset worker node first
+# Option 1: Full reset (removes packages, config, CNI)
 ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit [worker-hostname]
 
-# Then re-join
+# Option 2: Soft reset (keeps packages, removes config)
+ansible-playbook -i hosts_bay.ini kuber_worker_soft_reset.yaml --limit [worker-hostname]
+
+# Option 3: Rejoin only (minimal - keeps packages, containerd, CNI)
+ansible-playbook -i hosts_bay.ini kuber_worker_rejoin.yaml --limit [worker-hostname]
+
+# Then re-join (if using reset options 1 or 2)
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname]
 ```
 

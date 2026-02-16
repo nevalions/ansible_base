@@ -8,7 +8,7 @@ discovery:
     caCertHashes:
       - "sha256:{{ kuber_join_ca_cert_hash }}"
 nodeRegistration:
-  name: "{{ ansible_hostname }}"
+  name: "{{ ansible_facts['hostname'] }}"
 {% if kuber_join_kubelet_extra_args is defined and kuber_join_kubelet_extra_args | length > 0 %}
   kubeletExtraArgs:
 {% for key, value in kuber_join_kubelet_extra_args.items() %}
