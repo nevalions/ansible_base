@@ -31,6 +31,8 @@
     postgres_remove_env_file: "{{ vault_postgres_remove_env_file | default(false) | bool }}"
     postgres_remove_volume: "{{ vault_postgres_remove_volume | default(false) | bool }}"
     postgres_remove_network: "{{ vault_postgres_remove_network | default(false) | bool }}"
+    postgres_idle_in_transaction_timeout: "{{ vault_postgres_idle_in_transaction_timeout | default('2min') }}"
+    postgres_statement_timeout: "{{ vault_postgres_statement_timeout | default('5min') }}"
 
   tasks:
     - name: Validate postgres operation value
@@ -118,7 +120,14 @@
         source: pull
       when: postgres_operation == 'install'
 
-    - name: Check whether requested host port is already in use
+    - name: Check if PostgreSQL container already exists
+      community.docker.docker_container_info:
+        name: "{{ postgres_container_name }}"
+      register: postgres_existing_container
+      failed_when: false
+      when: postgres_operation == 'install'
+
+    - name: Check whether requested host port is already in use by another process
       ansible.builtin.command:
         argv:
           - ss
@@ -129,15 +138,15 @@
       failed_when: false
       when: postgres_operation == 'install'
 
-    - name: Assert requested host port is available
+    - name: Assert requested host port is available or used by same container
       ansible.builtin.assert:
         that:
-          - postgres_host_port_check.stdout_lines | length == 0
+          - postgres_host_port_check.stdout_lines | length == 0 or postgres_existing_container.exists
         fail_msg: >-
-          Host port {{ postgres_host_port }} is already in use on {{ inventory_hostname }}.
+          Host port {{ postgres_host_port }} is already in use on {{ inventory_hostname }} by a different process.
           Choose another vault_postgres_port (or vault_postgres_host_port) or stop the process/container
           using this port. Current listeners: {{ postgres_host_port_check.stdout | default('unknown') }}
-        success_msg: "Host port {{ postgres_host_port }} is available"
+        success_msg: "Host port {{ postgres_host_port }} is available or container will be restarted"
       when: postgres_operation == 'install'
 
     - name: Check if UFW is installed
@@ -201,6 +210,10 @@
       community.docker.docker_container:
         name: "{{ postgres_container_name }}"
         image: "{{ postgres_image }}"
+        command: >-
+          postgres
+          -c idle_in_transaction_session_timeout={{ postgres_idle_in_transaction_timeout }}
+          -c statement_timeout={{ postgres_statement_timeout }}
         state: started
         restart_policy: unless-stopped
         env_file: "{{ postgres_env_file_path }}"
