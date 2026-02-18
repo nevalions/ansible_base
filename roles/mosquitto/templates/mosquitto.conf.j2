@@ -1,0 +1,52 @@
+# BEGIN ANSIBLE MANAGED SECTION
+# Mosquitto MQTT Broker Configuration
+
+# Persistence settings
+persistence {{ mosquitto_persistence_enabled | lower }}
+persistence_location /mosquitto/data/
+autosave_interval 1800
+
+# Logging
+log_dest stdout
+log_type error
+log_type warning
+log_type notice
+log_type information
+
+# Per-listener settings
+per_listener_settings true
+
+# Internal listener for health checks (localhost only, always no auth)
+listener 1884 127.0.0.1
+allow_anonymous true
+protocol mqtt
+max_connections {{ mosquitto_max_connections }}
+max_queued_messages {{ mosquitto_max_queued_messages }}
+
+# External listener
+listener {{ mosquitto_host_port }}
+protocol mqtt
+max_connections {{ mosquitto_max_connections }}
+max_queued_messages {{ mosquitto_max_queued_messages }}
+{% if mosquitto_user | length > 0 and mosquitto_password | length > 0 %}
+allow_anonymous false
+password_file /mosquitto/config/passwd
+{% else %}
+allow_anonymous true
+{% endif %}
+
+{% if mosquitto_enable_websockets | bool %}
+# WebSocket listener
+listener {{ mosquitto_ws_port }}
+protocol websockets
+max_connections {{ mosquitto_max_connections }}
+max_queued_messages {{ mosquitto_max_queued_messages }}
+{% if mosquitto_user | length > 0 and mosquitto_password | length > 0 %}
+allow_anonymous false
+password_file /mosquitto/config/passwd
+{% else %}
+allow_anonymous true
+{% endif %}
+{% endif %}
+
+# END ANSIBLE MANAGED SECTION

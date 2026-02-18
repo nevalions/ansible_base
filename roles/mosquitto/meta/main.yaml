@@ -1,0 +1,29 @@
+---
+galaxy_info:
+  author: [your-username]
+  description: Manage Mosquitto MQTT broker in Docker container
+  company: null
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+    - name: Archlinux
+      versions:
+        - all
+
+  galaxy_tags:
+    - mqtt
+    - mosquitto
+    - docker
+    - iot
+    - messaging
+
+dependencies: []

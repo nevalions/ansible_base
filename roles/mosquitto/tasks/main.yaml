@@ -1,0 +1,298 @@
+---
+- name: Install Docker SDK for Python (Debian)
+  ansible.builtin.apt:
+    name: python3-docker
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Install Docker SDK for Python (Arch)
+  community.general.pacman:
+    name: python-docker
+    state: present
+    update_cache: true
+  when: ansible_facts['os_family'] == "Archlinux"
+
+- name: Ensure Mosquitto config directory exists
+  ansible.builtin.file:
+    path: "{{ mosquitto_config_path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure Mosquitto data directory exists
+  ansible.builtin.file:
+    path: "{{ mosquitto_config_path }}/data"
+    state: directory
+    owner: 1883
+    group: 1883
+    mode: "0755"
+
+- name: Deploy Mosquitto configuration file
+  ansible.builtin.template:
+    src: mosquitto.conf.j2
+    dest: "{{ mosquitto_config_path }}/mosquitto.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart mosquitto
+
+- name: Check if password file exists
+  ansible.builtin.stat:
+    path: "{{ mosquitto_config_path }}/passwd"
+  register: mosquitto_passwd_file
+  when:
+    - mosquitto_user | length > 0
+    - mosquitto_password | length > 0
+
+- name: Create password file with user
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - -v
+      - "{{ mosquitto_config_path }}:/mosquitto/config"
+      - "{{ mosquitto_image }}"
+      - mosquitto_passwd
+      - -c
+      - -b
+      - /mosquitto/config/passwd
+      - "{{ mosquitto_user }}"
+      - "{{ mosquitto_password }}"
+  when:
+    - mosquitto_user | length > 0
+    - mosquitto_password | length > 0
+    - not mosquitto_passwd_file.stat.exists
+  no_log: true
+  changed_when: true
+
+- name: Set password file permissions
+  ansible.builtin.file:
+    path: "{{ mosquitto_config_path }}/passwd"
+    owner: 1883
+    group: 1883
+    mode: "0600"
+  when:
+    - mosquitto_user | length > 0
+    - mosquitto_password | length > 0
+
+- name: Ensure dedicated Docker network exists
+  community.docker.docker_network:
+    name: "{{ mosquitto_network_name }}"
+    state: present
+
+- name: Ensure persistent Docker volume exists
+  community.docker.docker_volume:
+    name: "{{ mosquitto_volume_name }}"
+    state: present
+
+- name: Pull Mosquitto image
+  community.docker.docker_image:
+    name: "{{ mosquitto_image }}"
+    source: pull
+
+- name: Check if Mosquitto container already exists
+  community.docker.docker_container_info:
+    name: "{{ mosquitto_container_name }}"
+  register: mosquitto_existing_container
+  failed_when: false
+
+- name: Check whether requested host port is already in use
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -ltnpH
+      - "sport = :{{ mosquitto_host_port }}"
+  register: mosquitto_host_port_check
+  changed_when: false
+  failed_when: false
+
+- name: Assert requested host port is available or used by same container
+  ansible.builtin.assert:
+    that:
+      - mosquitto_host_port_check.stdout_lines | length == 0 or mosquitto_existing_container.exists
+    fail_msg: >-
+      Host port {{ mosquitto_host_port }} is already in use on {{ inventory_hostname }} by a different process.
+      Current listeners: {{ mosquitto_host_port_check.stdout | default('unknown') }}
+    success_msg: "Host port {{ mosquitto_host_port }} is available or container will be restarted"
+
+- name: Check if UFW is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/ufw
+  register: mosquitto_ufw_bin
+  when: mosquitto_manage_ufw
+
+- name: Check if UFW is active
+  ansible.builtin.command: ufw status
+  register: mosquitto_ufw_status
+  changed_when: false
+  failed_when: false
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_ufw_bin.stat.exists
+
+- name: Allow Mosquitto MQTT port in UFW from restricted networks
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ mosquitto_host_port }}"
+    from: "{{ net }}"
+    direction: in
+  loop: "{{ mosquitto_allowed_networks }}"
+  loop_control:
+    loop_var: net
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_ufw_bin.stat.exists
+    - "'Status: active' in mosquitto_ufw_status.stdout"
+    - mosquitto_allowed_networks | length > 0
+
+- name: Allow Mosquitto MQTT port in UFW from any source
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ mosquitto_host_port }}"
+    direction: in
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_ufw_bin.stat.exists
+    - "'Status: active' in mosquitto_ufw_status.stdout"
+    - mosquitto_allowed_networks | length == 0
+
+- name: Allow Mosquitto WebSocket port in UFW from restricted networks
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ mosquitto_ws_port }}"
+    from: "{{ net }}"
+    direction: in
+  loop: "{{ mosquitto_allowed_networks }}"
+  loop_control:
+    loop_var: net
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_enable_websockets | bool
+    - mosquitto_ufw_bin.stat.exists
+    - "'Status: active' in mosquitto_ufw_status.stdout"
+    - mosquitto_allowed_networks | length > 0
+
+- name: Allow Mosquitto WebSocket port in UFW from any source
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ mosquitto_ws_port }}"
+    direction: in
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_enable_websockets | bool
+    - mosquitto_ufw_bin.stat.exists
+    - "'Status: active' in mosquitto_ufw_status.stdout"
+    - mosquitto_allowed_networks | length == 0
+
+- name: Explain UFW skip behavior
+  ansible.builtin.debug:
+    msg: "UFW is not installed or not active; skipping firewall rule management"
+  when:
+    - mosquitto_manage_ufw
+    - mosquitto_ufw_bin is defined
+    - "(not mosquitto_ufw_bin.stat.exists) or ('Status: active' not in mosquitto_ufw_status.stdout)"
+
+- name: Set Mosquitto container mounts (with auth)
+  ansible.builtin.set_fact:
+    mosquitto_container_mounts:
+      - type: bind
+        source: "{{ mosquitto_config_path }}/mosquitto.conf"
+        target: /mosquitto/config/mosquitto.conf
+        read_only: true
+      - type: bind
+        source: "{{ mosquitto_config_path }}/passwd"
+        target: /mosquitto/config/passwd
+        read_only: true
+      - type: volume
+        source: "{{ mosquitto_volume_name }}"
+        target: /mosquitto/data
+  when:
+    - mosquitto_user | length > 0
+    - mosquitto_password | length > 0
+
+- name: Set Mosquitto container mounts (without auth)
+  ansible.builtin.set_fact:
+    mosquitto_container_mounts:
+      - type: bind
+        source: "{{ mosquitto_config_path }}/mosquitto.conf"
+        target: /mosquitto/config/mosquitto.conf
+        read_only: true
+      - type: volume
+        source: "{{ mosquitto_volume_name }}"
+        target: /mosquitto/data
+  when:
+    - mosquitto_user | length == 0 or mosquitto_password | length == 0
+
+- name: Run Mosquitto container
+  community.docker.docker_container:
+    name: "{{ mosquitto_container_name }}"
+    image: "{{ mosquitto_image }}"
+    state: started
+    restart_policy: unless-stopped
+    networks:
+      - name: "{{ mosquitto_network_name }}"
+    ports: >-
+      {{
+        [
+          mosquitto_bind_address ~ ':' ~ mosquitto_host_port ~ ':1883'
+        ] + (
+          [mosquitto_bind_address ~ ':' ~ mosquitto_ws_port ~ ':9001']
+          if mosquitto_enable_websockets | bool else []
+        )
+      }}
+    mounts: "{{ mosquitto_container_mounts }}"
+    security_opts:
+      - no-new-privileges:true
+    pids_limit: "{{ mosquitto_pids_limit }}"
+    memory: "{{ mosquitto_memory }}"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - nc -z 127.0.0.1 1884 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    log_driver: json-file
+    log_options:
+      max-size: "10m"
+      max-file: "3"
+  when: not ansible_check_mode
+
+- name: Wait for Mosquitto container to become healthy
+  community.docker.docker_container_info:
+    name: "{{ mosquitto_container_name }}"
+  register: mosquitto_container_info
+  retries: 15
+  delay: 3
+  until: >-
+    mosquitto_container_info.exists and
+    mosquitto_container_info.container.State.Running and
+    (
+      mosquitto_container_info.container.State.Health is not defined or
+      mosquitto_container_info.container.State.Health.Status == 'healthy'
+    )
+  when: not ansible_check_mode
+
+- name: Assert Mosquitto container is running
+  ansible.builtin.assert:
+    that:
+      - mosquitto_container_info.exists
+      - mosquitto_container_info.container.State.Running
+    fail_msg: "Mosquitto container did not start correctly"
+    success_msg: "Mosquitto MQTT broker is running and reachable on port {{ mosquitto_host_port }}"
+  when: not ansible_check_mode
+
+- name: Explain check mode behavior
+  ansible.builtin.debug:
+    msg: >-
+      Check mode detected: container launch and runtime health checks are skipped.
+      Run without --check to create/update the Mosquitto container.
+  when: ansible_check_mode

@@ -1,0 +1,137 @@
+---
+- name: Verify Mosquitto MQTT broker connectivity
+  hosts: mqtt_servers
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - mosquitto
+    - mqtt
+    - verify
+    - docker
+
+  vars:
+    mosquitto_host_port: "{{ vault_mosquitto_port | default('1883') }}"
+    mosquitto_user: "{{ vault_mosquitto_user | default('') }}"
+    mosquitto_password: "{{ vault_mosquitto_password | default('') }}"
+    mosquitto_verify_topic: "test/verify/{{ ansible_facts['date_time']['epoch'] }}"
+    mosquitto_verify_message: "ansible-verify-{{ ansible_facts['date_time']['iso8601_basic'] }}"
+    mosquitto_verify_timeout: 10
+
+  tasks:
+    - name: Install mosquitto clients for verification (Debian)
+      ansible.builtin.apt:
+        name: mosquitto-clients
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install mosquitto clients for verification (Arch)
+      community.general.pacman:
+        name: mosquitto
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Archlinux"
+
+    - name: Check Mosquitto container is running
+      community.docker.docker_container_info:
+        name: "{{ vault_mosquitto_container_name | default('mosquitto') }}"
+      register: mosquitto_verify_container
+
+    - name: Assert Mosquitto container is running
+      ansible.builtin.assert:
+        that:
+          - mosquitto_verify_container.exists
+          - mosquitto_verify_container.container.State.Running
+        fail_msg: "Mosquitto container is not running"
+        success_msg: "Mosquitto container is running"
+
+    - name: Test MQTT publish and subscribe (with auth)
+      block:
+        - name: Subscribe to test topic and publish message (with auth)
+          ansible.builtin.shell: |
+            timeout {{ mosquitto_verify_timeout }} mosquitto_sub \
+              -h localhost \
+              -p {{ mosquitto_host_port }} \
+              -u "{{ mosquitto_user }}" \
+              -P "{{ mosquitto_password }}" \
+              -t "{{ mosquitto_verify_topic }}" \
+              -C 1 \
+              -W {{ mosquitto_verify_timeout }} &
+            SUB_PID=$!
+            sleep 1
+            mosquitto_pub \
+              -h localhost \
+              -p {{ mosquitto_host_port }} \
+              -u "{{ mosquitto_user }}" \
+              -P "{{ mosquitto_password }}" \
+              -t "{{ mosquitto_verify_topic }}" \
+              -m "{{ mosquitto_verify_message }}"
+            wait $SUB_PID
+          args:
+            executable: /bin/bash
+          register: mosquitto_verify_result
+          changed_when: false
+          no_log: true
+
+        - name: Verify message was received (with auth)
+          ansible.builtin.assert:
+            that:
+              - mosquitto_verify_message in mosquitto_verify_result.stdout
+            fail_msg: "MQTT message was not received correctly"
+            success_msg: "MQTT pub/sub verified with authentication"
+      when:
+        - mosquitto_user | length > 0
+        - mosquitto_password | length > 0
+
+    - name: Test MQTT publish and subscribe (without auth)
+      block:
+        - name: Subscribe to test topic and publish message (without auth)
+          ansible.builtin.shell: |
+            timeout {{ mosquitto_verify_timeout }} mosquitto_sub \
+              -h localhost \
+              -p {{ mosquitto_host_port }} \
+              -t "{{ mosquitto_verify_topic }}" \
+              -C 1 \
+              -W {{ mosquitto_verify_timeout }} &
+            SUB_PID=$!
+            sleep 1
+            mosquitto_pub \
+              -h localhost \
+              -p {{ mosquitto_host_port }} \
+              -t "{{ mosquitto_verify_topic }}" \
+              -m "{{ mosquitto_verify_message }}"
+            wait $SUB_PID
+          args:
+            executable: /bin/bash
+          register: mosquitto_verify_result
+          changed_when: false
+
+        - name: Verify message was received (without auth)
+          ansible.builtin.assert:
+            that:
+              - mosquitto_verify_message in mosquitto_verify_result.stdout
+            fail_msg: "MQTT message was not received correctly"
+            success_msg: "MQTT pub/sub verified without authentication"
+      when:
+        - mosquitto_user | length == 0 or mosquitto_password | length == 0
+
+    - name: Check Mosquitto container health status
+      ansible.builtin.assert:
+        that:
+          - mosquitto_verify_container.container.State.Health is not defined or
+            mosquitto_verify_container.container.State.Health.Status == 'healthy'
+        fail_msg: "Mosquitto container health check failed"
+        success_msg: "Mosquitto container is healthy"
+
+    - name: Display Mosquitto verify summary
+      ansible.builtin.debug:
+        msg:
+          - "=== Mosquitto MQTT Verification Report ==="
+          - "Container: {{ vault_mosquitto_container_name | default('mosquitto') }}"
+          - "Port: {{ mosquitto_host_port }}"
+          - "Authentication: {{ 'Enabled' if mosquitto_user | length > 0 else 'Disabled' }}"
+          - "Pub/Sub Test: Passed"
+          - "Health Status: {{ mosquitto_verify_container.container.State.Health.Status | default('N/A') }}"
+          - "=========================================="

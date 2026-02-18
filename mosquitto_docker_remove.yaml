@@ -1,0 +1,162 @@
+---
+- name: Remove Mosquitto MQTT Docker deployment
+  hosts: mqtt_servers
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - mosquitto
+    - mqtt
+    - docker
+    - remove
+
+  vars:
+    mosquitto_container_name: "{{ vault_mosquitto_container_name | default('mosquitto') }}"
+    mosquitto_host_port: "{{ vault_mosquitto_port | default('1883') }}"
+    mosquitto_ws_port: "{{ vault_mosquitto_ws_port | default('9001') }}"
+    mosquitto_volume_name: "{{ vault_mosquitto_volume_name | default('mosquitto_data') }}"
+    mosquitto_network_name: "{{ vault_mosquitto_network_name | default('mosquitto_net') }}"
+    mosquitto_config_path: "{{ vault_mosquitto_config_path | default('/etc/mosquitto') }}"
+    mosquitto_manage_ufw: "{{ vault_mosquitto_manage_ufw | default(true) | bool }}"
+    mosquitto_allowed_networks: "{{ vault_mosquitto_allowed_networks | default([]) }}"
+    mosquitto_remove_config: "{{ vault_mosquitto_remove_config | default(false) | bool }}"
+    mosquitto_remove_volume: "{{ vault_mosquitto_remove_volume | default(false) | bool }}"
+    mosquitto_remove_network: "{{ vault_mosquitto_remove_network | default(false) | bool }}"
+    mosquitto_enable_websockets: "{{ vault_mosquitto_enable_websockets | default(false) | bool }}"
+
+  tasks:
+    - name: Install Docker SDK for Python (Debian)
+      ansible.builtin.apt:
+        name: python3-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Docker SDK for Python (Arch)
+      community.general.pacman:
+        name: python-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Archlinux"
+
+    - name: Remove Mosquitto container
+      community.docker.docker_container:
+        name: "{{ mosquitto_container_name }}"
+        state: absent
+
+    - name: Check if UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: mosquitto_ufw_bin
+      when: mosquitto_manage_ufw
+
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: mosquitto_ufw_status
+      changed_when: false
+      failed_when: false
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_ufw_bin.stat.exists
+
+    - name: Remove Mosquitto MQTT UFW rule for restricted networks
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ mosquitto_host_port }}"
+        from: "{{ net }}"
+        direction: in
+        delete: true
+      loop: "{{ mosquitto_allowed_networks }}"
+      loop_control:
+        loop_var: net
+      failed_when: false
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_ufw_bin.stat.exists
+        - "'Status: active' in mosquitto_ufw_status.stdout"
+        - mosquitto_allowed_networks | length > 0
+
+    - name: Remove Mosquitto MQTT UFW rule for any source
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ mosquitto_host_port }}"
+        direction: in
+        delete: true
+      failed_when: false
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_ufw_bin.stat.exists
+        - "'Status: active' in mosquitto_ufw_status.stdout"
+        - mosquitto_allowed_networks | length == 0
+
+    - name: Remove Mosquitto WebSocket UFW rule for restricted networks
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ mosquitto_ws_port }}"
+        from: "{{ net }}"
+        direction: in
+        delete: true
+      loop: "{{ mosquitto_allowed_networks }}"
+      loop_control:
+        loop_var: net
+      failed_when: false
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_enable_websockets | bool
+        - mosquitto_ufw_bin.stat.exists
+        - "'Status: active' in mosquitto_ufw_status.stdout"
+        - mosquitto_allowed_networks | length > 0
+
+    - name: Remove Mosquitto WebSocket UFW rule for any source
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ mosquitto_ws_port }}"
+        direction: in
+        delete: true
+      failed_when: false
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_enable_websockets | bool
+        - mosquitto_ufw_bin.stat.exists
+        - "'Status: active' in mosquitto_ufw_status.stdout"
+        - mosquitto_allowed_networks | length == 0
+
+    - name: Explain UFW cleanup skip behavior
+      ansible.builtin.debug:
+        msg: "UFW is not installed or not active; skipping firewall rule cleanup"
+      when:
+        - mosquitto_manage_ufw
+        - mosquitto_ufw_bin is defined
+        - "(not mosquitto_ufw_bin.stat.exists) or ('Status: active' not in mosquitto_ufw_status.stdout)"
+
+    - name: Optionally remove Mosquitto config directory
+      ansible.builtin.file:
+        path: "{{ mosquitto_config_path }}"
+        state: absent
+      when: mosquitto_remove_config
+
+    - name: Optionally remove Mosquitto volume (deletes data)
+      community.docker.docker_volume:
+        name: "{{ mosquitto_volume_name }}"
+        state: absent
+      when: mosquitto_remove_volume
+
+    - name: Optionally remove Mosquitto network
+      community.docker.docker_network:
+        name: "{{ mosquitto_network_name }}"
+        state: absent
+      when: mosquitto_remove_network
+
+    - name: Show removal summary
+      ansible.builtin.debug:
+        msg:
+          - "Mosquitto container removed: {{ mosquitto_container_name }}"
+          - "UFW rule cleanup attempted: {{ mosquitto_manage_ufw }}"
+          - "Config directory removed: {{ mosquitto_remove_config }}"
+          - "Volume removed: {{ mosquitto_remove_volume }}"
+          - "Network removed: {{ mosquitto_remove_network }}"

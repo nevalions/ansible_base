@@ -1,0 +1,106 @@
+---
+- name: Test mosquitto role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    mosquitto_container_name: mosquitto
+    mosquitto_image: eclipse-mosquitto:2
+    mosquitto_host_port: "1883"
+    mosquitto_ws_port: "9001"
+    mosquitto_user: test_user
+    mosquitto_password: test_password_123
+    mosquitto_volume_name: mosquitto_data
+    mosquitto_network_name: mosquitto_net
+    mosquitto_bind_address: "0.0.0.0"
+    mosquitto_config_path: /etc/mosquitto
+    mosquitto_pids_limit: 64
+    mosquitto_memory: 256m
+    mosquitto_manage_ufw: true
+    mosquitto_allowed_networks: []
+    # Example values (not used in tests):
+    # - [network-cidr-1]
+    # - [network-cidr-2]
+    mosquitto_remove_config: false
+    mosquitto_remove_volume: false
+    mosquitto_remove_network: false
+    mosquitto_enable_websockets: false
+    mosquitto_persistence_enabled: true
+    mosquitto_max_connections: -1
+    mosquitto_max_queued_messages: 1000
+
+  tasks:
+    - name: Verify mosquitto_container_name variable
+      ansible.builtin.assert:
+        that:
+          - mosquitto_container_name is defined
+          - mosquitto_container_name is string
+          - mosquitto_container_name | length > 0
+        success_msg: "mosquitto_container_name variable defined correctly"
+        fail_msg: "mosquitto_container_name variable is missing or invalid"
+
+    - name: Verify mosquitto_image variable
+      ansible.builtin.assert:
+        that:
+          - mosquitto_image is defined
+          - mosquitto_image is string
+          - "'eclipse-mosquitto' in mosquitto_image"
+        success_msg: "mosquitto_image variable defined correctly"
+        fail_msg: "mosquitto_image variable is missing or invalid"
+
+    - name: Verify mosquitto_host_port variable
+      ansible.builtin.assert:
+        that:
+          - mosquitto_host_port is defined
+          - mosquitto_host_port | int >= 1
+          - mosquitto_host_port | int <= 65535
+        success_msg: "mosquitto_host_port variable defined correctly"
+        fail_msg: "mosquitto_host_port variable is missing or out of range"
+
+    - name: Verify mosquitto_user variable
+      ansible.builtin.assert:
+        that:
+          - mosquitto_user is defined
+          - mosquitto_user is string
+        success_msg: "mosquitto_user variable defined correctly"
+        fail_msg: "mosquitto_user variable is missing"
+
+    - name: Verify mosquitto_password variable
+      ansible.builtin.assert:
+        that:
+          - mosquitto_password is defined
+          - mosquitto_password is string
+          - mosquitto_password | length >= 12
+        success_msg: "mosquitto_password variable defined correctly"
+        fail_msg: "mosquitto_password variable is missing or too short"
+
+    - name: Verify mosquitto_allowed_networks is a list
+      ansible.builtin.assert:
+        that:
+          - mosquitto_allowed_networks is defined
+          - mosquitto_allowed_networks is iterable
+          - mosquitto_allowed_networks is not string
+        success_msg: "mosquitto_allowed_networks is a valid list"
+        fail_msg: "mosquitto_allowed_networks is not a valid list"
+
+    - name: Verify mosquitto_memory format
+      ansible.builtin.assert:
+        that:
+          - mosquitto_memory is defined
+          - mosquitto_memory is string
+          - mosquitto_memory | regex_search('^[0-9]+[gm]?$')
+        success_msg: "mosquitto_memory format is valid"
+        fail_msg: "mosquitto_memory format is invalid"
+
+    - name: Verify boolean variables
+      ansible.builtin.assert:
+        that:
+          - mosquitto_manage_ufw is boolean
+          - mosquitto_remove_config is boolean
+          - mosquitto_remove_volume is boolean
+          - mosquitto_remove_network is boolean
+          - mosquitto_enable_websockets is boolean
+          - mosquitto_persistence_enabled is boolean
+        success_msg: "Boolean variables are correctly typed"
+        fail_msg: "One or more boolean variables have incorrect type"
