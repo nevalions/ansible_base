@@ -21,6 +21,7 @@
     mosquitto_ws_port: "{{ vault_mosquitto_ws_port | default('9001') }}"
     mosquitto_user: "{{ vault_mosquitto_user | default('') }}"
     mosquitto_password: "{{ vault_mosquitto_password | default('') }}"
+    mosquitto_force_password_update: "{{ vault_mosquitto_force_password_update | default(true) | bool }}"
     mosquitto_volume_name: "{{ vault_mosquitto_volume_name | default('mosquitto_data') }}"
     mosquitto_network_name: "{{ vault_mosquitto_network_name | default('mosquitto_net') }}"
     mosquitto_bind_address: "{{ vault_mosquitto_bind_address | default('0.0.0.0') }}"
@@ -56,6 +57,7 @@
           - vault_mosquitto_port, range 1-65535
           Optional:
           - vault_mosquitto_user and vault_mosquitto_password (for authentication)
+          - vault_mosquitto_force_password_update=false (to skip password refresh)
           - vault_mosquitto_allowed_networks (list of CIDRs for UFW)
         success_msg: "Mosquitto vault variables are valid"
       when: mosquitto_operation == 'install'

@@ -67,6 +67,30 @@
     - not mosquitto_passwd_file.stat.exists
   no_log: true
   changed_when: true
+  notify: restart mosquitto
+
+- name: Update password file with user when forced
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - -v
+      - "{{ mosquitto_config_path }}:/mosquitto/config"
+      - "{{ mosquitto_image }}"
+      - mosquitto_passwd
+      - -b
+      - /mosquitto/config/passwd
+      - "{{ mosquitto_user }}"
+      - "{{ mosquitto_password }}"
+  when:
+    - mosquitto_user | length > 0
+    - mosquitto_password | length > 0
+    - mosquitto_passwd_file.stat.exists
+    - mosquitto_force_password_update | bool
+  no_log: true
+  changed_when: true
+  notify: restart mosquitto
 
 - name: Set password file permissions
   ansible.builtin.file:

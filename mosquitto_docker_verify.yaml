@@ -51,16 +51,20 @@
       block:
         - name: Subscribe to test topic and publish message (with auth)
           ansible.builtin.shell: |
-            timeout {{ mosquitto_verify_timeout }} mosquitto_sub \
+            SUB_OUTPUT_FILE=$(mktemp)
+
+            mosquitto_sub \
               -h localhost \
               -p {{ mosquitto_host_port }} \
               -u "{{ mosquitto_user }}" \
               -P "{{ mosquitto_password }}" \
               -t "{{ mosquitto_verify_topic }}" \
               -C 1 \
-              -W {{ mosquitto_verify_timeout }} &
+              -W {{ mosquitto_verify_timeout }} >"${SUB_OUTPUT_FILE}" 2>&1 &
             SUB_PID=$!
+
             sleep 1
+
             mosquitto_pub \
               -h localhost \
               -p {{ mosquitto_host_port }} \
@@ -68,18 +72,32 @@
               -P "{{ mosquitto_password }}" \
               -t "{{ mosquitto_verify_topic }}" \
               -m "{{ mosquitto_verify_message }}"
-            wait $SUB_PID
+            PUB_RC=$?
+
+            wait "${SUB_PID}"
+            SUB_RC=$?
+
+            cat "${SUB_OUTPUT_FILE}"
+            rm -f "${SUB_OUTPUT_FILE}"
+
+            if [ "${PUB_RC}" -ne 0 ] || [ "${SUB_RC}" -ne 0 ]; then
+              exit 1
+            fi
           args:
             executable: /bin/bash
           register: mosquitto_verify_result
           changed_when: false
+          failed_when: false
           no_log: true
 
         - name: Verify message was received (with auth)
           ansible.builtin.assert:
             that:
+              - mosquitto_verify_result.rc == 0
               - mosquitto_verify_message in mosquitto_verify_result.stdout
-            fail_msg: "MQTT message was not received correctly"
+            fail_msg: >-
+              MQTT pub/sub with authentication failed (rc={{ mosquitto_verify_result.rc }}).
+              stderr={{ mosquitto_verify_result.stderr | default('') }}
             success_msg: "MQTT pub/sub verified with authentication"
       when:
         - mosquitto_user | length > 0
@@ -89,30 +107,48 @@
       block:
         - name: Subscribe to test topic and publish message (without auth)
           ansible.builtin.shell: |
-            timeout {{ mosquitto_verify_timeout }} mosquitto_sub \
+            SUB_OUTPUT_FILE=$(mktemp)
+
+            mosquitto_sub \
               -h localhost \
               -p {{ mosquitto_host_port }} \
               -t "{{ mosquitto_verify_topic }}" \
               -C 1 \
-              -W {{ mosquitto_verify_timeout }} &
+              -W {{ mosquitto_verify_timeout }} >"${SUB_OUTPUT_FILE}" 2>&1 &
             SUB_PID=$!
+
             sleep 1
+
             mosquitto_pub \
               -h localhost \
               -p {{ mosquitto_host_port }} \
               -t "{{ mosquitto_verify_topic }}" \
               -m "{{ mosquitto_verify_message }}"
-            wait $SUB_PID
+            PUB_RC=$?
+
+            wait "${SUB_PID}"
+            SUB_RC=$?
+
+            cat "${SUB_OUTPUT_FILE}"
+            rm -f "${SUB_OUTPUT_FILE}"
+
+            if [ "${PUB_RC}" -ne 0 ] || [ "${SUB_RC}" -ne 0 ]; then
+              exit 1
+            fi
           args:
             executable: /bin/bash
           register: mosquitto_verify_result
           changed_when: false
+          failed_when: false
 
         - name: Verify message was received (without auth)
           ansible.builtin.assert:
             that:
+              - mosquitto_verify_result.rc == 0
               - mosquitto_verify_message in mosquitto_verify_result.stdout
-            fail_msg: "MQTT message was not received correctly"
+            fail_msg: >-
+              MQTT pub/sub without authentication failed (rc={{ mosquitto_verify_result.rc }}).
+              stderr={{ mosquitto_verify_result.stderr | default('') }}
             success_msg: "MQTT pub/sub verified without authentication"
       when:
         - mosquitto_user | length == 0 or mosquitto_password | length == 0
