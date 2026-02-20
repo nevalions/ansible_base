@@ -25,7 +25,9 @@
     postgres_bind_address: "{{ vault_postgres_bind_address | default('127.0.0.1') }}"
     postgres_env_file_path: "{{ vault_postgres_env_file_path | default('/etc/postgres_docker/postgres.env') }}"
     postgres_pids_limit: "{{ vault_postgres_pids_limit | default(256) }}"
-    postgres_memory: "{{ vault_postgres_memory | default('1g') }}"
+    postgres_memory: "{{ vault_postgres_mem_limit | default(vault_postgres_memory | default('2g')) }}"
+    postgres_memswap_limit: "{{ vault_postgres_memswap_limit | default('2g') }}"
+    postgres_shm_size: "{{ vault_postgres_shm_size | default('1g') }}"
     postgres_manage_ufw: "{{ vault_postgres_manage_ufw | default(true) | bool }}"
     postgres_allowed_networks: "{{ vault_postgres_allowed_networks | default([]) }}"
     postgres_remove_env_file: "{{ vault_postgres_remove_env_file | default(false) | bool }}"
@@ -245,6 +247,8 @@
           - no-new-privileges:true
         pids_limit: "{{ postgres_pids_limit }}"
         memory: "{{ postgres_memory }}"
+        memory_swap: "{{ postgres_memswap_limit }}"
+        shm_size: "{{ postgres_shm_size }}"
         healthcheck:
           test:
             - CMD-SHELL
@@ -300,6 +304,25 @@
            ORDER BY name;"
       register: postgres_vector_available
       changed_when: false
+      when:
+        - postgres_operation == 'install'
+        - not ansible_check_mode
+        - postgres_enable_vector_extension
+
+    - name: Assert selected vector extension is available in image
+      ansible.builtin.assert:
+        that:
+          - postgres_vector_extension_name in (postgres_vector_available.stdout_lines | map('trim') | list)
+        fail_msg: >-
+          Extension {{ postgres_vector_extension_name }} is not available in this PostgreSQL image
+          ({{ postgres_image }}). Available vector-like extensions: {{
+            ((postgres_vector_available.stdout_lines | map('trim') | reject('equalto', '') | list) | join(', '))
+            | default('none', true)
+          }}.
+          Use an image that includes {{ postgres_vector_extension_name }} (for example pgvector-enabled),
+          choose a different vault_postgres_vector_extension_name, or disable
+          vault_postgres_enable_vector_extension.
+        success_msg: "Extension {{ postgres_vector_extension_name }} is available in {{ postgres_image }}"
       when:
         - postgres_operation == 'install'
         - not ansible_check_mode
