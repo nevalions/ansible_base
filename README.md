@@ -68,6 +68,8 @@ ansible-playbook -i hosts_bay.ini postgres_docker_remove.yaml
 Notes:
 
 - PostgreSQL settings come from `vault_secrets.yml` (`vault_postgres_*` keys).
+- Optional vector extension bootstrap is available via `vault_postgres_enable_vector_extension`
+  and `vault_postgres_vector_extension_name` (`vector`, `vectors`, or `vchord`).
 - UFW rules are managed only when UFW is installed and active.
 - Keep secrets only in encrypted vault files; never commit real passwords, keys, or host-specific credentials.
 
