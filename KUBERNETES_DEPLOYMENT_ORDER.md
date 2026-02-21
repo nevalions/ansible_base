@@ -198,6 +198,13 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
   - `natOutgoing: true` (critical for WireGuard)
   - MTU: 1380
   - Typha anti-affinity (prevents port conflicts)
+- Optionally installs Node Feature Discovery (NFD) to label node system features for K9s filtering/views
+
+**Optional NFD-only run:**
+
+```bash
+ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags nfd
+```
 
 ### Step 3.2: Join Worker Nodes
 Join worker nodes to the cluster.
@@ -370,7 +377,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
 | 1.5 | `dns_verify.yaml` | dns_clients | Verify DNS | dns |
 | 2.1 | `kuber.yaml` | kuber_small_all | Install K8s packages | kubernetes |
 | 2.2 | `keepalived_manage.yaml` | planes_all | Configure VIP | keepalived |
-| 3.1 | `kuber_plane_init.yaml` | kuber_small_planes | Init control plane | init, cni |
+| 3.1 | `kuber_plane_init.yaml` | kuber_small_planes | Init control plane | init, cni, nfd, node_info, k9s |
 | 3.2 | `kuber_worker_join.yaml` | kuber_small_workers | Join workers | join |
 | 3.3 | `kuber_verify.yaml` | planes_all | Verify cluster | verify |
 | 4.1 | `calico_bgp_manage.yaml` | kuber_small_all | Configure Calico BGP | calico, bgp |
