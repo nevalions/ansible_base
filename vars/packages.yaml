@@ -29,6 +29,10 @@ arch_packages:
   - docker-compose
   - bat
   - ttf-jetbrains-mono-nerd
+  - bottom
+  - dust
+  - dua-cli
+  - iotop
 debian_packages:
   - fd-find
   - fonts-jetbrains-mono
