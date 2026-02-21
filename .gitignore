@@ -2,6 +2,7 @@
 *.log
 *.ini
 env_*
+*.key.*
 
 # Ansible logs (contains sensitive connection data and IPs)
 ansible.log
