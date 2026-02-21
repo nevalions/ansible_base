@@ -9,6 +9,7 @@ This role performs the complete initialization of a Kubernetes control plane nod
 - Initializes Kubernetes cluster with kubeadm
 - Configures containerd cgroup driver
 - Installs Calico CNI with Tigera Operator
+- Optionally installs Node Feature Discovery (NFD) for node feature labels
 - Configures Typha deployment with required anti-affinity
 - Configures kubeadm API version and control plane endpoint
 - Verifies cluster readiness and Calico installation
@@ -85,6 +86,15 @@ Without this, multiple Typha pods can be scheduled on the same node, causing Cra
 
 - `kubeadm_api_version` - kubeadm API version (default: `v1beta4`)
 
+### Node Feature Discovery (NFD)
+
+- `k8s_node_info_enabled` - Enable NFD install during init (default: `true`)
+- `nfd_version` - NFD version (default: `v0.18.2`)
+- `nfd_kustomize_ref` - NFD kustomize ref URL
+- `nfd_namespace` - NFD namespace (default: `node-feature-discovery`)
+- `nfd_master_deployment_name` - NFD master deployment name (default: `nfd-master`)
+- `nfd_worker_daemonset_name` - NFD worker daemonset name (default: `nfd-worker`)
+
 ## Vault Variables
 
 Required in `vault_secrets.yml`:
@@ -130,9 +140,10 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
 6. Install Calico Tigera Operator
 7. Configure Calico IP pool
 8. Wait for Calico pods to be ready
-9. Verify cluster node status
-10. Verify Tigera Operator is running
-11. Display initialization summary
+9. Optionally install and verify NFD rollout (run once from the init play)
+10. Verify cluster node status
+11. Verify Tigera Operator is running
+12. Display initialization summary
 
 ## Troubleshooting
 
@@ -231,3 +242,7 @@ Run `kuber_verify.yaml` for full cluster health check.
 - `init` - Control plane initialization
 - `plane` - Control plane tasks
 - `cni` - CNI installation tasks
+- `addon` - Optional addon installation tasks
+- `nfd` - Node Feature Discovery tasks
+- `node_info` - Node metadata collection tasks
+- `k9s` - Node metadata tasks relevant for K9s filtering/viewing

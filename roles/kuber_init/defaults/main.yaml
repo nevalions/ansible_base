@@ -87,3 +87,11 @@ kubeconfig_path: "{{ kubeconfig_user_home }}/.kube/config"
 
 # Refresh API server certs and kubeconfig on re-run
 kubeadm_refresh_on_existing: true
+
+# Node Feature Discovery (NFD) for node system metadata in Kubernetes/K9s
+k8s_node_info_enabled: true
+nfd_version: "v0.18.2"
+nfd_kustomize_ref: "https://github.com/kubernetes-sigs/node-feature-discovery/deployment/overlays/default?ref={{ nfd_version }}"
+nfd_namespace: node-feature-discovery
+nfd_master_deployment_name: nfd-master
+nfd_worker_daemonset_name: nfd-worker

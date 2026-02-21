@@ -5,7 +5,7 @@
 | Playbook | Purpose | Hosts | Tags |
 |----------|---------|-------|------|
 | `kuber.yaml` | Install K8s packages | workers_super | kubernetes, k8s, install |
-| `kuber_plane_init.yaml` | Initialize control plane | planes | kubernetes, k8s, init, plane, cni |
+| `kuber_plane_init.yaml` | Initialize control plane | planes | kubernetes, k8s, init, plane, cni, nfd, node_info, k9s |
 | `kuber_worker_join.yaml` | Join worker nodes | workers_all | kubernetes, k8s, join, worker |
 | `kuber_verify.yaml` | Verify cluster health | planes | kubernetes, k8s, verify, test |
 | `kuber_plane_reset.yaml` | Reset control plane | masters | kubernetes, k8s, reset, cleanup |
@@ -72,6 +72,8 @@ kubeadm_pod_subnet: "[internal-ip]/16"
 kubeadm_service_subnet: "[internal-ip]/16"
 kubeadm_api_version: "v1beta4"
 calico_version: "v3.31.3"
+k8s_node_info_enabled: true
+nfd_version: "v0.18.2"
 ```
 
 ### kuber_verify
@@ -87,6 +89,7 @@ verify_timeout_seconds: "300"
 - ✓ Control plane Ready status
 - ✓ Tigera Operator Running
 - ✓ Calico pods Ready
+- ✓ NFD labels on nodes (optional)
 - ✓ Worker nodes Ready
 - ✓ Node visibility from control plane
 

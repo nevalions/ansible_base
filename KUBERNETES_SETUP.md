@@ -235,7 +235,7 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 
 **Hosts:** `[planes]` ([control-plane-ip])
 
-**Tags:** `kubernetes`, `k8s`, `init`, `plane`, `cni`
+**Tags:** `kubernetes`, `k8s`, `init`, `plane`, `cni`, `nfd`, `node_info`, `k9s`
 
 **What it does:**
 - Checks if cluster is already initialized
@@ -246,8 +246,11 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 - Waits for Tigera Operator to be ready
  - Applies Calico custom resources (from `/path/to/calico/custom-resources.yaml`)
  - Waits for Calico pods to be ready
+- Installs Node Feature Discovery (NFD) for node feature labels (optional)
+- Waits for NFD master deployment and worker DaemonSet rollout
 - **VERIFICATION:** Validates control plane is Ready
 - **VERIFICATION:** Checks Tigera Operator is Running
+- **VERIFICATION:** Displays sample NFD node label output
 - **VERIFICATION:** Displays Calico IP pools
 - **VERIFICATION:** Displays initialization summary
 
@@ -263,6 +266,9 @@ kubeadm_api_version: "v1beta4"
 calico_version: "v3.31.3"
 calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
 calico_custom_resources_src: "/path/to/calico/custom-resources.yaml"
+k8s_node_info_enabled: true
+nfd_version: "v0.18.2"
+nfd_kustomize_ref: "https://github.com/kubernetes-sigs/node-feature-discovery/deployment/overlays/default?ref={{ nfd_version }}"
 ```
 
 **Usage:**
@@ -810,6 +816,9 @@ All playbooks support the following tags for selective execution:
 - `plane` - Control plane operations
 - `worker` - Worker node operations
 - `cni` - Calico CNI installation
+- `nfd` - Node Feature Discovery installation
+- `node_info` - Node metadata labeling tasks
+- `k9s` - Node metadata tasks for K9s visibility/filtering
 - `metallb` - MetalLB install/config (LoadBalancer)
 - `bgp` - BGP router configuration
 - `reset` - Reset/cleanup operations

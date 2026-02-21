@@ -409,6 +409,85 @@
     - cni
     - calico
 
+- name: Install Node Feature Discovery (NFD)
+  ansible.builtin.command: kubectl apply -k {{ nfd_kustomize_ref }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nfd_apply
+  changed_when: "'created' in nfd_apply.stdout or 'configured' in nfd_apply.stdout"
+  run_once: true
+  when: k8s_node_info_enabled | default(true)
+  tags:
+    - addon
+    - node_info
+    - k9s
+    - nfd
+
+- name: Wait for NFD master deployment to be available
+  ansible.builtin.command: >-
+    kubectl -n {{ nfd_namespace }} rollout status deployment/{{ nfd_master_deployment_name }} --timeout=300s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nfd_master_rollout
+  changed_when: false
+  until: nfd_master_rollout.rc == 0
+  retries: 6
+  delay: 10
+  run_once: true
+  when: k8s_node_info_enabled | default(true)
+  tags:
+    - addon
+    - node_info
+    - k9s
+    - nfd
+
+- name: Wait for NFD worker daemonset rollout
+  ansible.builtin.command: >-
+    kubectl -n {{ nfd_namespace }} rollout status daemonset/{{ nfd_worker_daemonset_name }} --timeout=600s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nfd_worker_rollout
+  changed_when: false
+  until: nfd_worker_rollout.rc == 0
+  retries: 10
+  delay: 10
+  run_once: true
+  when: k8s_node_info_enabled | default(true)
+  tags:
+    - addon
+    - node_info
+    - k9s
+    - nfd
+
+- name: Get NFD node labels overview
+  ansible.builtin.command: >-
+    kubectl get nodes -o custom-columns=NAME:.metadata.name,NFD_LABELS:.metadata.labels.feature\.node\.kubernetes\.io/system-os_release.ID
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nfd_node_labels
+  changed_when: false
+  failed_when: false
+  run_once: true
+  when: k8s_node_info_enabled | default(true)
+  tags:
+    - addon
+    - node_info
+    - k9s
+    - nfd
+
+- name: Display NFD node labels overview
+  ansible.builtin.debug:
+    var: nfd_node_labels.stdout_lines
+  run_once: true
+  when:
+    - k8s_node_info_enabled | default(true)
+    - nfd_node_labels is defined
+  tags:
+    - addon
+    - node_info
+    - k9s
+    - nfd
+
 - name: Get cluster node status
   ansible.builtin.command: kubectl get nodes
   environment:
