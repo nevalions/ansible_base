@@ -1,0 +1,12 @@
+---
+- name: Verify Node Feature Discovery
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  become: false
+  environment:
+    KUBECONFIG: "{{ nfd_kubeconfig }}"
+  vars:
+    nfd_state: verify
+  roles:
+    - role: nfd

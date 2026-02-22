@@ -1,0 +1,6 @@
+---
+nfd_version: "v0.18.2"
+nfd_namespace: "node-feature-discovery"
+nfd_manifest_url: "https://github.com/kubernetes-sigs/node-feature-discovery/deployment/overlays/default?ref={{ nfd_version }}"
+nfd_rollout_timeout: "180s"
+nfd_kubeconfig: "{{ lookup('env', 'KUBECONFIG') | default(lookup('env', 'HOME') + '/.kube/config', true) }}"

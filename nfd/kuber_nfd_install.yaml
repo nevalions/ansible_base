@@ -1,0 +1,12 @@
+---
+- name: Install Node Feature Discovery
+  hosts: bay_plane1
+  gather_facts: false
+  connection: local
+  become: false
+  environment:
+    KUBECONFIG: "{{ nfd_kubeconfig }}"
+  vars:
+    nfd_state: install
+  roles:
+    - role: nfd

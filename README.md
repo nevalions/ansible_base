@@ -43,6 +43,7 @@ Notes:
 ## Common Workflows
 
 - Kubernetes cluster deploy/reset: `kuber_cluster_deploy.yaml`, `kuber_cluster_reset.yaml`
+- Standalone NFD management: `nfd/kuber_nfd_install.yaml`, `nfd/kuber_nfd_verify.yaml`, `nfd/kuber_nfd_remove.yaml`
 - WireGuard management: `wireguard_manage.yaml`
 - BGP HA for MetalLB (FRR + Keepalived): `bgp_ha_deploy.yaml`, `bgp_ha_verify.yaml`, `bgp_ha_test.yaml`, `bgp_ha_remove.yaml`
 - DNS deploy/remove: `dns_full_deployment_remove.yaml`, `dns_server_remove.yaml`, `dns_client_remove.yaml`

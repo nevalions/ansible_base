@@ -1,0 +1,60 @@
+---
+- name: Install NFD manifests
+  ansible.builtin.command:
+    cmd: kubectl apply -k {{ nfd_manifest_url }}
+  register: nfd_apply
+  changed_when: nfd_apply.rc == 0
+  when: nfd_state | default("install") == "install"
+
+- name: Wait for nfd-master deployment rollout
+  ansible.builtin.command:
+    cmd: kubectl -n {{ nfd_namespace }} rollout status deployment/nfd-master --timeout={{ nfd_rollout_timeout }}
+  register: nfd_master_rollout
+  changed_when: false
+  when: nfd_state | default("install") == "install"
+
+- name: Wait for nfd-worker daemonset rollout
+  ansible.builtin.command:
+    cmd: kubectl -n {{ nfd_namespace }} rollout status daemonset/nfd-worker --timeout={{ nfd_rollout_timeout }}
+  register: nfd_worker_rollout
+  changed_when: false
+  when: nfd_state | default("install") == "install"
+
+- name: Show nodes with NFD labels
+  ansible.builtin.command:
+    cmd: kubectl get nodes -o custom-columns=NAME:.metadata.name,OS_ID:.metadata.labels.feature\.node\.kubernetes\.io/system-os_release\.ID,KERNEL:.metadata.labels.feature\.node\.kubernetes\.io/kernel-version\.full
+  register: nfd_nodes
+  changed_when: false
+  when: nfd_state | default("install") == "verify"
+
+- name: Show NFD pods
+  ansible.builtin.command:
+    cmd: kubectl get pods -n {{ nfd_namespace }}
+  register: nfd_pods
+  changed_when: false
+  when: nfd_state | default("install") == "verify"
+
+- name: Print NFD node labels output
+  ansible.builtin.debug:
+    msg: "{{ nfd_nodes.stdout_lines | default([]) }}"
+  when: nfd_state | default("install") == "verify"
+
+- name: Print NFD pods output
+  ansible.builtin.debug:
+    msg: "{{ nfd_pods.stdout_lines | default([]) }}"
+  when: nfd_state | default("install") == "verify"
+
+- name: Remove NFD manifests
+  ansible.builtin.command:
+    cmd: kubectl delete -k {{ nfd_manifest_url }}
+  register: nfd_delete
+  changed_when: nfd_delete.rc == 0
+  failed_when: nfd_delete.rc != 0 and "not found" not in (nfd_delete.stderr | lower)
+  when: nfd_state | default("install") == "remove"
+
+- name: Remove NFD namespace
+  ansible.builtin.command:
+    cmd: kubectl delete namespace {{ nfd_namespace }} --ignore-not-found=true
+  register: nfd_namespace_delete
+  changed_when: "'deleted' in (nfd_namespace_delete.stdout | lower)"
+  when: nfd_state | default("install") == "remove"
