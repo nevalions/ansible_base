@@ -1,0 +1,141 @@
+---
+- name: Remove Calico CNI from Kubernetes cluster
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - calico
+    - cni
+    - remove
+    - cleanup
+  vars_files:
+    - vault_secrets.yml
+  tasks:
+    - name: Choose kubectl delegate host
+      ansible.builtin.set_fact:
+        calico_remove_kubectl_delegate: "{{ groups['planes_all'] | default(groups['kuber_small_planes']) | first }}"
+      run_once: true
+
+    - name: Delete Calico operator manifest
+      ansible.builtin.command:
+        cmd: kubectl delete -f https://raw.githubusercontent.com/projectcalico/calico/{{ vault_calico_version | default('v3.31.3') }}/manifests/tigera-operator.yaml --ignore-not-found=true --wait=false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: calico_remove_operator
+      changed_when: "'deleted' in calico_remove_operator.stdout"
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Delete Calico Installation custom resource
+      ansible.builtin.command:
+        cmd: kubectl delete installation.operator.tigera.io default --ignore-not-found=true --wait=false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: calico_remove_installation
+      changed_when: "'deleted' in calico_remove_installation.stdout"
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Delete Calico API server custom resource
+      ansible.builtin.command:
+        cmd: kubectl delete apiserver.operator.tigera.io default --ignore-not-found=true --wait=false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: calico_remove_apiserver
+      changed_when: "'deleted' in calico_remove_apiserver.stdout"
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Remove finalizers from Calico operator resources
+      ansible.builtin.command:
+        cmd: kubectl patch {{ item.kind }} {{ item.name }} --type=merge -p '{"metadata":{"finalizers":[]}}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      loop:
+        - kind: installation.operator.tigera.io
+          name: default
+        - kind: apiserver.operator.tigera.io
+          name: default
+      register: calico_remove_resource_finalizers
+      changed_when: >-
+        (
+          calico_remove_resource_finalizers.results | default([])
+          | selectattr('stdout', 'defined')
+          | map(attribute='stdout')
+          | join(' ')
+        ) is search('patched')
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Remove finalizers from Calico namespaces
+      ansible.builtin.command:
+        cmd: kubectl patch namespace {{ item }} --type=merge -p '{"metadata":{"finalizers":[]}}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      loop:
+        - calico-system
+        - tigera-operator
+      register: calico_remove_namespace_finalizers
+      changed_when: >-
+        (
+          calico_remove_namespace_finalizers.results | default([])
+          | selectattr('stdout', 'defined')
+          | map(attribute='stdout')
+          | join(' ')
+        ) is search('patched')
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Remove Calico namespaces
+      ansible.builtin.command:
+        cmd: kubectl delete namespace {{ item }} --ignore-not-found=true --wait=false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      loop:
+        - calico-system
+        - tigera-operator
+      register: calico_remove_namespaces
+      changed_when: >-
+        (
+          calico_remove_namespaces.results | default([])
+          | selectattr('stdout', 'defined')
+          | map(attribute='stdout')
+          | join(' ')
+        ) is search('deleted')
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Remove Calico and Tigera CRDs
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl get crd -o name \
+          | grep -E '(projectcalico.org|operator.tigera.io)$' \
+          | xargs -r kubectl delete --ignore-not-found=true --wait=false
+      args:
+        executable: /bin/bash
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: calico_remove_crds
+      changed_when: calico_remove_crds.stdout | length > 0
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ calico_remove_kubectl_delegate }}"
+
+    - name: Show Calico removal summary
+      ansible.builtin.debug:
+        msg:
+          - "Calico CNI removal requested from {{ calico_remove_kubectl_delegate }}"
+          - "Operator manifest: {{ calico_remove_operator.stdout | default('no changes') }}"
+          - "Installation CR: {{ calico_remove_installation.stdout | default('no changes') }}"
+          - "API server CR: {{ calico_remove_apiserver.stdout | default('no changes') }}"
+          - "Namespaces and CRDs cleanup executed"
+      run_once: true
