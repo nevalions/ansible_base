@@ -1,4 +1,8 @@
 ---
+- name: Initialize join status fact
+  ansible.builtin.set_fact:
+    kuber_plane_join_skipped: false
+
 - name: Check if node is already joined
   ansible.builtin.stat:
     path: /etc/kubernetes/kubelet.conf
@@ -7,7 +11,31 @@
 - name: Fail if node is already joined
   ansible.builtin.fail:
     msg: "Node is already joined to a cluster. Use kuber_plane_reset.yaml to reset first."
-  when: kubelet_conf.stat.exists
+  when:
+    - kubelet_conf.stat.exists
+    - kuber_plane_join_fail_if_already_joined | bool
+
+- name: Skip join when node is already joined
+  ansible.builtin.debug:
+    msg: >-
+      Node is already joined to a cluster. Skipping kuber_plane_join role tasks for this host.
+      Set kuber_plane_join_fail_if_already_joined=true to enforce reset-first behavior.
+  when:
+    - kubelet_conf.stat.exists
+    - not (kuber_plane_join_fail_if_already_joined | bool)
+
+- name: Mark join as skipped
+  ansible.builtin.set_fact:
+    kuber_plane_join_skipped: true
+  when:
+    - kubelet_conf.stat.exists
+    - not (kuber_plane_join_fail_if_already_joined | bool)
+
+- name: End host execution when already joined and skipping
+  ansible.builtin.meta: end_host
+  when:
+    - kubelet_conf.stat.exists
+    - not (kuber_plane_join_fail_if_already_joined | bool)
 
 - name: Assert control plane inventory group exists when using VIP
   ansible.builtin.assert:
@@ -247,20 +275,22 @@
     var: control_plane_pods.stdout_lines
   when: control_plane_pods.rc == 0
 
-- name: Get Calico pod on this control plane
-  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+- name: Get CNI pods
+  ansible.builtin.command: >-
+    kubectl get pods -n {{ kuber_plane_join_cni_namespace }}
+    -l {{ kuber_plane_join_cni_label_selector }} -o wide
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_pod_check
+  register: cni_pod_check
   delegate_to: "{{ kuber_plane_join_delegate_host }}"
   run_once: true
   changed_when: false
   ignore_errors: true
 
-- name: Display Calico pods
+- name: Display CNI pods
   ansible.builtin.debug:
-    var: calico_pod_check.stdout_lines
-  when: calico_pod_check.rc == 0
+    var: cni_pod_check.stdout_lines
+  when: cni_pod_check.rc == 0
 
 - name: Get all cluster nodes
   ansible.builtin.command: kubectl get nodes -o wide
@@ -284,7 +314,7 @@
       - "Node: {{ ansible_hostname }}"
       - "Status: Ready"
       - "Role: control-plane"
-      - "Calico CNI: Active"
+      - "CNI: {{ kuber_plane_join_cni_type }}"
       - "Next steps:"
       - "  1. Update vault_k8s_control_planes list in vault_secrets.yml"
       - "  2. Run keepalived_manage.yaml to reconfigure VRRP failover"

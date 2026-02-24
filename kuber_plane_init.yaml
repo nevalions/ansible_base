@@ -11,6 +11,5 @@
     - k8s
     - init
     - plane
-    - cni
   roles:
     - kuber_init

@@ -1,6 +1,6 @@
 ---
 - name: Rejoin Worker Node to Kubernetes Cluster (minimal cleanup)
-  hosts: kuber_small_workers
+  hosts: workers_all
   become: true
   gather_facts: true
   serial: 1

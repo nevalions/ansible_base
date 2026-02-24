@@ -22,7 +22,6 @@
   when:
     - kubeadm_cluster_initialized
     - not (kubeadm_refresh_on_existing | default(true))
-    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Create containerd config directory
   ansible.builtin.file:
@@ -116,7 +115,6 @@
   when:
     - kubeadm_cluster_initialized
     - kubeadm_refresh_on_existing | default(true)
-    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Check if Kubernetes API port is in use
   ansible.builtin.command: ss -ltnp
@@ -125,7 +123,6 @@
   failed_when: false
   when:
     - not kubeadm_cluster_initialized
-    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Fail if Kubernetes API port is already in use
   ansible.builtin.fail:
@@ -135,14 +132,12 @@
   when:
     - not kubeadm_cluster_initialized
     - k8s_api_port_check.stdout is search(':' ~ vault_k8s_api_port)
-    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
 
 - name: Initialize Kubernetes control plane
   ansible.builtin.command: kubeadm init --config=/tmp/kubeadm-config.yaml
   register: kubeadm_init
   changed_when: true
   when:
-    - ansible_run_tags is not defined or 'cni' not in ansible_run_tags
     - not kubeadm_cluster_initialized
 
 - name: Look up kubeconfig user home directory
@@ -245,169 +240,15 @@
     - kubeconfig_targets is defined
     - kubeconfig_targets | length > 0
 
-- name: Install Calico Tigera Operator
-  ansible.builtin.command: kubectl apply -f {{ calico_tigera_operator_url }}
+- name: Wait for Kubernetes API server to be fully ready (RBAC reconciled)
+  ansible.builtin.command: kubectl get nodes
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_operator
-  changed_when: "'created' in calico_operator.stdout or 'configured' in calico_operator.stdout"
-  until: calico_operator.rc == 0
-  retries: 3
-  delay: 5
-  tags:
-    - cni
-    - calico
-
-- name: Wait for Tigera Operator to be ready
-  ansible.builtin.command: kubectl wait --for=condition=ready pod -l name=tigera-operator -n tigera-operator --timeout=300s
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: operator_wait
+  register: k8s_api_ready
   changed_when: false
-  until: operator_wait.rc == 0
-  retries: 10
+  until: k8s_api_ready.rc == 0
+  retries: 12
   delay: 10
-  tags:
-    - cni
-    - calico
-
-- name: Fail if Calico vault variables are missing
-  ansible.builtin.assert:
-    that:
-      - vault_ipPools is defined
-      - vault_ipPools | length > 0
-      - vault_ipPools_encapsulation is defined
-      - vault_ipPools_encapsulation | length > 0
-      - vault_ipPools_encapsulation is not match('^\[.*\]$')
-      - vault_ipPools_cidr is defined
-      - vault_ipPools_cidr | length > 0
-      - vault_ipPools_cidr is not match('^\[.*\]$')
-      - vault_ipPools_blockSize is defined
-      - natOutgoing is defined
-      - nodeSelector is defined
-      - nodeSelector | length > 0
-      - nodeSelector is not match('^\[.*\]$')
-      - mtu is defined
-      - vault_interface is defined
-      - vault_interface | length > 0
-      - vault_interface is not match('^\[.*\]$')
-    fail_msg: >-
-      Calico CNI vault variables are missing or placeholders. Set vault_ipPools*,
-      natOutgoing, nodeSelector, mtu, and vault_interface in vault_secrets.yml to
-      avoid applying defaults.
-    success_msg: "Calico CNI vault variables are defined"
-  tags:
-    - cni
-    - calico
-
-- name: Fail if vault admin user is missing
-  ansible.builtin.assert:
-    that:
-      - vault_admin_user is defined
-      - vault_admin_user | length > 0
-      - vault_admin_user is not match('^\[.*\]$')
-    fail_msg: >-
-      vault_admin_user is missing or a placeholder. Set vault_admin_user in
-      vault_secrets.yml to ensure kubeconfig is written to the correct user.
-    success_msg: "vault_admin_user is defined"
-
-- name: Generate Calico custom resources from template
-  ansible.builtin.template:
-    src: calico-custom-resources.yaml.j2
-    dest: /tmp/calico-custom-resources.yaml
-    mode: "0644"
-  tags:
-    - cni
-    - calico
-
-- name: Apply Calico custom resources
-  ansible.builtin.command: kubectl apply -f /tmp/calico-custom-resources.yaml
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_custom_apply
-  changed_when: "'created' in calico_custom_apply.stdout or 'configured' in calico_custom_apply.stdout"
-  tags:
-    - cni
-    - calico
-
-- name: Disable UFW to prevent BGP blocking
-  ansible.builtin.systemd:
-    name: ufw
-    state: stopped
-    enabled: false
-  ignore_errors: true
-  tags:
-    - cni
-    - calico
-    - firewall
-
-- name: Detect Calico node pods (k8s-app label)
-  ansible.builtin.command: kubectl get pods -A -l k8s-app=calico-node -o name
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_node_k8s_label
-  changed_when: false
-  failed_when: false
-  until: calico_node_k8s_label.stdout | length > 0
-  retries: 6
-  delay: 10
-  tags:
-    - cni
-    - calico
-
-- name: Detect Calico node pods (app label)
-  ansible.builtin.command: kubectl get pods -A -l app=calico-node -o name
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_node_app_label
-  changed_when: false
-  failed_when: false
-  until: calico_node_app_label.stdout | length > 0
-  retries: 6
-  delay: 10
-  when: calico_node_k8s_label.stdout | length == 0
-  tags:
-    - cni
-    - calico
-
-- name: Set Calico node label selector
-  ansible.builtin.set_fact:
-    calico_node_label_selector: >-
-      {{ 'k8s-app=calico-node'
-      if (calico_node_k8s_label.stdout | length > 0)
-      else 'app=calico-node' }}
-  when:
-    - calico_node_k8s_label.stdout | length > 0 or
-      (calico_node_app_label.stdout | default('') | length > 0)
-  tags:
-    - cni
-    - calico
-
-- name: Fail if Calico node pods not found
-  ansible.builtin.fail:
-    msg: >-
-      Calico node pods not found with labels k8s-app=calico-node or app=calico-node.
-  when:
-    - calico_node_k8s_label.stdout | length == 0
-    - calico_node_app_label.stdout | default('') | length == 0
-  tags:
-    - cni
-    - calico
-
-- name: Wait for Calico to be ready
-  ansible.builtin.command: >-
-    kubectl wait --for=condition=ready pod -A -l {{ calico_node_label_selector }} --timeout=600s
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_wait
-  changed_when: false
-  until: calico_wait.rc == 0
-  retries: 20
-  delay: 10
-  when: calico_node_label_selector is defined
-  tags:
-    - cni
-    - calico
 
 - name: Install Node Feature Discovery (NFD)
   ansible.builtin.command: kubectl apply -k {{ nfd_kustomize_ref }}
@@ -422,6 +263,8 @@
     - node_info
     - k9s
     - nfd
+
+
 
 - name: Wait for NFD master deployment to be available
   ansible.builtin.command: >-
@@ -530,105 +373,12 @@
     fail_msg: "Control plane node is not Ready"
   when: control_plane_ready.stdout is defined
 
-- name: Get Calico node pods
-  ansible.builtin.command: kubectl get pods -A -l {{ calico_node_label_selector }}
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_pods
-  changed_when: false
-  when: calico_node_label_selector is defined
-  tags:
-    - cni
-    - calico
-
-- name: Display Calico pods
-  ansible.builtin.debug:
-    var: calico_pods.stdout_lines
-  tags:
-    - cni
-    - calico
-
-- name: Get Tigera Operator pods
-  ansible.builtin.command: kubectl get pods -n tigera-operator
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: tigera_pods
-  changed_when: false
-  tags:
-    - cni
-    - calico
-
-- name: Display Tigera Operator pods
-  ansible.builtin.debug:
-    var: tigera_pods.stdout_lines
-  tags:
-    - cni
-    - calico
-
-- name: Verify Tigera Operator is Running
-  ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: tigera_phase
-  changed_when: false
-  ignore_errors: true
-  tags:
-    - cni
-    - calico
-
-- name: Assert Tigera Operator is Running
-  ansible.builtin.assert:
-    that:
-      - "'Running' in tigera_phase.stdout"
-    success_msg: "Tigera Operator is Running"
-    fail_msg: "Tigera Operator is not Running"
-  when: tigera_phase.stdout is defined
-  tags:
-    - cni
-    - calico
-
-- name: Wait for Calico IPPool CRD to be established
-  ansible.builtin.command: kubectl wait --for=condition=Established crd/ippools.crd.projectcalico.org --timeout=120s
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: ippool_crd_wait
-  changed_when: false
-  failed_when: false
-  until: ippool_crd_wait.rc == 0
-  retries: 6
-  delay: 10
-  tags:
-    - cni
-    - calico
-
-- name: Get Calico IP pools
-  ansible.builtin.command: kubectl get ippool -o wide
-  environment:
-    KUBECONFIG: /etc/kubernetes/admin.conf
-  register: ippool_status
-  changed_when: false
-  failed_when: false
-  until: ippool_status.rc == 0
-  retries: 6
-  delay: 10
-  tags:
-    - cni
-    - calico
-
-- name: Display Calico IP pools
-  ansible.builtin.debug:
-    var: ippool_status.stdout_lines
-  when: ippool_status.rc == 0
-  tags:
-    - cni
-    - calico
-
 - name: Display control plane initialization summary
   ansible.builtin.debug:
     msg:
       - "=== Control Plane Initialization Complete ==="
       - "Kubernetes API: Ready"
-      - "Calico CNI: Installed"
-      - "Tigera Operator: Running"
+      - "CNI: Not installed (manage manually via calico_bgp_manage.yaml)"
       - "Next step: Run kuber_worker_join.yaml to join workers"
+      - "Next step: Run calico_bgp_manage.yaml to configure Calico CNI"
       - "Verification: Run kuber_verify.yaml for full cluster health check"

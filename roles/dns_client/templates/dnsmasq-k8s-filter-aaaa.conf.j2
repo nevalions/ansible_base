@@ -9,12 +9,24 @@ listen-address={{ dns_client_node_local_listen_ip }}
 # Only act as a forwarder
 port=53
 no-resolv
+{% if dns_client_dnsmasq_strict_order | bool %}
 strict-order
+{% endif %}
 
 # Upstreams (avoid self)
 {% for ns in dns_client_dnsmasq_upstreams | default([]) %}
 server={{ ns }}
 {% endfor %}
+
+{% if (dns_client_dnsmasq_upstreams | default([]) | length) > 0 and (dns_client_dnsmasq_primary_only_domains | default([]) | length) > 0 %}
+# Pin external domains to the primary upstream only.
+# The secondary resolver (bay_bgp) is rate-limited by Google DNS for UDP queries
+# on certain domains. Routing these exclusively to the primary (haproxy_spb)
+# ensures reliable resolution regardless of secondary health.
+{% for domain in dns_client_dnsmasq_primary_only_domains %}
+server=/{{ domain }}/{{ dns_client_dnsmasq_upstreams[0] }}
+{% endfor %}
+{% endif %}
 
 {% if dns_client_filter_aaaa | bool %}
 # Drop AAAA answers (forces IPv4 usage for clients like containerd/ACME)

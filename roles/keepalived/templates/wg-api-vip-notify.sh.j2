@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE="${1:-}"
+
+if [[ "${STATE}" != "MASTER" ]]; then
+  exit 0
+fi
+
+if ! command -v ssh >/dev/null 2>&1; then
+  logger -t keepalived-wg-failover "ssh binary not found"
+  exit 0
+fi
+
+SSH_KEY="{{ keepalived_wg_failover_ssh_key_path }}"
+GATEWAY_HOST="{{ keepalived_wg_failover_gateway_ssh_host | default(keepalived_wg_failover_gateway_host) }}"
+GATEWAY_USER="{{ keepalived_wg_failover_gateway_user }}"
+GATEWAY_PORT="{{ keepalived_wg_failover_gateway_ssh_port | default(keepalived_wg_failover_gateway_port) }}"
+REMOTE_SCRIPT="{{ keepalived_wg_failover_gateway_script_path }}"
+OWNER="{{ keepalived_wg_failover_owner_name | default(inventory_hostname) }}"
+
+if [[ -z "${GATEWAY_HOST}" || -z "${OWNER}" ]]; then
+  logger -t keepalived-wg-failover "gateway or owner is not configured"
+  exit 0
+fi
+
+if [[ ! -f "${SSH_KEY}" ]]; then
+  logger -t keepalived-wg-failover "missing SSH key ${SSH_KEY}"
+  exit 0
+fi
+
+if ssh \
+  -i "${SSH_KEY}" \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o UserKnownHostsFile=/dev/null \
+  -o ConnectTimeout=5 \
+  -p "${GATEWAY_PORT}" \
+  "${GATEWAY_USER}@${GATEWAY_HOST}" \
+  "sudo ${REMOTE_SCRIPT} ${OWNER}"; then
+  logger -t keepalived-wg-failover "notified gateway ${GATEWAY_HOST}, owner=${OWNER}"
+else
+  logger -t keepalived-wg-failover "gateway notify failed for owner=${OWNER}"
+fi
+
+exit 0

@@ -1,10 +1,10 @@
 ---
 # Calico BGP configuration helper.
-# This role is used to tune Calico BGP settings when MetalLB BGP is enabled.
+# This role is optional and only needed when Calico BGP is in use.
 
-calico_bgp_enabled: "{{ vault_calico_bgp_enabled | default(true) }}"
+calico_bgp_enabled: "{{ vault_calico_bgp_enabled | default(false) }}"
 
-# Move Calico BGP off TCP/179 so MetalLB can use 179.
+# Move Calico BGP off TCP/179 so MetalLB can use 179 when Calico BGP is enabled.
 # Pick any unused TCP port (common choice: 178).
 calico_bgp_listen_port: "{{ vault_calico_bgp_listen_port | default(178) }}"
 

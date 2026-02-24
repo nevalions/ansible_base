@@ -1,6 +1,6 @@
 ---
 - name: Clean Kubernetes Worker Node for Fresh Join
-  hosts: kuber_small_workers 
+  hosts: workers_all
   become: true
   gather_facts: false
   serial: 1

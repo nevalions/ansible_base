@@ -81,12 +81,11 @@
     #
     # MetalLB pool IS included so HAProxy can reach Traefik LoadBalancer IP
     # through WireGuard, allowing external HTTP/HTTPS traffic to reach K8s ingress.
-    - name: Set WireGuard routed CIDRs (K8s API VIP, MetalLB pool, optional DB WG route)
+    - name: Set WireGuard routed CIDRs (MetalLB pool, optional DB WG route)
       ansible.builtin.set_fact:
         wg_routed_cidrs: >-
           {{
             [
-              vault_k8s_api_vip + '/32',
               (
                 vault_metallb_pool_cidr
                 if (vault_metallb_pool_cidr | string) is search('/')
@@ -226,12 +225,60 @@
         is_control_plane: "{{ inventory_hostname in (groups.planes_all | default([])) }}"
         is_bgp_router: "{{ inventory_hostname in (groups.bgp_routers | default([])) }}"
 
+    - name: Check if keepalived service exists
+      ansible.builtin.systemd:
+        name: keepalived
+      register: keepalived_service_status
+      failed_when: false
+      changed_when: false
+      when:
+        - (is_control_plane | default(false)) or (is_bgp_router | default(false))
+        - not ansible_check_mode
+
+    - name: Set fact for keepalived service presence
+      ansible.builtin.set_fact:
+        has_keepalived: >-
+          {{
+            keepalived_service_status.status is defined
+            and keepalived_service_status.status.LoadState == 'loaded'
+          }}
+      when:
+        - (is_control_plane | default(false)) or (is_bgp_router | default(false))
+        - not ansible_check_mode
+
+    - name: Check if FRR service exists
+      ansible.builtin.systemd:
+        name: frr
+      register: frr_service_status
+      failed_when: false
+      changed_when: false
+      when:
+        - is_bgp_router | default(false)
+        - not ansible_check_mode
+
+    - name: Set fact for FRR service presence
+      ansible.builtin.set_fact:
+        has_frr: "{{ frr_service_status.status is defined and frr_service_status.status.LoadState == 'loaded' }}"
+      when:
+        - is_bgp_router | default(false)
+        - not ansible_check_mode
+
     - name: Restart Keepalived on control planes after WireGuard config change
       ansible.builtin.systemd:
         name: keepalived
         state: restarted
       when:
         - is_control_plane | default(false)
+        - has_keepalived | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Skip Keepalived restart on control plane when service is missing
+      ansible.builtin.debug:
+        msg: "Skipping Keepalived restart on {{ inventory_hostname }} because keepalived service is not installed"
+      when:
+        - is_control_plane | default(false)
+        - not (has_keepalived | default(false))
         - wg_config_deployed.changed | default(false)
         - not ansible_check_mode
 
@@ -249,6 +296,16 @@
         state: restarted
       when:
         - is_bgp_router | default(false)
+        - has_frr | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Skip FRR restart on BGP router when service is missing
+      ansible.builtin.debug:
+        msg: "Skipping FRR restart on {{ inventory_hostname }} because frr service is not installed"
+      when:
+        - is_bgp_router | default(false)
+        - not (has_frr | default(false))
         - wg_config_deployed.changed | default(false)
         - not ansible_check_mode
 
@@ -258,6 +315,16 @@
         state: restarted
       when:
         - is_bgp_router | default(false)
+        - has_keepalived | default(false)
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Skip Keepalived restart on BGP router when service is missing
+      ansible.builtin.debug:
+        msg: "Skipping Keepalived restart on {{ inventory_hostname }} because keepalived service is not installed"
+      when:
+        - is_bgp_router | default(false)
+        - not (has_keepalived | default(false))
         - wg_config_deployed.changed | default(false)
         - not ansible_check_mode
 
@@ -266,5 +333,7 @@
         msg: "FRR and Keepalived restarted on BGP router {{ inventory_hostname }} after WireGuard configuration change"
       when:
         - is_bgp_router | default(false)
+        - has_frr | default(false)
+        - has_keepalived | default(false)
         - wg_config_deployed.changed | default(false)
         - not ansible_check_mode

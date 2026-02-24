@@ -73,10 +73,15 @@ vrrp_instance K8S_VIP {
         {{ keepalived_vip }}/{{ keepalived_vip_cidr }} dev {{ keepalived_vip_interface }}
     }
     
-{% if unicast_peers | length > 0 %}
-    # Track local apiserver health (only when multiple planes exist)
+{% if keepalived_track_apiserver | default(false) %}
+    # Track local apiserver health (only when K8s is initialized and multiple planes exist)
     track_script {
         chk_apiserver
     }
+{% endif %}
+
+{% if keepalived_wg_failover_enabled | default(false) %}
+    # When this node becomes MASTER for API VIP, update WireGuard VIP owner on gateway
+    notify_master "/usr/local/sbin/wg-api-vip-notify.sh MASTER"
 {% endif %}
 }

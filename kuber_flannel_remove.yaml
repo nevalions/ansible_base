@@ -1,0 +1,34 @@
+---
+# ============================================================================
+# Flannel CNI Removal Playbook
+# ============================================================================
+#
+# Removes Flannel CNI from the Kubernetes cluster.
+# Deletes the manifest, namespace, and cleans up local CNI artifacts.
+#
+# USAGE:
+#   ansible-playbook kuber_flannel_remove.yaml
+#
+# NOTE: After removal, the cluster will have no CNI and pods will not
+#       be schedulable. Install a replacement CNI before deploying workloads.
+#
+# ============================================================================
+
+- name: Remove Flannel CNI (cleanup)
+  hosts: kuber_small_all_with_services:&kuber_small_planes:kuber_small_workers
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - flannel
+    - cni
+    - remove
+    - cleanup
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    flannel_operation: remove
+  roles:
+    - flannel

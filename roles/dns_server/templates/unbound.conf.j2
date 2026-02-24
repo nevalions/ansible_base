@@ -6,10 +6,17 @@ server:
     do-ip6: {{ "yes" if dns_do_ipv6 else "no" }}
     rrset-cache-size: {{ dns_cache_size }}m
     msg-cache-size: {{ dns_cache_size }}m
-{% for upstream in dns_upstream_dns if not (upstream.startswith('[') or upstream == '[dns-server]') %}
-    forward-zone:
-        name: "."
-        forward-addr: {{ upstream }}
+
+{% set valid_upstreams = (dns_upstream_dns | default([])
+  | reject('match', '^\[.*\]$')
+  | select('match', '^(?:\d{1,3}\.){3}\d{1,3}$')
+  | list) %}
+{% set effective_upstreams = valid_upstreams if (valid_upstreams | length > 0) else ['1.1.1.1', '8.8.8.8'] %}
+
+forward-zone:
+    name: "."
+{% for upstream in effective_upstreams %}
+    forward-addr: {{ upstream }}
 {% endfor %}
 
 include: /etc/unbound/unbound.conf.d/zone.conf

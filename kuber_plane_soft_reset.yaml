@@ -1,6 +1,6 @@
 ---
 - name: Soft reset Kubernetes Control Plane (preserve packages)
-  hosts: kuber_small_planes
+  hosts: planes_all
   become: true
   gather_facts: false
   serial: 1

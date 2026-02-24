@@ -6,6 +6,7 @@
 {% set server_port = vault_wg_server_port %}
 {% set server_name = 'default' %}
 {% set host_to_group_map = {} %}
+{% set server_peer_name = '' %}
 
 {% for group_name, hosts in groups.items() %}
 {%   if group_name in vault_wg_server_ips %}
@@ -22,6 +23,23 @@
 {%   set server_name = matched_group %}
 {% endif %}
 
+{% if server_name == 'default' %}
+{%   set server_peer_name = (
+      vault_wg_peers | default([])
+      | selectattr('is_server', 'defined')
+      | selectattr('is_server')
+      | selectattr('host_group', 'defined')
+      | selectattr('host_group', 'in', group_names | default([]))
+      | map(attribute='name')
+      | list
+      | first
+      | default('')
+    ) %}
+{%   if server_peer_name | length > 0 %}
+{%     set server_name = server_peer_name %}
+{%   endif %}
+{% endif %}
+
 Address = {{ server_ip }}/{{ vault_wg_network_cidr.split('/')[1] }}
 PrivateKey = {{ vault_wg_peer_private_keys[server_name] | default(vault_wg_server_private_key) }}
 ListenPort = {{ server_port | default(vault_wg_server_port) }}
@@ -29,10 +47,6 @@ ListenPort = {{ server_port | default(vault_wg_server_port) }}
 # BEGIN ANSIBLE MANAGED PEERS
 {% set ns = namespace(seen_ips=[], reserved_peer_ips=[]) %}
 {% set current_in_bgp_routers = inventory_hostname in groups.get('bgp_routers', []) %}
-{% set api_vip_cidr = (vault_k8s_api_vip | default('') | string | trim) %}
-{% if api_vip_cidr | length > 0 and '/' not in api_vip_cidr %}
-{%   set api_vip_cidr = api_vip_cidr + '/32' %}
-{% endif %}
 {% for peer in vault_wg_peers %}
 {%   set ns.reserved_peer_ips = (
       ns.reserved_peer_ips +
@@ -59,14 +73,6 @@ ListenPort = {{ server_port | default(vault_wg_server_port) }}
         ) %}
 {%       if current_in_bgp_routers and peer_in_bgp_routers %}
 {%         set routed_extra_ips = [] %}
-{%       endif %}
-{%       set peer_in_planes = (
-          peer.host_group is defined
-          and peer.host_group in groups
-          and ((groups[peer.host_group] | default([])) | intersect(groups.get('planes_all', [])) | length > 0)
-        ) %}
-{%       if api_vip_cidr | length > 0 and (api_vip_cidr in routed_extra_ips) and (not peer_in_planes) %}
-{%         set routed_extra_ips = routed_extra_ips | difference([api_vip_cidr]) %}
 {%       endif %}
 {%       set routed_extra_ips = routed_extra_ips | reject('in', ns.reserved_peer_ips) | list %}
 {%       set candidate_ips = (peer_ips + routed_extra_ips) | unique | list %}

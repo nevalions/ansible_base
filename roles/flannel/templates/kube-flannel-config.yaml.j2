@@ -1,0 +1,8 @@
+{
+  "Network": "{{ flannel_pod_cidr }}",
+  "EnableNFTables": {{ flannel_enable_nftables | lower }},
+  "Backend": {
+    "Type": "{{ flannel_backend_type }}",
+    "MTU": {{ flannel_mtu }}
+  }
+}

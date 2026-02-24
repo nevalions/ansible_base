@@ -42,3 +42,13 @@ keepalived_control_planes: "{{ vault_k8s_control_planes }}"
 # Network access control
 keepalived_vrrp_allowed_network: "{{ vault_wg_network_cidr | default('any') }}"
 keepalived_api_allowed_network: "{{ vault_wg_network_cidr | default('any') }}"
+
+# WireGuard API VIP failover automation
+keepalived_wg_failover_enabled: true
+keepalived_wg_failover_interface: "{{ vault_wg_interface | default('wg99') }}"
+keepalived_wg_failover_vip_cidr: "{{ vault_k8s_api_vip | default('') }}/32"
+keepalived_wg_failover_gateway_host: "{{ (groups['keepalived_hosts'] | default([]) | first | default('')) }}"
+keepalived_wg_failover_gateway_user: "{{ ansible_user | default('linroot') }}"
+keepalived_wg_failover_gateway_port: 22
+keepalived_wg_failover_ssh_key_path: "/etc/keepalived/wg_vip_failover_id_ed25519"
+keepalived_wg_failover_gateway_script_path: "/usr/local/sbin/wg-api-vip-failover.sh"

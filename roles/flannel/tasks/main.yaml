@@ -1,0 +1,471 @@
+---
+# ============================================================================
+# Flannel CNI - Install / Remove
+# ============================================================================
+# Simple VXLAN-based CNI that works cleanly over WireGuard tunnels.
+# No BGP stack -> no conflict with MetalLB BGP mode.
+#
+# Install: downloads upstream manifest, patches for WireGuard (--iface, MTU),
+#          applies to cluster, waits for daemonset rollout.
+# Remove:  deletes manifest and namespace, cleans up.
+# ============================================================================
+
+- name: Skip when Flannel disabled
+  ansible.builtin.meta: end_play
+  when: not (flannel_enabled | bool)
+
+- name: Compute kubectl delegate host
+  ansible.builtin.set_fact:
+    flannel_kubectl_delegate: "{{ ansible_play_hosts | first }}"
+  run_once: true
+
+# ============================================================================
+# REMOVAL BLOCK
+# ============================================================================
+
+- name: Remove Flannel when operation is remove
+  block:
+    - name: Delete Flannel manifest (best-effort)
+      ansible.builtin.command: kubectl delete -f {{ flannel_manifest_url }} --ignore-not-found --wait=false
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_manifest_delete
+      changed_when: "'deleted' in flannel_manifest_delete.stdout"
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ flannel_kubectl_delegate }}"
+
+    - name: Delete Flannel namespace
+      ansible.builtin.command: kubectl delete ns {{ flannel_namespace }} --ignore-not-found
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_ns_delete
+      changed_when: "'deleted' in flannel_ns_delete.stdout"
+      failed_when: false
+      when: flannel_remove_namespace | bool
+      run_once: true
+      delegate_to: "{{ flannel_kubectl_delegate }}"
+
+    - name: Wait for Flannel namespace to be gone
+      ansible.builtin.command: kubectl get ns {{ flannel_namespace }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_ns_gone
+      changed_when: false
+      failed_when: false
+      retries: 30
+      delay: 5
+      until: flannel_ns_gone.rc != 0
+      when: flannel_remove_namespace | bool
+      run_once: true
+      delegate_to: "{{ flannel_kubectl_delegate }}"
+
+    - name: Clean Flannel CNI configuration from all nodes
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/cni/net.d/10-flannel.conflist
+        - /run/flannel
+      failed_when: false
+
+    - name: Remove Flannel VXLAN interface
+      ansible.builtin.command: ip link delete flannel.1
+      changed_when: true
+      failed_when: false
+
+    - name: Remove cni0 bridge interface
+      ansible.builtin.command: ip link delete cni0
+      changed_when: true
+      failed_when: false
+
+    - name: Display Flannel removal summary
+      ansible.builtin.debug:
+        msg:
+          - "=== Flannel CNI Removal Complete ==="
+          - "Manifest deleted: {{ flannel_manifest_delete.rc | default(1) == 0 }}"
+          - "Namespace deleted: {{ flannel_ns_delete.changed | default(false) }}"
+          - "Local CNI config cleaned"
+      run_once: true
+  when: flannel_operation | default('install') == 'remove'
+  tags:
+    - flannel
+    - cni
+    - remove
+
+- name: End play after removal
+  ansible.builtin.meta: end_play
+  when: flannel_operation | default('install') == 'remove'
+
+# ============================================================================
+# INSTALL BLOCK
+# ============================================================================
+
+- name: Validate Flannel pod CIDR is defined
+  ansible.builtin.assert:
+    that:
+      - flannel_pod_cidr is defined
+      - flannel_pod_cidr | string | length > 0
+      - flannel_pod_cidr is not match('^\[.*\]$')
+    fail_msg: >-
+      flannel_pod_cidr is not set. Set vault_k8s_pod_subnet in vault_secrets.yml
+      to match the kubeadm --pod-network-cidr value.
+    success_msg: "Flannel pod CIDR: {{ flannel_pod_cidr }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+    - validate
+
+- name: Validate Flannel interface is defined
+  ansible.builtin.assert:
+    that:
+      - flannel_interface is defined
+      - flannel_interface | string | length > 0
+    fail_msg: >-
+      flannel_interface is not set. For WireGuard clusters this should be 'wg99'.
+    success_msg: "Flannel interface: {{ flannel_interface }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+    - validate
+
+- name: Validate Flannel backend type
+  ansible.builtin.assert:
+    that:
+      - flannel_backend_type in ['vxlan', 'host-gw', 'wireguard']
+    fail_msg: "flannel_backend_type must be 'vxlan', 'host-gw', or 'wireguard'"
+    success_msg: "Flannel backend: {{ flannel_backend_type }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+    - validate
+
+- name: Display Flannel installation parameters
+  ansible.builtin.debug:
+    msg:
+      - "=== Flannel CNI Installation ==="
+      - "Version: {{ flannel_version }}"
+      - "Pod CIDR: {{ flannel_pod_cidr }}"
+      - "Interface: {{ flannel_interface }} (WireGuard)"
+      - "Backend: {{ flannel_backend_type }}"
+      - "MTU: {{ flannel_mtu }}"
+      - "Namespace: {{ flannel_namespace }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+
+- name: Install base CNI plugin package on Debian
+  ansible.builtin.apt:
+    name: containernetworking-plugins
+    state: present
+    update_cache: true
+  when: ansible_os_family == 'Debian'
+  tags:
+    - flannel
+    - cni
+
+- name: Ensure CNI plugin directory exists
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+    mode: "0755"
+  tags:
+    - flannel
+    - cni
+
+- name: Discover base CNI plugin binaries
+  ansible.builtin.find:
+    paths: /usr/lib/cni
+    file_type: file
+  register: flannel_base_cni_plugins
+  when: ansible_os_family == 'Debian'
+  tags:
+    - flannel
+    - cni
+
+- name: Copy base CNI plugins to runtime directory
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/opt/cni/bin/{{ item.path | basename }}"
+    mode: "0755"
+    remote_src: true
+  loop: "{{ flannel_base_cni_plugins.files | default([]) }}"
+  when: ansible_os_family == 'Debian'
+  tags:
+    - flannel
+    - cni
+
+- name: Verify loopback CNI plugin exists
+  ansible.builtin.stat:
+    path: /opt/cni/bin/loopback
+  register: flannel_loopback_plugin
+  tags:
+    - flannel
+    - cni
+
+- name: Assert loopback CNI plugin is present
+  ansible.builtin.assert:
+    that:
+      - flannel_loopback_plugin.stat.exists
+    fail_msg: "CNI loopback plugin missing at /opt/cni/bin/loopback; pod sandbox creation will fail."
+    success_msg: "CNI loopback plugin is present"
+  tags:
+    - flannel
+    - cni
+
+- name: Download Flannel manifest
+  ansible.builtin.get_url:
+    url: "{{ flannel_manifest_url }}"
+    dest: /tmp/kube-flannel.yml
+    mode: "0644"
+    force: true
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Patch Flannel manifest - set pod network CIDR
+  ansible.builtin.replace:
+    path: /tmp/kube-flannel.yml
+    regexp: '^(\s*)"Network":\s*"[^"]*",?$'
+    replace: '\1"Network": "{{ flannel_pod_cidr }}",'
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Patch Flannel manifest - set nftables support
+  ansible.builtin.replace:
+    path: /tmp/kube-flannel.yml
+    regexp: '^(\s*)"EnableNFTables":\s*(true|false),?$'
+    replace: '\1"EnableNFTables": {{ flannel_enable_nftables | lower }},'
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Patch Flannel manifest - set backend type
+  ansible.builtin.replace:
+    path: /tmp/kube-flannel.yml
+    regexp: '^(\s*)"Type":\s*"[^"]*",?$'
+    replace: '\1"Type": "{{ flannel_backend_type }}",'
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Patch Flannel manifest - set backend MTU
+  ansible.builtin.lineinfile:
+    path: /tmp/kube-flannel.yml
+    regexp: '^(\s*)"MTU":\s*[0-9]+,?$'
+    line: '        "MTU": {{ flannel_mtu }}'
+    insertafter: '^(\s*)"Type":\s*"[^"]*",?$'
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Patch Flannel manifest - add --iface argument
+  ansible.builtin.replace:
+    path: /tmp/kube-flannel.yml
+    regexp: '(- --kube-subnet-mgr)'
+    replace: '\1\n        - --iface={{ flannel_interface }}'
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Check if Flannel namespace already exists
+  ansible.builtin.command: kubectl get ns {{ flannel_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_ns_exists
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Apply Flannel manifest
+  ansible.builtin.command: kubectl apply -f /tmp/kube-flannel.yml
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_apply
+  changed_when: "'created' in flannel_apply.stdout or 'configured' in flannel_apply.stdout"
+  retries: 3
+  delay: 5
+  until: flannel_apply.rc == 0
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Display Flannel apply result
+  ansible.builtin.debug:
+    msg: "{{ flannel_apply.stdout_lines | default([]) }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+
+- name: Wait for Flannel namespace to exist
+  ansible.builtin.command: kubectl get ns {{ flannel_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_ns_ready
+  changed_when: false
+  retries: 20
+  delay: 3
+  until: flannel_ns_ready.rc == 0
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Wait for Flannel daemonset rollout
+  ansible.builtin.command: >-
+    kubectl -n {{ flannel_namespace }} rollout status
+    ds/{{ flannel_daemonset_name }} --timeout={{ flannel_rollout_timeout }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_ds_rollout
+  changed_when: false
+  retries: "{{ flannel_wait_retries }}"
+  delay: "{{ flannel_wait_delay }}"
+  until: flannel_ds_rollout.rc == 0
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Wait for all Flannel pods to be Ready
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=ready pod
+    -l app=flannel -n {{ flannel_namespace }}
+    --timeout={{ flannel_rollout_timeout }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_pods_ready
+  changed_when: false
+  retries: "{{ flannel_wait_retries }}"
+  delay: "{{ flannel_wait_delay }}"
+  until: flannel_pods_ready.rc == 0
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Get Flannel pod status
+  ansible.builtin.command: kubectl get pods -n {{ flannel_namespace }} -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_pod_status
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Display Flannel pod status
+  ansible.builtin.debug:
+    var: flannel_pod_status.stdout_lines
+  run_once: true
+  tags:
+    - flannel
+    - cni
+
+- name: Verify Flannel ConfigMap has correct settings
+  ansible.builtin.command: >-
+    kubectl get configmap kube-flannel-cfg
+    -n {{ flannel_namespace }}
+    -o jsonpath='{.data.net-conf\.json}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_configmap_check
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Display Flannel ConfigMap net-conf.json
+  ansible.builtin.debug:
+    msg: "{{ flannel_configmap_check.stdout }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+
+- name: Verify node Ready status after CNI installation
+  ansible.builtin.command: >-
+    kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_node_status
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ flannel_kubectl_delegate }}"
+  tags:
+    - flannel
+    - cni
+
+- name: Display node status
+  ansible.builtin.debug:
+    msg: "{{ flannel_node_status.stdout_lines }}"
+  run_once: true
+  tags:
+    - flannel
+    - cni
+
+- name: Assert all nodes are Ready
+  ansible.builtin.assert:
+    that:
+      - "'False' not in flannel_node_status.stdout"
+    success_msg: "All nodes are Ready after Flannel CNI installation"
+    fail_msg: >-
+      Some nodes are not Ready after Flannel installation.
+      Check flannel pod logs: kubectl logs -n {{ flannel_namespace }} -l app=flannel
+  run_once: true
+  ignore_errors: true
+  tags:
+    - flannel
+    - cni
+
+- name: Display Flannel installation summary
+  ansible.builtin.debug:
+    msg:
+      - "=== Flannel CNI Installation Complete ==="
+      - "Version: {{ flannel_version }}"
+      - "Pod CIDR: {{ flannel_pod_cidr }}"
+      - "Interface: {{ flannel_interface }}"
+      - "Backend: {{ flannel_backend_type }}"
+      - "MTU: {{ flannel_mtu }}"
+      - "Daemonset rollout: {{ 'Success' if flannel_ds_rollout.rc == 0 else 'Issues detected' }}"
+      - "All pods ready: {{ 'Yes' if flannel_pods_ready.rc == 0 else 'No - check logs' }}"
+      - ""
+      - "Next steps:"
+      - "  - Run kuber_cni_test.yaml to verify pod networking"
+      - "  - Run kuber_metallb_install.yaml to install MetalLB (BGP mode)"
+      - "  - Calico BGP config (calico_bgp_manage.yaml) is NOT needed with Flannel"
+  run_once: true
+  tags:
+    - flannel
+    - cni

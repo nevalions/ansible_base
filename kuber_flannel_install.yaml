@@ -1,0 +1,92 @@
+---
+# ============================================================================
+# Flannel CNI Installation Playbook
+# ============================================================================
+#
+# Installs Flannel CNI with VXLAN backend configured for WireGuard overlay.
+# This is a standalone playbook - Flannel is NOT installed by kuber_plane_init.
+#
+# Flannel replaces Calico as the CNI plugin. Key advantages:
+#   - No BGP stack (no conflict with MetalLB BGP mode)
+#   - Simple VXLAN over WireGuard works reliably
+#   - No port 178/179 coordination needed
+#
+# PREREQUISITES:
+#   1. Kubernetes control plane initialized (kuber_plane_init.yaml completed)
+#   2. WireGuard mesh operational (wireguard_manage.yaml completed)
+#   3. vault_k8s_pod_subnet defined in vault_secrets.yml
+#
+# USAGE:
+#   ansible-playbook kuber_flannel_install.yaml
+#
+#   # Dry run
+#   ansible-playbook kuber_flannel_install.yaml --check
+#
+#   # Override interface or MTU
+#   ansible-playbook kuber_flannel_install.yaml -e "flannel_interface=wg99 flannel_mtu=1360"
+#
+# NEXT STEPS after install:
+#   1. ansible-playbook kuber_cni_test.yaml        # Verify CNI networking
+#   2. ansible-playbook kuber_worker_join.yaml      # Join workers (if not yet joined)
+#   3. ansible-playbook kuber_metallb_install.yaml  # Install MetalLB (BGP mode)
+#
+# ============================================================================
+
+- name: Install Flannel CNI (VXLAN over WireGuard)
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - flannel
+    - cni
+    - addon
+  vars_files:
+    - vault_secrets.yml
+  pre_tasks:
+    - name: Compute kubectl delegate host for CNI checks
+      ansible.builtin.set_fact:
+        flannel_check_delegate: "{{ ansible_play_hosts | first }}"
+      run_once: true
+
+    - name: Check if Calico daemonset exists
+      ansible.builtin.command: kubectl get daemonset calico-node -n kube-system --ignore-not-found -o name
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_calico_ds_check
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ flannel_check_delegate }}"
+
+    - name: Check if Flannel daemonset exists
+      ansible.builtin.command: kubectl get daemonset kube-flannel-ds -n kube-flannel --ignore-not-found -o name
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_flannel_ds_check
+      changed_when: false
+      failed_when: false
+      run_once: true
+      delegate_to: "{{ flannel_check_delegate }}"
+
+    - name: Display existing CNI daemonset status
+      ansible.builtin.debug:
+        msg:
+          - "=== Existing CNI Check ==="
+          - "Calico detected: {{ (flannel_calico_ds_check.stdout | trim | length) > 0 }}"
+          - "Flannel detected: {{ (flannel_flannel_ds_check.stdout | trim | length) > 0 }}"
+      run_once: true
+
+    - name: Fail when Calico is still installed
+      ansible.builtin.fail:
+        msg:
+          - "Calico CNI is still present ({{ flannel_calico_ds_check.stdout | trim }})."
+          - "Remove old Calico before installing Flannel to avoid mixed CNI state."
+          - "Suggested action: ansible-playbook calico_cni_remove.yaml"
+      when: (flannel_calico_ds_check.stdout | trim | length) > 0
+      run_once: true
+
+  roles:
+    - flannel

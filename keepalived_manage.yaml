@@ -31,15 +31,25 @@
     - keepalived
     - verify
   tasks:
-    - name: Check if VIP is assigned
+    - name: Check if VIP is assigned on this node
       ansible.builtin.shell: ip addr show {{ keepalived_vip_interface }} | grep {{ keepalived_vip }}
       register: vip_check
       changed_when: false
       failed_when: false
 
-    - name: Assert VIP is active
+    - name: Report VIP status on this node
+      ansible.builtin.debug:
+        msg: "VIP {{ keepalived_vip }} on {{ keepalived_vip_interface }}: {{ 'ACTIVE (MASTER)' if vip_check.rc == 0 else 'inactive (BACKUP)' }}"
+
+    - name: Assert VIP is active on at least one node in this play
       ansible.builtin.assert:
         that:
-          - vip_check.rc == 0
-        success_msg: "VIP {{ keepalived_vip }} is active on {{ keepalived_vip_interface }}"
-        fail_msg: "VIP {{ keepalived_vip }} is NOT active on {{ keepalived_vip_interface }}"
+          - ansible_play_hosts
+            | map('extract', hostvars, ['vip_check', 'rc'])
+            | select('equalto', 0)
+            | list
+            | length >= 1
+        success_msg: "VIP {{ keepalived_vip }} is active on at least one control plane node"
+        fail_msg: "VIP {{ keepalived_vip }} is NOT active on any control plane node in this play"
+      run_once: true
+      when: ansible_play_hosts | length > 1

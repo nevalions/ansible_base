@@ -27,3 +27,14 @@ kuber_plane_join_kubelet_extra_args:
       .get('address', ansible_default_ipv4.address)
     }}
 kubeadm_api_version: "v1beta4"
+
+# Safety behavior when target node is already part of a cluster
+# true: fail fast and require explicit reset
+# false: skip join tasks for that host and continue the play
+kuber_plane_join_fail_if_already_joined: true
+
+# CNI validation after control plane join
+# Global source of truth: vault_k8s_cni_type (example: flannel or calico)
+kuber_plane_join_cni_type: "{{ vault_k8s_cni_type | default('flannel') }}"
+kuber_plane_join_cni_namespace: "{{ 'kube-flannel' if kuber_plane_join_cni_type == 'flannel' else 'kube-system' }}"
+kuber_plane_join_cni_label_selector: "{{ 'app=flannel' if kuber_plane_join_cni_type == 'flannel' else 'k8s-app=calico-node' }}"

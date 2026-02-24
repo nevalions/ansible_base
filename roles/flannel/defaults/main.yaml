@@ -1,0 +1,53 @@
+---
+# Flannel CNI - Default Variables
+# ================================
+# Flannel is a simple overlay network for Kubernetes that works reliably
+# over WireGuard VPN tunnels. Unlike Calico, Flannel has no BGP stack,
+# so it does not conflict with MetalLB BGP mode.
+
+# Enable/disable Flannel installation
+flannel_enabled: "{{ vault_flannel_enabled | default(true) }}"
+
+# Operation mode: 'install' or 'remove'
+flannel_operation: install
+
+# Flannel version (GitHub release tag)
+flannel_version: "{{ vault_flannel_version | default('v0.28.1') }}"
+
+# Upstream manifest URL (computed from version)
+flannel_manifest_url: "https://github.com/flannel-io/flannel/releases/download/{{ flannel_version }}/kube-flannel.yml"
+
+# Kubernetes pod network CIDR (must match kubeadm --pod-network-cidr)
+flannel_pod_cidr: "{{ vault_k8s_pod_subnet }}"
+
+# Network interface for VXLAN tunnel endpoints
+# For WireGuard-based clusters, this MUST be the WireGuard interface
+# so Flannel builds VXLAN tunnels over the encrypted mesh.
+flannel_interface: "{{ vault_flannel_interface | default('wg99') }}"
+
+# VXLAN backend type ('vxlan' recommended for WireGuard overlay)
+# Other options: 'host-gw' (requires L2 adjacency), 'wireguard' (native WG backend)
+flannel_backend_type: "{{ vault_flannel_backend_type | default('vxlan') }}"
+
+# MTU for Flannel VXLAN interface
+# Calculation: WireGuard MTU (1420) - VXLAN overhead (50) - safety margin (10) = 1360
+flannel_mtu: "{{ vault_flannel_mtu | default(1360) }}"
+
+# Flannel Kubernetes namespace
+flannel_namespace: "kube-flannel"
+
+# Flannel daemonset name
+flannel_daemonset_name: "kube-flannel-ds"
+
+# Timeout for daemonset rollout (seconds)
+flannel_rollout_timeout: "{{ vault_flannel_rollout_timeout | default(300) }}"
+
+# Retry settings for wait operations
+flannel_wait_retries: "{{ vault_flannel_wait_retries | default(30) }}"
+flannel_wait_delay: "{{ vault_flannel_wait_delay | default(10) }}"
+
+# Whether to remove namespace on removal
+flannel_remove_namespace: "{{ vault_flannel_remove_namespace | default(true) }}"
+
+# Enable nftables support in Flannel (false for iptables-based setups)
+flannel_enable_nftables: "{{ vault_flannel_enable_nftables | default(false) }}"

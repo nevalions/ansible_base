@@ -1,3 +1,4 @@
 ---
 remove_container_images: true
 remove_kubernetes_packages: true
+kuber_reset_enforce_listener_cleanup: true

@@ -19,7 +19,8 @@
 # PREREQUISITES:
 #   1. Kubernetes cluster must be running (kuber_init or kuber_join completed)
 #   2. Control plane node must be accessible
-#   3. CNI plugin (Calico) must be installed and operational
+#   3. CNI plugin (Flannel or Calico) must be installed and operational
+#      Auto-detects which CNI is active (checks kube-flannel / calico-system namespaces)
 #
 # VARIABLES:
 #   See roles/kuber_cni_test/defaults/main.yaml for configurable variables

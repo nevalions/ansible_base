@@ -27,6 +27,19 @@
   changed_when: false
   failed_when: false
 
+- name: Check if kubeadm reset is available before package removal
+  ansible.builtin.command: which kubeadm
+  register: kubeadm_check_before_removal
+  changed_when: false
+  failed_when: false
+
+- name: Run kubeadm reset before package removal
+  ansible.builtin.command: kubeadm reset --force
+  when: kubeadm_check_before_removal.rc == 0
+  failed_when: false
+  register: kubeadm_reset_before_removal
+  changed_when: kubeadm_reset_before_removal.rc == 0
+
 - name: Unhold Kubernetes packages
   ansible.builtin.dpkg_selections:
     name: "{{ item }}"
@@ -58,6 +71,18 @@
     enabled: false
   failed_when: false
 
+- name: Stop NFS server related services when present
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - nfs-kernel-server
+    - nfs-server
+    - rpcbind
+    - rpcbind.socket
+  failed_when: false
+
 - name: Stop containerd service temporarily for cleanup
   ansible.builtin.systemd:
     name: containerd
@@ -79,25 +104,72 @@
   failed_when: false
   changed_when: false
 
-- name: Check if kubeadm reset is available
-  ansible.builtin.command: which kubeadm
-  register: kubeadm_check
-  changed_when: false
-  failed_when: false
-
-- name: Run kubeadm reset to clean cluster configuration
-  ansible.builtin.command: kubeadm reset --force
-  when: kubeadm_check.rc == 0
-  failed_when: false
-  register: kubeadm_reset
-  changed_when: kubeadm_reset.rc == 0
-
 - name: Stop CNI-related services
   ansible.builtin.shell: |
     systemctl stop cni* 2>/dev/null || true
     pkill -9 -f cni 2>/dev/null || true
   failed_when: false
   changed_when: false
+
+- name: Capture listeners on MetalLB memberlist port before cleanup
+  ansible.builtin.shell: ss -H -ltnup '( sport = :7946 )' || true
+  register: metallb_memberlist_listeners_before
+  failed_when: false
+  changed_when: false
+
+- name: Capture listeners on CSI sidecar ports before cleanup
+  ansible.builtin.shell: ss -H -ltnup '( sport = :19809 or sport = :29653 )' || true
+  register: csi_sidecar_listeners_before
+  failed_when: false
+  changed_when: false
+
+- name: Kill stale listeners on CSI sidecar ports
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    pids="$(ss -H -ltnup '( sport = :19809 or sport = :29653 )' | awk -F 'pid=' '{for(i=2;i<=NF;i++){split($i,a,","); print a[1]}}' | sort -u)"
+    if [ -n "${pids}" ]; then
+      kill -9 ${pids} || true
+      printf '%s\n' "${pids}"
+    fi
+  register: csi_sidecar_killed_pids
+  failed_when: false
+  changed_when: csi_sidecar_killed_pids.stdout | trim | length > 0
+
+- name: Kill stale listeners on MetalLB memberlist port
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    pids="$(ss -H -ltnup '( sport = :7946 )' | awk -F 'pid=' '{for(i=2;i<=NF;i++){split($i,a,","); print a[1]}}' | sort -u)"
+    if [ -n "${pids}" ]; then
+      kill -9 ${pids} || true
+      printf '%s\n' "${pids}"
+    fi
+  register: metallb_memberlist_killed_pids
+  failed_when: false
+  changed_when: metallb_memberlist_killed_pids.stdout | trim | length > 0
+
+- name: Check if cni0 interface exists
+  ansible.builtin.command: ip link show cni0
+  register: cni0_interface
+  changed_when: false
+  failed_when: false
+
+- name: Remove cni0 interface explicitly
+  ansible.builtin.command: ip link delete cni0
+  when: cni0_interface.rc == 0
+  failed_when: false
+  changed_when: true
+
+- name: Check if flannel.1 interface exists
+  ansible.builtin.command: ip link show flannel.1
+  register: flannel_interface
+  changed_when: false
+  failed_when: false
+
+- name: Remove flannel.1 interface explicitly
+  ansible.builtin.command: ip link delete flannel.1
+  when: flannel_interface.rc == 0
+  failed_when: false
+  changed_when: true
 
 - name: Force remove CNI directory contents
   ansible.builtin.shell: |
@@ -116,12 +188,18 @@
     - /opt/cni/bin
     - /var/lib/cni
 
-- name: Remove Calico network interfaces
+- name: Remove CNI network interfaces (Calico and Flannel)
   ansible.builtin.shell: |
     set -e -o pipefail
-    ip link show | grep -E "cali|tunl|flannel" | awk '{print $2}' | cut -d':' -f1 | xargs -r -I {} ip link delete {} type dummy
+    ip link show | grep -E "cali|tunl|flannel|cni0|vxlan" | awk '{print $2}' | cut -d':' -f1 | cut -d'@' -f1 | xargs -r -I {} ip link delete {} 2>/dev/null || true
   failed_when: false
   changed_when: false
+
+- name: Ensure containerd is running for CRI cleanup
+  ansible.builtin.systemd:
+    name: containerd
+    state: started
+  failed_when: false
 
 - name: Remove all Docker/Containerd containers
   ansible.builtin.shell: |
@@ -133,6 +211,18 @@
   failed_when: false
   changed_when: false
   register: container_cleanup
+
+- name: Kill MetalLB memberlist listeners after container cleanup
+  ansible.builtin.shell: |
+    set -e -o pipefail
+    pids="$(ss -H -ltnup '( sport = :7946 )' | awk -F 'pid=' '{for(i=2;i<=NF;i++){split($i,a,","); print a[1]}}' | sort -u)"
+    if [ -n "${pids}" ]; then
+      kill -9 ${pids} || true
+      printf '%s\n' "${pids}"
+    fi
+  register: metallb_memberlist_killed_pids_after_cleanup
+  failed_when: false
+  changed_when: metallb_memberlist_killed_pids_after_cleanup.stdout | trim | length > 0
 
 - name: Remove all container images (if configured)
   ansible.builtin.shell: |
@@ -274,6 +364,15 @@
     msg: "/run/calico is a runtime mount; skipping removal. A reboot clears it."
   when: calico_run_mount.rc == 0
 
+- name: Clean any remaining Flannel data
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /run/flannel
+    - /var/lib/cni/flannel
+  failed_when: false
+
 - name: Reload systemd daemon
   ansible.builtin.systemd:
     daemon_reload: true
@@ -284,17 +383,154 @@
   register: cni_dirs_removed
   failed_when: false
   loop:
-    - /etc/cni/net.d
     - /opt/cni/bin
     - /var/lib/cni
 
-- name: Assert CNI directories are removed
+- name: Assert CNI runtime directories are removed
   ansible.builtin.assert:
     that:
       - not item.stat.exists
     success_msg: "{{ item.item }} removed successfully"
     fail_msg: "{{ item.item }} still exists after reset"
   loop: "{{ cni_dirs_removed.results }}"
+
+- name: Check if /etc/cni/net.d exists after cleanup
+  ansible.builtin.stat:
+    path: /etc/cni/net.d
+  register: cni_netd_dir
+  failed_when: false
+
+- name: List /etc/cni/net.d entries when directory exists
+  ansible.builtin.find:
+    paths: /etc/cni/net.d
+    file_type: any
+    recurse: false
+  register: cni_netd_entries
+  when: cni_netd_dir.stat.exists
+  failed_when: false
+
+- name: Assert /etc/cni/net.d is absent or empty
+  ansible.builtin.assert:
+    that:
+      - not cni_netd_dir.stat.exists or (cni_netd_entries.matched | default(0) | int) == 0
+    success_msg: "/etc/cni/net.d is absent or empty (expected after reset)"
+    fail_msg: >-
+      /etc/cni/net.d contains CNI configs after reset:
+      {{ cni_netd_entries.files | default([]) | map(attribute='path') | list | join(', ') }}.
+      Remove stale CNI config files, then re-run kuber_worker_reset.yaml.
+
+- name: Check listeners on MetalLB memberlist port after cleanup
+  ansible.builtin.shell: ss -H -ltnup '( sport = :7946 )' || true
+  register: metallb_memberlist_listeners_after
+  failed_when: false
+  changed_when: false
+
+- name: Ensure kubelet stays stopped before CSI listener enforcement
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Stop containerd temporarily before CSI listener enforcement
+  ansible.builtin.systemd:
+    name: containerd
+    state: stopped
+  failed_when: false
+
+- name: Force release CSI sidecar listener ports
+  ansible.builtin.shell: |
+    i=0
+    while [ "$i" -lt 15 ]; do
+      pids="$(ss -H -ltnup '( sport = :19809 or sport = :29653 )' | awk -F 'pid=' '{for(n=2;n<=NF;n++){split($n,a,","); print a[1]}}' | sort -u)"
+      if [ -z "${pids}" ]; then
+        break
+      fi
+
+      kill -9 ${pids} 2>/dev/null || true
+      pkill -9 -f csi-node-driver 2>/dev/null || true
+      pkill -9 -f livenessprobe 2>/dev/null || true
+      pkill -9 -f node-driver-registrar 2>/dev/null || true
+      sleep 1
+      i=$((i + 1))
+    done
+  changed_when: csi_sidecar_listeners_before.stdout_lines | length > 0
+  failed_when: false
+
+- name: Refresh listeners on CSI sidecar ports after cleanup
+  ansible.builtin.shell: ss -H -ltnup '( sport = :19809 or sport = :29653 )' || true
+  register: csi_sidecar_listeners_after
+  failed_when: false
+  changed_when: false
+
+- name: Assert CSI sidecar ports are free after reset
+  ansible.builtin.assert:
+    that:
+      - csi_sidecar_listeners_after.stdout_lines | length == 0
+    success_msg: "CSI sidecar ports 19809/29653 are free"
+    fail_msg: >-
+      CSI sidecar listener port(s) are still in use after reset.
+      Listener(s): {{ csi_sidecar_listeners_after.stdout_lines | join('; ') }}.
+      Stop conflicting process/service on this node, then run kuber_worker_reset.yaml again.
+  when: kuber_reset_enforce_listener_cleanup | default(true)
+
+- name: Ensure kubelet stays stopped before final MetalLB cleanup
+  ansible.builtin.systemd:
+    name: kubelet
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Force release MetalLB memberlist port listeners
+  ansible.builtin.shell: |
+    i=0
+    while [ "$i" -lt 15 ]; do
+      pids="$(ss -H -ltnup '( sport = :7946 )' | awk -F 'pid=' '{for(n=2;n<=NF;n++){split($n,a,","); print a[1]}}' | sort -u)"
+      if [ -z "${pids}" ]; then
+        break
+      fi
+
+      kill -9 ${pids} 2>/dev/null || true
+      pkill -9 -x speaker 2>/dev/null || true
+      pkill -9 -f metallb.*speaker 2>/dev/null || true
+      sleep 1
+      i=$((i + 1))
+    done
+  changed_when: metallb_memberlist_listeners_after.stdout_lines | length > 0
+  failed_when: false
+
+- name: Refresh listeners on MetalLB memberlist port after force cleanup
+  ansible.builtin.shell: ss -H -ltnup '( sport = :7946 )' || true
+  register: metallb_memberlist_listeners_after
+  failed_when: false
+  changed_when: false
+
+- name: Assert MetalLB memberlist port is free after reset
+  ansible.builtin.assert:
+    that:
+      - metallb_memberlist_listeners_after.stdout_lines | length == 0
+    success_msg: "MetalLB memberlist port 7946 is free"
+    fail_msg: >-
+      Port 7946 is still in use after reset. Listener(s):
+      {{ metallb_memberlist_listeners_after.stdout_lines | join('; ') }}.
+      Stop conflicting service/process on this node, then run kuber_worker_reset.yaml again.
+
+- name: Verify cni0 and flannel.1 interfaces are absent before containerd starts
+  ansible.builtin.command: ip link show {{ item }}
+  loop:
+    - cni0
+    - flannel.1
+  register: cni_interfaces_absent
+  changed_when: false
+  failed_when: false
+
+- name: Assert cni0 and flannel.1 interfaces are absent
+  ansible.builtin.assert:
+    that:
+      - item.rc != 0
+    success_msg: "{{ item.item }} interface is absent"
+    fail_msg: "{{ item.item }} interface still exists after reset"
+  loop: "{{ cni_interfaces_absent.results }}"
 
 - name: Start containerd service
   ansible.builtin.systemd:
@@ -312,13 +548,14 @@
     - /var/lib/kubelet
     - /var/lib/etcd
 
-- name: Verify Calico directories are removed
+- name: Verify Calico and Flannel directories are removed
   ansible.builtin.stat:
     path: "{{ item }}"
   register: calico_dirs_removed
   failed_when: false
   loop:
     - /var/lib/calico
+    - /run/flannel
 
 - name: Check if /run/calico still exists
   ansible.builtin.stat:
@@ -344,7 +581,7 @@
     fail_msg: "{{ item.item }} still exists after reset"
   loop: "{{ k8s_dirs_removed.results }}"
 
-- name: Assert Calico directories are removed
+- name: Assert Calico and Flannel directories are removed
   ansible.builtin.assert:
     that:
       - not item.stat.exists
@@ -373,12 +610,36 @@
   register: containerd_running
   failed_when: false
 
+- name: Capture TCP listeners on NFS ports
+  ansible.builtin.shell: ss -H -ltnp '( sport = :111 or sport = :2049 )' || true
+  register: nfs_tcp_listeners_after
+  failed_when: false
+  changed_when: false
+
+- name: Capture UDP listeners on NFS ports
+  ansible.builtin.shell: ss -H -lunp '( sport = :111 or sport = :2049 )' || true
+  register: nfs_udp_listeners_after
+  failed_when: false
+  changed_when: false
+
+- name: Assert NFS server ports are not listening on worker after reset
+  ansible.builtin.assert:
+    that:
+      - nfs_tcp_listeners_after.stdout_lines | length == 0
+      - nfs_udp_listeners_after.stdout_lines | length == 0
+    success_msg: "No NFS/rpcbind listeners detected on ports 111/2049"
+    fail_msg: >-
+      NFS-related listener(s) still detected on ports 111/2049.
+      TCP: {{ nfs_tcp_listeners_after.stdout_lines | join('; ') | default('none') }}
+      UDP: {{ nfs_udp_listeners_after.stdout_lines | join('; ') | default('none') }}
+  when: kuber_reset_enforce_listener_cleanup | default(true)
+
 - name: Display reset completion message
   ansible.builtin.debug:
     msg:
       - "=== Kubernetes Reset Complete ==="
       - "Kubernetes directories: Removed"
-      - "Calico directories: Removed"
+      - "Calico/Flannel directories: Removed"
       - "CNI directories: Verified removed (before containerd start)"
       - "CNI network namespaces: {{ 'Cleaned' if orphaned_netns_count.stdout | int == 0 else 'Warning - see above' }}"
       - "Kubelet status: {{ 'Stopped (expected)' if kubelet_status.status.ActiveState != 'active' else 'WARNING: Still running!' }}"

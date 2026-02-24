@@ -1,11 +1,10 @@
 ---
 galaxy_info:
-  author: [your-username]
-  description: Initialize Kubernetes control plane with kubeadm
+  author: linroot
+  description: Install and configure Flannel CNI for Kubernetes (VXLAN over WireGuard)
   company: null
   license: MIT
   min_ansible_version: 2.16
-
   platforms:
     - name: Debian
       versions:
@@ -15,11 +14,11 @@ galaxy_info:
       versions:
         - focal
         - jammy
-
   galaxy_tags:
     - kubernetes
-    - k8s
-    - control-plane
-    - kubeadm
-
+    - flannel
+    - cni
+    - networking
+    - vxlan
+    - wireguard
 dependencies: []

@@ -196,6 +196,46 @@
     state: present
     update_cache: true
 
+- name: Install base CNI plugin package on Debian
+  ansible.builtin.apt:
+    name: containernetworking-plugins
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure CNI plugin directory exists
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+    mode: "0755"
+
+- name: Discover base CNI plugin binaries
+  ansible.builtin.find:
+    paths: /usr/lib/cni
+    file_type: file
+  register: kuber_base_cni_plugins
+  when: ansible_os_family == 'Debian'
+
+- name: Copy base CNI plugins to runtime directory
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/opt/cni/bin/{{ item.path | basename }}"
+    mode: "0755"
+    remote_src: true
+  loop: "{{ kuber_base_cni_plugins.files | default([]) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Verify loopback CNI plugin exists
+  ansible.builtin.stat:
+    path: /opt/cni/bin/loopback
+  register: kuber_loopback_plugin
+
+- name: Assert loopback CNI plugin is present
+  ansible.builtin.assert:
+    that:
+      - kuber_loopback_plugin.stat.exists
+    fail_msg: "CNI loopback plugin missing at /opt/cni/bin/loopback; pod sandbox creation will fail."
+    success_msg: "CNI loopback plugin is present"
+
 - name: Check installed Kubernetes version
   ansible.builtin.slurp:
     src: /opt/kubernetes_version

@@ -1,6 +1,6 @@
 ---
 - name: Test vault SSH only
-  hosts: wireguard_cluster
+  hosts: kuber_cluster
   become: false
   gather_facts: false
   vars_files:

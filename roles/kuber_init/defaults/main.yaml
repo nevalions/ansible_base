@@ -56,29 +56,6 @@ kubeadm_api_server_cert_sans: >-
 
 kubeadm_api_version: "v1beta4"
 
-# Calico CNI Configuration (from vault with sensible defaults)
-# IMPORTANT: Felix (Calico node agent) resource limits prevent OOM crashes
-# Without limits, Felix may be killed by kernel OOM killer during high network traffic
-calico_version: "{{ vault_calico_version | default('v3.31.3') }}"
-calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
-
-# Calico IP Pool Configuration
-# These configure IP allocation for cluster workloads
-calico_ippool_name: "{{ vault_ipPools }}"
-calico_ippool_cidr: "{{ vault_ipPools_cidr }}"
-calico_encapsulation: "{{ vault_ipPools_encapsulation }}"
-calico_nat_outgoing: "{{ natOutgoing }}"
-calico_node_selector: "{{ nodeSelector }}"
-calico_block_size: "{{ vault_ipPools_blockSize }}"
-calico_mtu: "{{ mtu }}"
-calico_node_address_interface: "{{ vault_interface }}"
-
-# Calico Typha Configuration
-# Typha reduces API server load in larger clusters
-# For small clusters (< 5 nodes), 1 replica is sufficient
-# Anti-affinity in the Installation CR prevents port conflicts
-calico_typha_replicas: "{{ vault_calico_typha_replicas | default(1) }}"
-
 # Kubeconfig Configuration
 kubeconfig_user: "{{ vault_admin_user | default(ansible_user | default(ansible_user_id)) }}"
 # Avoid relying on top-level injected facts (ansible_env.*).

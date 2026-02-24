@@ -1,6 +1,6 @@
 ---
 - name: Test vault secrets connectivity
-  hosts: wireguard_cluster
+  hosts: kuber_cluster
   become: true
   gather_facts: false
   vars_files:

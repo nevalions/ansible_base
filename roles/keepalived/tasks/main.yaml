@@ -70,56 +70,52 @@
     success_msg: "Keepalived control planes list is defined"
     fail_msg: "vault_k8s_control_planes must be defined (at least one control plane entry)"
 
-- name: Get this control plane's index in the list for auto-priority
+- name: Resolve keepalived priority and index for this host
   ansible.builtin.set_fact:
     keepalived_plane_index: >-
-      {{
-        keepalived_control_planes
-        | map(attribute='name')
-        | list
-        .index(inventory_hostname) if inventory_hostname in (keepalived_control_planes | map(attribute='name') | list)
-        else (
-          keepalived_control_planes
-          | map(attribute='wireguard_ip')
-          | list
-          .index(ansible_host | default('')) if (ansible_host | default('')) in (keepalived_control_planes | map(attribute='wireguard_ip') | list)
-          else 0
-        )
-      }}
-  when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
-
-- name: Determine keepalived priority for this host
-  ansible.builtin.set_fact:
+      {%- set wg_ip = ansible_facts.get(keepalived_vip_interface, {}).get('ipv4', {}).get('address', '') -%}
+      {%- set match_names = [inventory_hostname, ansible_hostname | default(''), ansible_host | default('')]
+                            | reject('equalto', '') | list -%}
+      {%- set match_ips   = [wg_ip, ansible_host | default(''), inventory_hostname]
+                            | reject('equalto', '') | list -%}
+      {%- set ns = namespace(idx=0, found=false) -%}
+      {%- for plane in keepalived_control_planes -%}
+        {%- if not ns.found -%}
+          {%- if plane.name in match_names or plane.wireguard_ip in match_ips -%}
+            {%- set ns.idx = loop.index0 -%}
+            {%- set ns.found = true -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.idx }}
     keepalived_priority: >-
-      {{
-        keepalived_priority
-        | default(
-            (
-              keepalived_control_planes
-              | selectattr('name', 'in', [inventory_hostname, ansible_host | default('')])
-              | map(attribute='priority')
-              | list
-              | first
-              | default('')
-            ),
-            true
-          )
-        | default(
-            (
-              keepalived_control_planes
-              | selectattr('wireguard_ip', 'in', [inventory_hostname, ansible_host | default('')])
-              | map(attribute='priority')
-              | list
-              | first
-              | default('')
-            ),
-            true
-          )
-        | default(
-            (150 - (keepalived_plane_index | int) * 50),
-            true
-          )
-      }}
+      {%- set wg_ip = ansible_facts.get(keepalived_vip_interface, {}).get('ipv4', {}).get('address', '') -%}
+      {%- set match_names = [inventory_hostname, ansible_hostname | default(''), ansible_host | default('')]
+                            | reject('equalto', '') | list -%}
+      {%- set match_ips   = [wg_ip, ansible_host | default(''), inventory_hostname]
+                            | reject('equalto', '') | list -%}
+      {%- set by_name = keepalived_control_planes
+                        | selectattr('name', 'in', match_names)
+                        | map(attribute='priority') | list -%}
+      {%- set by_ip   = keepalived_control_planes
+                        | selectattr('wireguard_ip', 'in', match_ips)
+                        | map(attribute='priority') | list -%}
+      {%- set ns = namespace(idx=0, found=false) -%}
+      {%- for plane in keepalived_control_planes -%}
+        {%- if not ns.found -%}
+          {%- if plane.name in match_names or plane.wireguard_ip in match_ips -%}
+            {%- set ns.idx = loop.index0 -%}
+            {%- set ns.found = true -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- if by_name | length > 0 -%}
+        {{ by_name | first }}
+      {%- elif by_ip | length > 0 -%}
+        {{ by_ip | first }}
+      {%- else -%}
+        {{ 150 - (ns.idx | int) * 50 }}
+      {%- endif -%}
   when: keepalived_control_planes is defined and keepalived_control_planes | length > 0
 
 - name: Determine keepalived state for this host
@@ -191,6 +187,172 @@
 - name: Set single node mode
   ansible.builtin.set_fact:
     keepalived_single_node: "{{ (keepalived_unicast_peers | default([]) | length) == 0 }}"
+
+- name: Check if Kubernetes API server is initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: keepalived_k8s_initialized
+
+- name: Set fact for apiserver health tracking
+  ansible.builtin.set_fact:
+    keepalived_track_apiserver: "{{ keepalived_k8s_initialized.stat.exists and (keepalived_unicast_peers | default([]) | length) > 0 }}"
+
+- name: Set WireGuard failover gateway SSH host
+  ansible.builtin.set_fact:
+    keepalived_wg_failover_owner_name: >-
+      {{
+        (
+          keepalived_control_planes
+          | selectattr('name', 'in', [inventory_hostname, ansible_hostname | default(''), ansible_host | default('')])
+          | map(attribute='name')
+          | list
+          | first
+          | default('')
+        )
+        or
+        (
+          keepalived_control_planes
+          | selectattr('wireguard_ip', 'in', [
+              ansible_facts.get(keepalived_vip_interface, {}).get('ipv4', {}).get('address', ''),
+              ansible_host | default(''),
+              inventory_hostname
+            ])
+          | map(attribute='name')
+          | list
+          | first
+          | default('')
+        )
+        or inventory_hostname
+      }}
+    keepalived_wg_failover_gateway_ssh_host: >-
+      {{
+        hostvars.get(keepalived_wg_failover_gateway_host, {}).get('ansible_host', keepalived_wg_failover_gateway_host)
+      }}
+    keepalived_wg_failover_gateway_ssh_port: >-
+      {{
+        hostvars.get(keepalived_wg_failover_gateway_host, {}).get('ansible_port', keepalived_wg_failover_gateway_port)
+      }}
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - keepalived_wg_failover_gateway_host | length > 0
+
+- name: Ensure keepalived runtime directory exists for failover scripts
+  ansible.builtin.file:
+    path: /etc/keepalived
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
+
+- name: Generate SSH key for keepalived VIP failover notifier
+  ansible.builtin.command: >-
+    ssh-keygen -t ed25519 -N ''
+    -f {{ keepalived_wg_failover_ssh_key_path }}
+    -C keepalived-wg-vip-failover-{{ inventory_hostname }}
+  args:
+    creates: "{{ keepalived_wg_failover_ssh_key_path }}"
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
+
+- name: Ensure keepalived failover SSH private key permissions
+  ansible.builtin.file:
+    path: "{{ keepalived_wg_failover_ssh_key_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
+
+- name: Read keepalived failover SSH public key
+  ansible.builtin.slurp:
+    path: "{{ keepalived_wg_failover_ssh_key_path }}.pub"
+  register: keepalived_failover_ssh_pubkey_raw
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
+
+- name: Set keepalived failover SSH public key fact
+  ansible.builtin.set_fact:
+    keepalived_failover_ssh_pubkey: "{{ keepalived_failover_ssh_pubkey_raw.content | b64decode | trim }}"
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
+
+- name: Ensure gateway .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ keepalived_wg_failover_gateway_user }}/.ssh"
+    state: directory
+    owner: "{{ keepalived_wg_failover_gateway_user }}"
+    group: "{{ keepalived_wg_failover_gateway_user }}"
+    mode: "0700"
+  delegate_to: "{{ keepalived_wg_failover_gateway_host }}"
+  become: true
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - keepalived_wg_failover_gateway_host | length > 0
+    - not ansible_check_mode
+
+- name: Allow control planes to trigger gateway VIP failover script
+  ansible.builtin.lineinfile:
+    path: "/home/{{ keepalived_wg_failover_gateway_user }}/.ssh/authorized_keys"
+    create: true
+    owner: "{{ keepalived_wg_failover_gateway_user }}"
+    group: "{{ keepalived_wg_failover_gateway_user }}"
+    mode: "0600"
+    line: "{{ keepalived_failover_ssh_pubkey }}"
+    state: present
+  delegate_to: "{{ keepalived_wg_failover_gateway_host }}"
+  become: true
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - keepalived_wg_failover_gateway_host | length > 0
+    - not ansible_check_mode
+
+- name: Deploy gateway WireGuard API VIP failover helper script
+  ansible.builtin.template:
+    src: wg-api-vip-failover.sh.j2
+    dest: "{{ keepalived_wg_failover_gateway_script_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+  delegate_to: "{{ keepalived_wg_failover_gateway_host }}"
+  become: true
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - keepalived_wg_failover_gateway_host | length > 0
+    - not ansible_check_mode
+
+- name: Allow gateway user to run WireGuard failover helper without password
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/keepalived_wg_vip_failover
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      {{ keepalived_wg_failover_gateway_user }} ALL=(root) NOPASSWD: {{ keepalived_wg_failover_gateway_script_path }} *
+    validate: /usr/sbin/visudo -cf %s
+  delegate_to: "{{ keepalived_wg_failover_gateway_host }}"
+  become: true
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - keepalived_wg_failover_gateway_host | length > 0
+    - not ansible_check_mode
+
+- name: Deploy keepalived notify script for WireGuard VIP failover
+  ansible.builtin.template:
+    src: wg-api-vip-notify.sh.j2
+    dest: /usr/local/sbin/wg-api-vip-notify.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - keepalived_wg_failover_enabled | default(false)
+    - not ansible_check_mode
 
 # Deploy Keepalived configuration (single node uses unicast-to-self on wg*)
 - name: Deploy keepalived configuration

@@ -29,7 +29,50 @@
   when:
     - wg_backup is defined
     - wg_backup.changed
- 
+
+- name: Compute WireGuard config identity for this host
+  ansible.builtin.set_fact:
+    wg_config_server_name: >-
+      {{
+        (
+          (
+            vault_wg_server_ips | default({}) | dict2items
+            | selectattr('key', 'in', group_names | default([]))
+            | map(attribute='key')
+            | list
+            | first
+          )
+          | default(
+              (
+                vault_wg_peers | default([])
+                | selectattr('is_server', 'defined')
+                | selectattr('is_server')
+                | selectattr('host_group', 'defined')
+                | selectattr('host_group', 'in', group_names | default([]))
+                | map(attribute='name')
+                | list
+                | first
+              )
+            )
+          | default('default')
+        )
+      }}
+  when: wg_operation == "install"
+
+- name: Validate WireGuard private key exists for this host mapping
+  ansible.builtin.assert:
+    that:
+      - vault_wg_peer_private_keys is defined
+      - (vault_wg_peer_private_keys[wg_config_server_name] | default(vault_wg_server_private_key)) is not none
+      - (vault_wg_peer_private_keys[wg_config_server_name] | default(vault_wg_server_private_key) | string | trim | length) > 0
+    fail_msg: >-
+      Missing WireGuard private key for host {{ inventory_hostname }}.
+      Resolved key name: {{ wg_config_server_name }}.
+      Ensure vault_wg_peer_private_keys[{{ wg_config_server_name }}] is set,
+      or provide vault_wg_server_private_key fallback.
+    success_msg: "WireGuard private key mapping is present"
+  when: wg_operation == "install"
+
 - name: Deploy WireGuard server configuration
   ansible.builtin.template:
     src: server.conf.j2
@@ -129,11 +172,45 @@
     - not ansible_check_mode
   changed_when: true
 
+- name: Validate WireGuard config with wg-quick strip
+  ansible.builtin.command: wg-quick strip {{ vault_wg_interface }}
+  register: wg_config_parse_check
+  changed_when: false
+  failed_when: wg_config_parse_check.rc != 0
+  when:
+    - wg_operation == "install"
+    - wg_config_deployed.changed
+    - not ansible_check_mode
+
 - name: Restart WireGuard service when interface address changed
-  ansible.builtin.systemd:
-    name: "wg-quick@{{ vault_wg_interface }}"
-    state: restarted
-  register: wg_service_action
+  block:
+    - name: Restart WireGuard service
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ vault_wg_interface }}"
+        state: restarted
+      register: wg_service_action
+  rescue:
+    - name: Collect WireGuard systemd status after restart failure
+      ansible.builtin.command: systemctl --no-pager -l status wg-quick@{{ vault_wg_interface }}
+      register: wg_systemd_status
+      changed_when: false
+      failed_when: false
+
+    - name: Collect WireGuard journal after restart failure
+      ansible.builtin.command: journalctl --no-pager -xeu wg-quick@{{ vault_wg_interface }} -n 80
+      register: wg_journal_status
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with WireGuard restart diagnostics
+      ansible.builtin.fail:
+        msg: |-
+          Failed to restart wg-quick@{{ vault_wg_interface }} on {{ inventory_hostname }}.
+          systemctl status:
+          {{ wg_systemd_status.stdout | default('no output') }}
+
+          journalctl -xeu output:
+          {{ wg_journal_status.stdout | default('no output') }}
   when:
     - wg_operation == "install"
     - wg_config_deployed.changed
@@ -142,10 +219,34 @@
     - not ansible_check_mode
 
 - name: Start WireGuard service (interface not running)
-  ansible.builtin.systemd:
-    name: "wg-quick@{{ vault_wg_interface }}"
-    state: started
-  register: wg_service_action
+  block:
+    - name: Start WireGuard service
+      ansible.builtin.systemd:
+        name: "wg-quick@{{ vault_wg_interface }}"
+        state: started
+      register: wg_service_action
+  rescue:
+    - name: Collect WireGuard systemd status after startup failure
+      ansible.builtin.command: systemctl --no-pager -l status wg-quick@{{ vault_wg_interface }}
+      register: wg_systemd_status
+      changed_when: false
+      failed_when: false
+
+    - name: Collect WireGuard journal after startup failure
+      ansible.builtin.command: journalctl --no-pager -xeu wg-quick@{{ vault_wg_interface }} -n 80
+      register: wg_journal_status
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with WireGuard startup diagnostics
+      ansible.builtin.fail:
+        msg: |-
+          Failed to start wg-quick@{{ vault_wg_interface }} on {{ inventory_hostname }}.
+          systemctl status:
+          {{ wg_systemd_status.stdout | default('no output') }}
+
+          journalctl -xeu output:
+          {{ wg_journal_status.stdout | default('no output') }}
   when:
     - wg_operation == "install"
     - wg_interface_running.rc | default(1) != 0

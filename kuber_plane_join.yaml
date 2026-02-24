@@ -54,7 +54,7 @@
 # ----------------------------------------------------------------------------
 # WireGuard requires mesh update - all nodes need peer configs
 - name: "Play 1/4: Update WireGuard mesh for new control plane"
-  hosts: kuber_small
+  hosts: vas_plane1
   become: true
   gather_facts: true
   serial: 1
@@ -90,7 +90,7 @@
 # Play 2: Verify WireGuard connectivity to new plane
 # ----------------------------------------------------------------------------
 - name: "Play 2/4: Verify WireGuard connectivity"
-  hosts: "[plane-hostname]"
+  hosts: vas_plane1
   become: true
   gather_facts: true
   vars_files:
@@ -101,8 +101,25 @@
     - plane_join
   vars:
     wg_interface: "{{ vault_wg_interface | default('wg99') }}"
+    wg_existing_control_plane: "{{ vault_k8s_control_planes | first }}"
+    wg_ping_target: "{{ wg_existing_control_plane.wireguard_ip }}"
 
   tasks:
+    - name: Validate existing control plane order in vault
+      ansible.builtin.assert:
+        that:
+          - vault_k8s_control_planes is defined
+          - vault_k8s_control_planes | length > 0
+          - wg_existing_control_plane.name is defined
+          - wg_existing_control_plane.wireguard_ip is defined
+          - wg_existing_control_plane.name not in [inventory_hostname, ansible_hostname, ansible_fqdn]
+        fail_msg: >-
+          First entry in vault_k8s_control_planes appears to be this joining node.
+          Reorder vault_k8s_control_planes so an existing control plane is first.
+        success_msg: >-
+          Existing control plane order is valid. First peer is {{ wg_existing_control_plane.name }}
+          ({{ wg_existing_control_plane.wireguard_ip }}).
+
     - name: Check WireGuard interface is up
       ansible.builtin.command: wg show {{ wg_interface }}
       register: wg_status
@@ -113,15 +130,15 @@
       ansible.builtin.debug:
         var: wg_status.stdout_lines
 
-    - name: Ping existing control plane via WireGuard
-      ansible.builtin.command: ping -c 3 {{ vault_k8s_api_vip }}
+    - name: Ping existing control plane wireguard IP
+      ansible.builtin.command: ping -c 3 {{ wg_ping_target }}
       register: ping_result
       changed_when: false
       failed_when: ping_result.rc != 0
 
     - name: Display ping result
       ansible.builtin.debug:
-        msg: "Successfully reached VIP {{ vault_k8s_api_vip }} via WireGuard"
+        msg: "Successfully reached control plane {{ wg_ping_target }} via WireGuard"
 
 # ----------------------------------------------------------------------------
 # Play 3: Configure Keepalived on ALL control planes
@@ -156,7 +173,7 @@
 # Play 4: Join new node as Kubernetes control plane
 # ----------------------------------------------------------------------------
 - name: "Play 4/4: Join Kubernetes control plane"
-  hosts: "[plane-hostname]"
+  hosts: vas_plane1
   become: true
   gather_facts: true
   serial: 1
@@ -176,7 +193,7 @@
 # Play 5: Verify cluster health
 # ----------------------------------------------------------------------------
 - name: "Play 5/5: Verify cluster health after join"
-  hosts: "[plane-hostname]"
+  hosts: vas_plane1
   become: true
   gather_facts: false
   vars_files:
@@ -184,14 +201,28 @@
   tags:
     - verify
     - plane_join
+  vars:
+    verify_control_plane_host: "{{ groups['planes_all'][0] | default('') }}"
+    join_target_node_name: "{{ hostvars[inventory_hostname].ansible_hostname | default(inventory_hostname) }}"
 
   tasks:
+    - name: Assert control plane inventory group exists for verification
+      ansible.builtin.assert:
+        that:
+          - groups['planes_all'] is defined
+          - groups['planes_all'] | length > 0
+          - verify_control_plane_host | length > 0
+        success_msg: "Using {{ verify_control_plane_host }} for kubectl verification"
+        fail_msg: "No control plane host available for kubectl verification"
+
     - name: Get cluster nodes
       ansible.builtin.command: kubectl get nodes -o wide
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: cluster_nodes
       changed_when: false
+      delegate_to: "{{ verify_control_plane_host }}"
+      run_once: true
 
     - name: Display cluster nodes
       ansible.builtin.debug:
@@ -205,6 +236,47 @@
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: control_plane_status
       changed_when: false
+      delegate_to: "{{ verify_control_plane_host }}"
+      run_once: true
+
+    - name: Check target control plane node exists
+      ansible.builtin.command: kubectl get node {{ join_target_node_name }}
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: target_node_exists
+      changed_when: false
+      failed_when: false
+      delegate_to: "{{ verify_control_plane_host }}"
+      run_once: true
+
+    - name: Assert target control plane node exists
+      ansible.builtin.assert:
+        that:
+          - target_node_exists.rc == 0
+        success_msg: "Target node {{ join_target_node_name }} is present in cluster"
+        fail_msg: >-
+          Target node {{ join_target_node_name }} is not present in cluster.
+          If this host was previously joined to another cluster, run kuber_plane_reset.yaml
+          on the target host and re-run kuber_plane_join.yaml with
+          kuber_plane_join_fail_if_already_joined=true.
+
+    - name: Check target control plane node readiness
+      ansible.builtin.command: >-
+        kubectl get node {{ join_target_node_name }}
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: target_node_ready
+      changed_when: false
+      delegate_to: "{{ verify_control_plane_host }}"
+      run_once: true
+
+    - name: Assert target control plane node is Ready
+      ansible.builtin.assert:
+        that:
+          - (target_node_ready.stdout | trim) == 'True'
+        success_msg: "Target node {{ join_target_node_name }} is Ready"
+        fail_msg: "Target node {{ join_target_node_name }} exists but is not Ready"
 
     - name: Display control plane status
       ansible.builtin.debug:
@@ -223,6 +295,18 @@
       ansible.builtin.debug:
         var: vip_check.stdout_lines
 
+    - name: Ping kubernetes api vip after keepalived reconfiguration
+      ansible.builtin.command: ping -c 3 {{ vault_k8s_api_vip }}
+      register: vip_ping
+      changed_when: false
+      failed_when: vip_ping.rc != 0
+      delegate_to: "{{ verify_control_plane_host }}"
+      run_once: true
+
+    - name: Display kubernetes api vip ping result
+      ansible.builtin.debug:
+        msg: "Successfully reached Kubernetes API VIP {{ vault_k8s_api_vip }}"
+
     - name: Final summary
       ansible.builtin.debug:
         msg:
@@ -236,7 +320,12 @@
           - "Components configured:"
           - "  [OK] WireGuard VPN mesh"
           - "  [OK] Keepalived VRRP failover"
-          - "  [OK] Kubernetes control plane"
+          - >-
+            {{
+              '  [OK] Kubernetes control plane'
+              if not (hostvars[inventory_hostname].kuber_plane_join_skipped | default(false))
+              else '  [SKIP] Kubernetes control plane join skipped (already joined)'
+            }}
           - ""
           - "Next steps:"
           - "  1. Run kuber_verify.yaml for full health check"

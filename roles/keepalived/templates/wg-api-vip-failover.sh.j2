@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OWNER="${1:-}"
+WG_IFACE="{{ keepalived_wg_failover_interface }}"
+VIP_CIDR="{{ keepalived_wg_failover_vip_cidr }}"
+
+if [[ -z "${OWNER}" ]]; then
+  logger -t keepalived-wg-failover "missing owner argument"
+  exit 1
+fi
+
+if ! command -v wg >/dev/null 2>&1; then
+  logger -t keepalived-wg-failover "wg binary not found"
+  exit 1
+fi
+
+if [[ -z "${VIP_CIDR}" || "${VIP_CIDR}" == "/32" ]]; then
+  logger -t keepalived-wg-failover "VIP CIDR is not configured"
+  exit 1
+fi
+
+trim() {
+  local value="$1"
+  value="${value#${value%%[![:space:]]*}}"
+  value="${value%${value##*[![:space:]]}}"
+  printf '%s' "${value}"
+}
+
+remove_cidr() {
+  local list="$1"
+  local cidr="$2"
+  local item
+  local out=()
+
+  IFS=',' read -r -a items <<< "${list}"
+  for item in "${items[@]}"; do
+    item="$(trim "${item}")"
+    if [[ -n "${item}" && "${item}" != "${cidr}" ]]; then
+      out+=("${item}")
+    fi
+  done
+
+  local joined=""
+  for item in "${out[@]}"; do
+    if [[ -z "${joined}" ]]; then
+      joined="${item}"
+    else
+      joined="${joined},${item}"
+    fi
+  done
+  printf '%s' "${joined}"
+}
+
+add_cidr() {
+  local list="$1"
+  local cidr="$2"
+  local item
+
+  IFS=',' read -r -a items <<< "${list}"
+  for item in "${items[@]}"; do
+    item="$(trim "${item}")"
+    if [[ "${item}" == "${cidr}" ]]; then
+      printf '%s' "${list}"
+      return
+    fi
+  done
+
+  if [[ -z "${list}" ]]; then
+    printf '%s' "${cidr}"
+  else
+    printf '%s' "${list},${cidr}"
+  fi
+}
+
+get_peer_allowed_ips() {
+  local pubkey="$1"
+  wg show "${WG_IFACE}" allowed-ips | awk -v pk="${pubkey}" '
+    $1 == pk {
+      out = ""
+      for (i = 2; i <= NF; i++) {
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i)
+        if ($i == "") {
+          continue
+        }
+        if (out == "") {
+          out = $i
+        } else {
+          out = out "," $i
+        }
+      }
+      print out
+    }
+  '
+}
+
+declare -A PLANE_KEYS=({% for plane in keepalived_control_planes %}
+["{{ plane.name }}"]="{{ vault_wg_peer_public_keys[plane.name] | default('') }}"{% if not loop.last %} {% endif %}{% endfor %})
+
+declare -A PLANE_FALLBACK_IPS=({% for plane in keepalived_control_planes %}
+["{{ plane.name }}"]="{{ plane.wireguard_ip }}/32"{% if not loop.last %} {% endif %}{% endfor %})
+
+if [[ -z "${PLANE_KEYS[${OWNER}]:-}" ]]; then
+  logger -t keepalived-wg-failover "unknown owner '${OWNER}'"
+  exit 1
+fi
+
+for plane_name in "${!PLANE_KEYS[@]}"; do
+  pubkey="${PLANE_KEYS[${plane_name}]}"
+  if [[ -z "${pubkey}" ]]; then
+    logger -t keepalived-wg-failover "missing public key for '${plane_name}'"
+    continue
+  fi
+
+  current_ips="$(get_peer_allowed_ips "${pubkey}" || true)"
+  if [[ -z "${current_ips}" ]]; then
+    current_ips="${PLANE_FALLBACK_IPS[${plane_name}]}"
+  fi
+
+  base_ips="$(remove_cidr "${current_ips}" "${VIP_CIDR}")"
+  if [[ "${plane_name}" == "${OWNER}" ]]; then
+    new_ips="$(add_cidr "${base_ips}" "${VIP_CIDR}")"
+  else
+    new_ips="${base_ips}"
+  fi
+
+  if [[ -z "${new_ips}" ]]; then
+    new_ips="${PLANE_FALLBACK_IPS[${plane_name}]}"
+  fi
+
+  wg set "${WG_IFACE}" peer "${pubkey}" allowed-ips "${new_ips}"
+done
+
+logger -t keepalived-wg-failover "set API VIP owner=${OWNER} on ${WG_IFACE} (${VIP_CIDR})"

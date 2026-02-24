@@ -27,16 +27,107 @@
     fail_msg: "Control plane node is not Ready"
   when: control_plane_ready.stdout is defined
 
+# --- CNI Auto-Detection ---
+
+- name: Check for Flannel namespace
+  ansible.builtin.command: kubectl get ns kube-flannel
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_ns_check
+  changed_when: false
+  failed_when: false
+
+- name: Check for Calico namespace
+  ansible.builtin.command: kubectl get ns calico-system
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: calico_ns_check
+  changed_when: false
+  failed_when: false
+
+- name: Detect active CNI plugin
+  ansible.builtin.set_fact:
+    cni_type: >-
+      {{ 'flannel' if flannel_ns_check.rc == 0
+         else 'calico' if calico_ns_check.rc == 0
+         else 'unknown' }}
+
+- name: Display detected CNI type
+  ansible.builtin.debug:
+    msg: "Detected CNI plugin: {{ cni_type }}"
+
+# --- Flannel Verification ---
+
+- name: Get Flannel pods
+  ansible.builtin.command: kubectl get pods -n kube-flannel -l app=flannel -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_pods
+  changed_when: false
+  ignore_errors: true
+  when: cni_type == 'flannel'
+
+- name: Display Flannel pods
+  ansible.builtin.debug:
+    var: flannel_pods.stdout_lines
+  when: cni_type == 'flannel'
+
+- name: Wait for all Flannel pods to be Ready
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=ready pod
+    -l app=flannel -n kube-flannel
+    --timeout={{ verify_timeout_seconds }}s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_wait
+  changed_when: false
+  until: flannel_wait.rc == 0
+  retries: "{{ verify_retry_count }}"
+  delay: "{{ verify_sleep_seconds }}"
+  ignore_errors: true
+  when: cni_type == 'flannel'
+
+- name: Set CNI readiness status (Flannel)
+  ansible.builtin.set_fact:
+    cni_ready: "{{ flannel_wait.rc == 0 }}"
+  when: cni_type == 'flannel'
+
+- name: Display Flannel readiness
+  ansible.builtin.debug:
+    msg: "{{ 'All Flannel pods are Ready' if flannel_wait.rc == 0 else 'Some Flannel pods are not Ready' }}"
+  when: cni_type == 'flannel'
+
+- name: Get Flannel ConfigMap
+  ansible.builtin.command: >-
+    kubectl get configmap kube-flannel-cfg
+    -n kube-flannel
+    -o jsonpath='{.data.net-conf\.json}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: flannel_configmap
+  changed_when: false
+  ignore_errors: true
+  when: cni_type == 'flannel'
+
+- name: Display Flannel configuration
+  ansible.builtin.debug:
+    msg: "Flannel net-conf.json: {{ flannel_configmap.stdout | default('not available') }}"
+  when: cni_type == 'flannel'
+
+# --- Calico Verification ---
+
 - name: Get all Calico node pods
   ansible.builtin.command: kubectl get pods -n calico-system -l k8s-app=calico-node -o wide
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: calico_node_pods
   changed_when: false
+  when: cni_type == 'calico'
 
 - name: Display Calico node pods
   ansible.builtin.debug:
     var: calico_node_pods.stdout_lines
+  when: cni_type == 'calico'
 
 - name: Get Tigera Operator pods
   ansible.builtin.command: kubectl get pods -n tigera-operator
@@ -44,10 +135,12 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: tigera_operator_pods
   changed_when: false
+  when: cni_type == 'calico'
 
 - name: Display Tigera Operator pods
   ansible.builtin.debug:
     var: tigera_operator_pods.stdout_lines
+  when: cni_type == 'calico'
 
 - name: Verify Tigera Operator is running
   ansible.builtin.command: kubectl get pods -n tigera-operator -l name=tigera-operator -o jsonpath='{.items[*].status.phase}'
@@ -56,6 +149,7 @@
   register: tigera_operator_phase
   changed_when: false
   ignore_errors: true
+  when: cni_type == 'calico'
 
 - name: Assert Tigera Operator is Running
   ansible.builtin.assert:
@@ -63,7 +157,9 @@
       - "'Running' in tigera_operator_phase.stdout"
     success_msg: "Tigera Operator is Running"
     fail_msg: "Tigera Operator is not Running"
-  when: tigera_operator_phase.stdout is defined
+  when:
+    - cni_type == 'calico'
+    - tigera_operator_phase.stdout is defined
 
 - name: Wait for all Calico node pods to be Running
   ansible.builtin.command: kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n calico-system --timeout={{ verify_timeout_seconds }}s
@@ -75,14 +171,19 @@
   retries: "{{ verify_retry_count }}"
   delay: "{{ verify_sleep_seconds }}"
   ignore_errors: true
+  when: cni_type == 'calico'
 
-- name: Set Calico readiness status
+- name: Set CNI readiness status (Calico)
   ansible.builtin.set_fact:
-    calico_ready: "{{ calico_wait.rc == 0 }}"
+    cni_ready: "{{ calico_wait.rc == 0 }}"
+  when: cni_type == 'calico'
 
 - name: Display Calico readiness status
   ansible.builtin.debug:
     msg: "{{ 'All Calico node pods are Ready' if calico_wait.rc == 0 else 'Some Calico node pods are not Ready' }}"
+  when: cni_type == 'calico'
+
+# --- Common Verification ---
 
 - name: Get cluster info
   ansible.builtin.command: kubectl cluster-info
@@ -102,11 +203,14 @@
   register: calico_installation
   changed_when: false
   ignore_errors: true
+  when: cni_type == 'calico'
 
 - name: Display Calico Installation
   ansible.builtin.debug:
     var: calico_installation.stdout_lines
-  when: calico_installation.rc == 0
+  when:
+    - cni_type == 'calico'
+    - calico_installation.rc == 0
 
 - name: Get Calico FelixConfiguration
   ansible.builtin.command: kubectl get felixconfiguration default -o yaml
@@ -115,11 +219,14 @@
   register: calico_felix
   changed_when: false
   ignore_errors: true
+  when: cni_type == 'calico'
 
 - name: Display Calico FelixConfiguration
   ansible.builtin.debug:
     var: calico_felix.stdout_lines
-  when: calico_felix.rc == 0
+  when:
+    - cni_type == 'calico'
+    - calico_felix.rc == 0
 
 - name: Get Calico IP pools
   ansible.builtin.command: kubectl get ippool -o wide
@@ -128,8 +235,11 @@
   register: calico_ippool
   changed_when: false
   ignore_errors: true
+  when: cni_type == 'calico'
 
 - name: Display Calico IP pools
   ansible.builtin.debug:
     var: calico_ippool.stdout_lines
-  when: calico_ippool.rc == 0
+  when:
+    - cni_type == 'calico'
+    - calico_ippool.rc == 0
