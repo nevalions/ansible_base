@@ -614,11 +614,10 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "grep wg99 /var/log/ufw.l
 
 ## Kubernetes Note: Avoid UFW on K8s Nodes
 
-When using Kubernetes (Calico) over WireGuard:
+When using Kubernetes over WireGuard (Flannel default; Legacy Calico Path (optional)):
 - Prefer disabling UFW on Kubernetes nodes (control planes + workers).
-- UFW defaults can drop forwarded pod traffic (`cali*` -> `wg99`) and break pod DNS/egress.
+- UFW defaults can drop forwarded pod traffic (`cni0`/overlay interfaces -> `wg99`) and break pod DNS/egress.
 - This repository's Kubernetes role disables UFW on K8s nodes by default.
-```
 
 ### 9.4 Verify Backup Files
 
@@ -658,13 +657,14 @@ sudo grep -n "^AllowedIPs" /etc/wireguard/[interface-name].conf
 **Symptoms:** node-to-DB works, but pod-to-DB fails.
 
 **Root cause candidates:**
-- Pod egress not SNATed on Calico (`natOutgoing` disabled)
+- Legacy Calico Path (optional): pod egress not SNATed (`natOutgoing` disabled)
 - Worker peers missing DB endpoint route (for example `[db-wg-ip]/32`)
 
 **Fix flow:**
 ```bash
-# 1) Verify Calico natOutgoing
-kubectl get ippools.crd.projectcalico.org -o yaml
+# 1) Flannel default: skip Calico natOutgoing checks
+#    Legacy Calico Path (optional) only:
+# kubectl get ippools.crd.projectcalico.org -o yaml
 
 # 2) Verify worker route path to DB WG endpoint
 ip route get [db-wg-ip]

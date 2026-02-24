@@ -267,7 +267,8 @@ sudo cat /etc/wireguard/wg99.conf
 **Symptoms:** node-to-DB connectivity works, but pods cannot reach DB endpoint.
 
 **Checks:**
-1. Ensure Calico SNAT (`natOutgoing`) is enabled on pod IPPool.
+1. If using legacy Calico, ensure SNAT (`natOutgoing`) is enabled on the pod IPPool.
+   - Flannel default path in this repo does not require this setting.
 2. Ensure workers have DB WG route in `AllowedIPs` (for example `vault_db_wg_route_cidr`).
 3. Validate route on worker: `ip route get [db-wg-ip]` should use `wg99`.
 
@@ -479,7 +480,7 @@ After rotation, update `vault_secrets.yml` with new keys.
 This role can configure UFW rules, but it does not enable UFW automatically.
 
 Kubernetes note:
-- For Calico-over-WireGuard clusters, avoid UFW on Kubernetes nodes unless you are explicitly managing FORWARD rules.
+- For Kubernetes-over-WireGuard clusters (Flannel default; Legacy Calico Path (optional)), avoid UFW on Kubernetes nodes unless you are explicitly managing FORWARD rules.
 
 ### Server Side
 - Opens `vault_wg_server_port` for all WireGuard connections

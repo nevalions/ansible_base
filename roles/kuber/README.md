@@ -66,13 +66,16 @@ After running this role on all nodes, use automated playbooks for full cluster s
 # 1. Install packages on all nodes (this role)
 ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 
-# 2. Initialize control plane with Calico (automated)
+# 2. Initialize control plane (automated)
 ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
-# 3. Join workers to cluster (automated)
+# 3. Install Flannel CNI (default)
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+
+# 4. Join workers to cluster (automated)
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
 
-# 4. Verify cluster health (automated)
+# 5. Verify cluster health (automated)
 ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
 ```
 
@@ -144,14 +147,14 @@ sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-c
    - Sets up containerd with systemd cgroup driver
 
 9. **Firewall posture**
-   - This repository disables UFW on Kubernetes nodes by default.
-   - Reason: Calico (iptables/nft) + WireGuard forwarding is easy to break with UFW's default forward policy and chains.
-   - If you need a host firewall, implement it outside UFW (cloud security groups / upstream firewall) or explicitly
-     manage FORWARD + cali*/wg* allowances.
+- This repository disables UFW on Kubernetes nodes by default.
+- Reason: CNI overlay traffic + WireGuard forwarding is easy to break with UFW's default forward policy and chains.
+- If you need a host firewall, implement it outside UFW (cloud security groups / upstream firewall) or explicitly
+  manage FORWARD allowances for CNI interfaces + `wg*`.
 
 ## Firewall Configuration
 
-Kubernetes networking (especially with Calico and tunneled/overlay traffic) expects a permissive FORWARD path.
+Kubernetes networking (especially with tunneled/overlay traffic) expects a permissive FORWARD path.
 UFW is frequently a source of subtle forwarding drops.
 
 In this repo:
@@ -197,14 +200,14 @@ The role sets kernel parameters:
 
 ## Network Plugin
 
-After cluster initialization, install a CNI plugin (e.g., Calico):
+After cluster initialization, install a CNI plugin.
 
 ```bash
-# Install Calico
-kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+# Default path in this repo: install Flannel via playbook
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
 
-# Or install Flannel
-kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+# Legacy Calico Path (optional): Calico-specific playbooks/docs
+# ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
 ```
 
 ## Post-Installation Validation

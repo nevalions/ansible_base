@@ -242,7 +242,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
 **Expected Output:**
 - kubeadm initialized with control plane endpoint: [vip-address]:[k8s-api-port]
-- Calico CNI installed
+- Flannel CNI installed (default path)
 - Control plane Ready
 
 ### Step 5: Join Worker to VIP

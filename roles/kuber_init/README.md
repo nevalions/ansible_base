@@ -1,6 +1,6 @@
 # kuber_init
 
-Initialize Kubernetes control plane with kubeadm and Calico CNI.
+Initialize Kubernetes control plane with kubeadm.
 
 ## Overview
 
@@ -8,43 +8,25 @@ This role performs the complete initialization of a Kubernetes control plane nod
 
 - Initializes Kubernetes cluster with kubeadm
 - Configures containerd cgroup driver
-- Installs Calico CNI with Tigera Operator
+- Leaves CNI installation to dedicated playbooks (Flannel default)
 - Optionally installs Node Feature Discovery (NFD) for node feature labels
-- Configures Typha deployment with required anti-affinity
 - Configures kubeadm API version and control plane endpoint
-- Verifies cluster readiness and Calico installation
+- Verifies control-plane readiness
 - Sets up kubeconfig for admin user
 
-## WireGuard + Calico IPIP Requirements
+## CNI Workflow (Flannel Default)
 
-When running Kubernetes over WireGuard VPN, specific Calico settings are required:
+This role does not install a CNI plugin. Use dedicated CNI playbooks after init:
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `natOutgoing` | `true` | **CRITICAL**: Pods must NAT to reach WireGuard IPs |
-| `vault_ipPools_encapsulation` | `IPIP` | Required for L3 networks |
-| `mtu` | `1380` | WireGuard (1420) - IPIP (20) - safety (20) |
-| `vault_calico_typha_replicas` | `1` | Prevents port conflicts |
+```bash
+# Default CNI path (recommended)
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
 
-### Typha Anti-Affinity
-
-This role configures **required** pod anti-affinity for Typha to prevent port 5473 conflicts:
-
-```yaml
-typhaDeployment:
-  spec:
-    template:
-      spec:
-        affinity:
-          podAntiAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchLabels:
-                    k8s-app: calico-typha
-                topologyKey: kubernetes.io/hostname
+# Optional legacy path
+# ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
 ```
 
-Without this, multiple Typha pods can be scheduled on the same node, causing CrashLoopBackOff.
+For Flannel over WireGuard, keep pod subnet and MTU consistent across kubeadm and Flannel values.
 
 ## Requirements
 
@@ -63,18 +45,9 @@ Without this, multiple Typha pods can be scheduled on the same node, causing Cra
 - `kubeadm_control_plane_endpoint` - Control plane endpoint (VIP address:port)
 - `kubeadm_api_server_advertise_address` - WireGuard IP for API server
 
-### Calico CNI Configuration
+### CNI Selection
 
-- `calico_version` - Calico version (default: `v3.31.3`)
-- `calico_ippool_name` - IP pool name (default: `default-ipv4-ippool`)
-- `calico_ippool_cidr` - IP pool CIDR (uses pod subnet)
-- `calico_encapsulation` - Encapsulation type (default: `IPIP` for WireGuard)
-- `calico_nat_outgoing` - NAT outgoing traffic (default: `true`) **CRITICAL for WireGuard**
-- `calico_node_selector` - Node selector for Calico (default: `all()`)
-- `calico_block_size` - IP block size (default: `26`)
-- `calico_mtu` - MTU size (default: `1380` for WireGuard + IPIP)
-- `calico_node_address_interface` - Network interface (default: `wg99`)
-- `calico_typha_replicas` - Typha replicas (default: `1` for small clusters)
+- `vault_k8s_cni_type` - Active CNI for join/verify checks (default: `flannel`)
 
 ### Kubeconfig Configuration
 
@@ -109,7 +82,7 @@ vault_k8s_control_planes:
     wireguard_ip: "[control-plane-wg-ip]"
   - name: "control-plane-2"
     wireguard_ip: "[control-plane-wg-ip-2]"
-vault_calico_version: "v3.31.3"
+vault_k8s_cni_type: "flannel"
 vault_interface: "wg99"
 vault_admin_user: "[admin-username]"
 ```
@@ -137,13 +110,9 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
 3. Create kubeadm configuration
 4. Initialize cluster with kubeadm
 5. Set up kubeconfig for admin user
-6. Install Calico Tigera Operator
-7. Configure Calico IP pool
-8. Wait for Calico pods to be ready
-9. Optionally install and verify NFD rollout (run once from the init play)
-10. Verify cluster node status
-11. Verify Tigera Operator is running
-12. Display initialization summary
+6. Optionally install and verify NFD rollout (run once from the init play)
+7. Verify cluster node status
+8. Display initialization summary
 
 ## Troubleshooting
 
@@ -168,7 +137,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
 - **Root Cause:** Temporary instability after Felix/BIRD crashes
 - **Solution:** Ensure Felix has stable resource limits before CSI starts
 
-### WireGuard + Calico IPIP Issues
+### Legacy Calico Path (optional)
 
 **Typha CrashLoopBackOff - Port 5473 in use:**
 - **Symptoms:** `listen tcp :5473: bind: address already in use`
@@ -223,12 +192,10 @@ kubectl patch installation default --type=merge -p '{"spec":{"typhaDeployment":{
 After running this role:
 
 - Control plane node should be Ready
-- Calico pods should be Running
-- Tigera Operator should be Running
 - Kubeconfig should be configured at `~/.kube/config`
 - Kubernetes API should be accessible via VIP
 
-Run `kuber_verify.yaml` for full cluster health check.
+Then install CNI (Flannel default) and run `kuber_verify.yaml`.
 
 ## Dependencies
 

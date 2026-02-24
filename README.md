@@ -43,7 +43,8 @@ Notes:
 ## Common Workflows
 
 - Kubernetes cluster deploy/reset: `kuber_cluster_deploy.yaml`, `kuber_cluster_reset.yaml`
-- Calico CNI operations: `calico_bgp_manage.yaml`, `calico_cni_remove.yaml`
+- Flannel CNI operations (default): `kuber_flannel_install.yaml`, `kuber_flannel_remove.yaml`
+- Calico CNI operations (Legacy Calico Path - optional): `calico_bgp_manage.yaml`, `calico_cni_remove.yaml`
 - Standalone NFD management: `nfd/kuber_nfd_install.yaml`, `nfd/kuber_nfd_verify.yaml`, `nfd/kuber_nfd_remove.yaml`
 - WireGuard management: `wireguard_manage.yaml`
 - BGP HA for MetalLB (FRR + Keepalived): `bgp_ha_deploy.yaml`, `bgp_ha_verify.yaml`, `bgp_ha_test.yaml`, `bgp_ha_remove.yaml`

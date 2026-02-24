@@ -111,7 +111,6 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 ### Control Plane
 - ✅ Control plane node is Ready
 - ✅ CNI control-plane pods are Running
-- ✅ Tigera Operator is Running
 - ✅ Cluster info accessible
 
 ### Workers
@@ -159,15 +158,22 @@ journalctl -u kubelet -f
 ansible-playbook -i hosts_bay.ini kuber.yaml --limit [control-plane-host]
 ```
 
-**Calico pods not Ready:**
+**Flannel pods not Ready:**
 ```bash
-# Check Calico pods
+# Check Flannel pods
+kubectl get pods -n kube-flannel -l app=flannel
+
+# Check Flannel logs
+kubectl logs -n kube-flannel -l app=flannel --tail=80
+
+# Restart Flannel daemon pods
+kubectl delete pods -n kube-flannel -l app=flannel
+```
+
+**Calico pods not Ready (Legacy Calico Path - optional):**
+```bash
 kubectl get pods -n calico-system
-
-# Check Calico logs
 kubectl logs -n calico-system -l k8s-app=calico-node
-
-# Restart Calico
 kubectl delete pods -n calico-system -l k8s-app=calico-node
 ```
 
@@ -191,8 +197,8 @@ kubectl logs -n kuber-verify-test test-pod-1
 # Check network policies
 kubectl get networkpolicies -A
 
-# Check Calico status
-kubectl calico status
+# Check CNI daemon status (Flannel default)
+kubectl get ds -n kube-flannel kube-flannel-ds
 ```
 
 **DNS resolution failures:**

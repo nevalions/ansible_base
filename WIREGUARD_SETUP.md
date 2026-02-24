@@ -4,33 +4,39 @@ For adding new clients or servers, see [WIREGUARD_ADD_NODE.md](WIREGUARD_ADD_NOD
 
 ## Kubernetes Networking Requirements
 
-When using WireGuard as the underlying network for Kubernetes with Calico CNI:
+When using WireGuard as the underlying network for Kubernetes with Flannel CNI (default):
 
 ### Critical Settings in vault_secrets.yml
 
 ```yaml
-# REQUIRED for pods to reach node WireGuard IPs
-natOutgoing: true
+# Select default CNI
+vault_k8s_cni_type: "flannel"
 
-# REQUIRED for L3 WireGuard networks
-vault_ipPools_encapsulation: "IPIP"
+# Flannel backend over WireGuard
+flannel_backend_type: "vxlan"
 
-# MTU calculation: WireGuard (1420) - IPIP (20) - safety (20)
-mtu: 1380
+# Ensure overlay uses the WireGuard interface
+flannel_interface: "wg99"
 
-# Prevents Typha port conflicts on small clusters
-vault_calico_typha_replicas: 1
+# MTU calculation: WireGuard (1420) - VXLAN (50) - safety (10)
+flannel_mtu: 1360
 ```
 
 ### Why These Settings Matter
 
 | Setting | Impact if Wrong |
 |---------|----------------|
-| `natOutgoing: false` | Pods cannot reach Kubernetes API, MetalLB crashes |
-| `encapsulation: None` | Pod-to-pod traffic fails across WireGuard |
-| `mtu: 1500` | Packet fragmentation, slow/failed transfers |
+| `vault_k8s_cni_type != flannel` | Join/verify checks target a different CNI than deployed |
+| `flannel_interface` mismatch | Cross-node pod traffic fails over WireGuard |
+| `flannel_backend_type` mismatch | Overlay behavior differs from expected cluster baseline |
+| `flannel_mtu` too high | Packet fragmentation, slow/failed transfers |
 
-See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md#wireguard--calico-ipip-network-requirements) for detailed troubleshooting.
+See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md#wireguard--flannel-vxlan-network-requirements) for detailed troubleshooting.
+
+### Legacy Calico Path (optional)
+
+If you intentionally run legacy Calico, keep Calico-specific settings in `vault_secrets.yml`
+and use Calico-focused playbooks/docs.
 
 ---
 

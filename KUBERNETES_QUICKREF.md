@@ -6,8 +6,10 @@
 |----------|---------|-------|------|
 | `kuber.yaml` | Install K8s packages | workers_super | kubernetes, k8s, install |
 | `kuber_plane_init.yaml` | Initialize control plane | planes | kubernetes, k8s, init, plane, cni, nfd, node_info, k9s |
+| `kuber_flannel_install.yaml` | Install Flannel CNI | kuber_small_planes | kubernetes, k8s, flannel, cni, addon |
 | `kuber_worker_join.yaml` | Join worker nodes | workers_all | kubernetes, k8s, join, worker |
 | `kuber_verify.yaml` | Verify cluster health | planes | kubernetes, k8s, verify, test |
+| `kuber_flannel_remove.yaml` | Remove Flannel CNI | kuber_small_planes | kubernetes, k8s, flannel, cni, remove |
 | `kuber_plane_reset.yaml` | Reset control plane | masters | kubernetes, k8s, reset, cleanup |
 | `kuber_worker_reset.yaml` | Reset worker nodes | workers_all | kubernetes, k8s, reset, cleanup |
 
@@ -17,6 +19,7 @@
 # Full setup (single control plane)
 ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
 ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
 ```
@@ -26,15 +29,13 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
 ### After Control Plane Init
 ```bash
 kubectl get nodes
-kubectl get pods -n kube-system -l k8s-app=calico-node
-kubectl get pods -n tigera-operator
-kubectl get ippool -o wide
+kubectl get pods -n kube-flannel -l app=flannel
 ```
 
 ### After Worker Join
 ```bash
 kubectl get nodes
-kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+kubectl get pods -n kube-flannel -l app=flannel -o wide
 ```
 
 ### Network Test
@@ -71,7 +72,7 @@ kubectl delete pod test-pod
 kubeadm_pod_subnet: "[internal-ip]/16"
 kubeadm_service_subnet: "[internal-ip]/16"
 kubeadm_api_version: "v1beta4"
-calico_version: "v3.31.3"
+vault_k8s_cni_type: "flannel"
 k8s_node_info_enabled: true
 nfd_version: "v0.18.2"
 ```
@@ -87,8 +88,7 @@ verify_timeout_seconds: "300"
 
 **Built-in Verification (automatic):**
 - ✓ Control plane Ready status
-- ✓ Tigera Operator Running
-- ✓ Calico pods Ready
+- ✓ Flannel daemonset Ready
 - ✓ NFD labels on nodes (optional)
 - ✓ Worker nodes Ready
 - ✓ Node visibility from control plane
@@ -101,10 +101,10 @@ verify_timeout_seconds: "300"
 
 ## Troubleshooting
 
-### Common Networking Gotchas (WireGuard + Calico)
+### Common Networking Gotchas (WireGuard + Flannel)
 
 ```bash
-# UFW should be inactive on k8s nodes (forwarding + Calico)
+# UFW should be inactive on k8s nodes (forwarding + CNI overlay)
 systemctl is-active ufw || true
 
 # Quick pod DNS sanity (requires image pulls to work)

@@ -4,7 +4,8 @@
 
 ## Overview
 
-This Ansible project provides automated Kubernetes cluster setup with Calico CNI networking over WireGuard VPN.
+This Ansible project provides automated Kubernetes cluster setup over WireGuard VPN.
+The current default CNI is Flannel. Legacy Calico Path (optional) is kept for compatibility.
 
 ## Architecture
 
@@ -25,7 +26,7 @@ Kubernetes API server (port [haproxy-backend-port])
 - **HAProxy**: Load balances Kubernetes API requests on each control plane
 - **WireGuard**: Provides secure mesh network for inter-plane communication
 - **VIP**: Virtual IP ([vip-address]) that workers connect to
-- **Calico CNI**: Pod networking with IPIP encapsulation over WireGuard
+- **Flannel CNI**: Pod networking with VXLAN encapsulation over WireGuard
 
 **Scalability:**
 - Start with single control plane ([plane-hostname])
@@ -34,59 +35,36 @@ Kubernetes API server (port [haproxy-backend-port])
 
 ---
 
-## WireGuard + Calico IPIP Network Requirements
+## WireGuard + Flannel VXLAN Network Requirements
 
-Running Kubernetes with Calico CNI over WireGuard requires specific configuration to ensure proper pod networking.
+Running Kubernetes with Flannel CNI over WireGuard requires consistent pod CIDR and MTU values.
 
 ### Critical Configuration
 
 | Setting | Required Value | Why |
 |---------|---------------|-----|
-| `natOutgoing` | `true` | Pods must NAT to reach node WireGuard IPs ([vpn-network-cidr]) |
-| `vault_ipPools_encapsulation` | `IPIP` | Required for L3 WireGuard networks |
-| `mtu` | `1380` | WireGuard (1420) - IPIP (20) - safety (20) |
-| `vault_calico_typha_replicas` | `1` | Prevents port conflicts on small clusters |
+| `vault_k8s_cni_type` | `flannel` | Keeps join/verify checks aligned with active CNI |
+| `vault_k8s_pod_subnet` | cluster pod CIDR | Must match kubeadm pod subnet and Flannel manifest |
+| `flannel_interface` | `wg99` | Ensures overlay uses WireGuard underlay |
+| `flannel_backend_type` | `vxlan` | Recommended baseline for mixed networks |
+| `flannel_mtu` | `1360` | WireGuard (1420) - VXLAN (50) - safety (10) |
 
 ### Network Flow
 
 ```
-Pod ([pod-network-cidr]) → IPIP Tunnel → WireGuard ([vpn-network-cidr]) → Remote Node
-                      ↓
-              NAT (MASQUERADE)
-                      ↓
-           Source becomes node's WireGuard IP
+Pod ([pod-network-cidr]) -> Flannel VXLAN -> WireGuard ([vpn-network-cidr]) -> Remote Node
 ```
 
-### Why natOutgoing is Critical
+### Flannel Install/Remove
 
-Without `natOutgoing: true`:
-- Pods can reach other pods via IPIP tunnels ✓
-- Pods CANNOT reach node WireGuard IPs ([vpn-network-cidr]) ✗
-- Pods CANNOT reach Kubernetes API ([kube-service-cidr] → [control-plane-wg-ip]:6443) ✗
-- MetalLB controller crashes with API timeout ✗
+Flannel is managed as a dedicated step and is not installed by `kuber_plane_init.yaml`.
 
-### Typha Anti-Affinity
+```bash
+# Install Flannel CNI
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
 
-Calico Typha uses `hostNetwork: true` and binds to port 5473. Without proper anti-affinity, multiple Typha pods can be scheduled on the same node, causing:
-
-```
-[PANIC] Failed to open listen socket error=listen tcp :5473: bind: address already in use
-```
-
-The playbooks now configure **required** pod anti-affinity:
-
-```yaml
-typhaDeployment:
-  spec:
-    template:
-      spec:
-        affinity:
-          podAntiAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchLabels:
-                    k8s-app: calico-typha
-                topologyKey: kubernetes.io/hostname
+# Remove Flannel CNI
+ansible-playbook -i hosts_bay.ini kuber_flannel_remove.yaml --tags flannel
 ```
 
 ## Playbooks
@@ -121,7 +99,7 @@ typhaDeployment:
 - Loads required kernel modules (overlay, br_netfilter)
 - Configures IP forwarding and bridge networking
 - Configures containerd cgroup driver (systemd)
-- Disables UFW on Kubernetes nodes (to avoid Calico/WireGuard forwarding issues)
+- Disables UFW on Kubernetes nodes (to avoid CNI/WireGuard forwarding issues)
 
 ---
 
@@ -231,7 +209,7 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 ---
 
 ### 2. kuber_plane_init.yaml - Initialize Control Plane
-**Purpose:** Initialize Kubernetes control plane with kubeadm and install Calico CNI
+**Purpose:** Initialize Kubernetes control plane with kubeadm
 
 **Hosts:** `[planes]` ([control-plane-ip])
 
@@ -242,16 +220,10 @@ ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 - Copies kubeadm configuration (template with dynamic IPs)
 - Runs `kubeadm init --config=kubeadm-config.yaml`
 - Copies admin.conf to user's .kube/config
-- Installs Calico Tigera Operator
-- Waits for Tigera Operator to be ready
- - Applies Calico custom resources (from `/path/to/calico/custom-resources.yaml`)
- - Waits for Calico pods to be ready
 - Installs Node Feature Discovery (NFD) for node feature labels (optional)
 - Waits for NFD master deployment and worker DaemonSet rollout
 - **VERIFICATION:** Validates control plane is Ready
-- **VERIFICATION:** Checks Tigera Operator is Running
 - **VERIFICATION:** Displays sample NFD node label output
-- **VERIFICATION:** Displays Calico IP pools
 - **VERIFICATION:** Displays initialization summary
 
 **Variables** (roles/kuber_init/defaults/main.yaml):
@@ -263,9 +235,6 @@ kubeadm_api_server_advertise_address: "{{ ansible_default_ipv4.address }}"
 kubeadm_kubelet_extra_args:
   node-ip: "{{ ansible_default_ipv4.address }}"
 kubeadm_api_version: "v1beta4"
-calico_version: "v3.31.3"
-calico_tigera_operator_url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
-calico_custom_resources_src: "/path/to/calico/custom-resources.yaml"
 k8s_node_info_enabled: true
 nfd_version: "v0.18.2"
 nfd_kustomize_ref: "https://github.com/kubernetes-sigs/node-feature-discovery/deployment/overlays/default?ref={{ nfd_version }}"
@@ -278,9 +247,27 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
 **Verification included:**
 ✓ Control plane node Ready status
-✓ Tigera Operator Running status
-✓ Calico pods status
-✓ Calico IP pools configuration
+✓ Kubernetes API reachable
+✓ Optional NFD rollout status
+
+### 2.5. kuber_flannel_install.yaml - Install Flannel CNI
+**Purpose:** Install Flannel CNI (VXLAN over WireGuard)
+
+**Hosts:** `kuber_small_planes`
+
+**Tags:** `kubernetes`, `k8s`, `flannel`, `cni`, `addon`
+
+**What it does:**
+- Validates Flannel prerequisites (pod subnet/interface/backend)
+- Ensures base CNI plugins exist
+- Applies Flannel manifest with repo-driven values
+- Waits for Flannel daemonset rollout on nodes
+- Prevents mixed CNI state by failing if Calico daemonset still exists
+
+**Usage:**
+```bash
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+```
 
 ---
 
@@ -301,7 +288,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 - Waits for kubelet to be active
 - **VERIFICATION:** Confirms node is visible from control plane
 - **VERIFICATION:** Waits for node to be Ready
-- **VERIFICATION:** Checks Calico pod on worker
+- **VERIFICATION:** Checks configured CNI daemon pod on worker
 - **VERIFICATION:** Displays join summary
 
 **Variables** (roles/kuber_join/defaults/main.yaml):
@@ -314,13 +301,13 @@ kuber_join_api_port: "[k8s-api-port]"
 **Verification included:**
 ✓ Node visibility from control plane
 ✓ Node Ready status
-✓ Calico pod on worker node
+✓ CNI daemon pod on worker node
 ✓ Join summary
 
 ---
 
 ### 4. kuber_verify.yaml - Full Cluster Health Check
-**Purpose:** Comprehensive verification of Kubernetes cluster health, Calico networking, and worker connectivity
+**Purpose:** Comprehensive verification of Kubernetes cluster health, CNI networking, and worker connectivity
 
 **Hosts:** `[planes]` ([control-plane-ip])
 
@@ -331,21 +318,17 @@ kuber_join_api_port: "[k8s-api-port]"
 #### Control Plane Verification
 - Gets all cluster nodes
 - Checks control plane node Ready status
-- Gets all Calico node pods
-- Gets Tigera Operator pods
-- Verifies Tigera Operator is Running
-- Waits for all Calico node pods to be Running
+- Detects configured CNI type (Flannel/Calico)
+- Gets active CNI daemon pods
+- Waits for CNI daemon pods to be Running
 - Displays cluster info
-- Gets Calico Installation status
-- Gets Calico FelixConfiguration
-- Gets Calico IP pools
 
 #### Worker Verification
 - Gets all worker nodes
 - Counts worker nodes
 - Checks if all worker nodes are Ready
-- Gets Calico pods on all nodes
-- Verifies Calico pods count matches cluster nodes
+- Gets CNI daemon pods on all nodes
+- Verifies CNI daemon pod count matches cluster nodes
 - Describes each worker node
 
 #### Network Verification
@@ -386,7 +369,7 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
 ```
 === Kubernetes Cluster Verification Report ===
 Control Plane: Ready
-Calico CNI: Operational
+Flannel CNI: Operational
 Worker Nodes: X joined
 Networking: Functional/Issues detected
 DNS: Functional/Issues detected
@@ -432,19 +415,18 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --tags reset
 ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
 
 # 2. Initialize control plane ([control-plane-ip])
-# Includes automatic verification of control plane and Calico
+# Includes automatic control-plane checks
 ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
-# 2.5 (Optional) Move Calico BGP off TCP/179 (needed for MetalLB BGP)
-# Calico (BIRD) binds TCP/179 by default; MetalLB BGP also needs TCP/179.
-ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
+# 2.5 Install Flannel CNI (required before worker CNI checks are expected to pass)
+ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
 
 # 3. Join workers (all 4 workers)
 # Includes automatic verification of each worker
 ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
 
 # 3.5 (Optional) Configure BGP router and install MetalLB (LoadBalancer)
-# Recommended for WireGuard/L3 clusters. Keeps Calico IPIP unchanged.
+# Recommended for WireGuard/L3 clusters.
 #
 # 1) Configure FRR on the BGP router host (e.g., [bgp-router-hostname])
 ansible-playbook -i hosts_bay.ini bgp_router_manage.yaml --tags bgp
@@ -495,8 +477,8 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_main --
 
 ### roles/kuber_init/
 Control plane initialization role with built-in verification
-- `tasks/main.yaml` - Init, Calico install, verification tasks
-- `defaults/main.yaml` - Variables (pod CIDR, service CIDR, Calico version)
+- `tasks/main.yaml` - Init and control-plane verification tasks
+- `defaults/main.yaml` - Variables (pod CIDR, service CIDR, kubeadm settings)
 - `templates/kubeadm-config.yaml.j2` - Dynamic kubeadm config
 - `handlers/main.yaml` - Service restart handlers
 - `meta/main.yaml` - Role metadata
@@ -526,14 +508,16 @@ All playbooks include built-in verification steps:
 
 **kuber_plane_init.yaml:**
 ✓ Control plane Ready status
-✓ Tigera Operator Running status
-✓ Calico pods status
-✓ Calico IP pools
+✓ Kubernetes API access
+
+**kuber_flannel_install.yaml:**
+✓ Flannel daemonset rollout
+✓ No mixed-CNI state
 
 **kuber_worker_join.yaml:**
 ✓ Node visibility from control plane
 ✓ Node Ready status
-✓ Calico pod on worker
+✓ CNI daemon pod on worker
 
 **kuber_verify.yaml:**
 ✓ Control plane health
@@ -549,18 +533,8 @@ Run on control plane ([control-plane-ip]):
 # Check cluster nodes
 kubectl get nodes
 
-# Check Calico pods
-kubectl get pods -n kube-system -l k8s-app=calico-node
-
-# Check Tigera Operator
-kubectl get pods -n tigera-operator
-
-# Check Calico IP pools
-kubectl get ippool -o wide
-
-# Check Calico configuration
-kubectl get installation -o yaml
-kubectl get felixconfiguration default -o yaml
+# Check Flannel pods
+kubectl get pods -n kube-flannel -l app=flannel
 
 # Test network connectivity
 kubectl run test-pod --image=nginx:alpine --restart=Never
@@ -575,21 +549,20 @@ kubectl delete pod test-pod
 ### Common Issues
 
 **1. Control Plane Not Ready**
-- Check Calico pods: `kubectl get pods -n kube-system -l k8s-app=calico-node`
-- Check Tigera Operator: `kubectl get pods -n tigera-operator`
-- View logs: `kubectl logs -n tigera-operator <pod-name>`
+- Check Flannel pods: `kubectl get pods -n kube-flannel -l app=flannel`
+- View logs: `kubectl logs -n kube-flannel -l app=flannel --tail=80`
 - Reset and reinit: `kuber_plane_reset.yaml` → `kuber_plane_init.yaml`
 
 **2. Worker Not Ready**
 - Check worker node: `kubectl get node <worker-name> -o wide`
-- Check Calico pod on worker: `kubectl get pods -n kube-system -l k8s-app=calico-node -o wide`
+- Check Flannel pod on worker: `kubectl get pods -n kube-flannel -l app=flannel -o wide`
 - View kubelet logs: `journalctl -u kubelet -f`
 - Reset and rejoin: `kuber_worker_reset.yaml` → `kuber_worker_join.yaml`
 
 **3. Network Issues**
 - Run full verification: `kuber_verify.yaml`
-- Check Calico IP pools: `kubectl get ippool -o wide`
-- Check Calico configuration: `kubectl get installation -o yaml`
+- Check Flannel daemonset: `kubectl -n kube-flannel get ds kube-flannel-ds -o wide`
+- Check CNI interfaces on node: `ip link show cni0 && ip link show flannel.1`
 - Test DNS: `kubectl run dns-test --image=busybox --rm -it -- nslookup [k8s-service]`
 
 **3.1 Kubernetes + WireGuard: UFW blocks pod egress (DNS/ACME fails)**
@@ -647,7 +620,7 @@ dig +short @${KUBEDNS_IP} registry-1.docker.io AAAA   # should be empty after fi
 - No manual token management required
 - Token is generated from control plane and used immediately
 
-### WireGuard + Calico IPIP Issues
+### Legacy Calico Path (optional)
 
 **5. calico-typha CrashLoopBackOff - Port Already in Use**
 
@@ -713,28 +686,33 @@ ssh <node> "sudo kill -9 <pid>"
 kubectl delete pod -n metallb-system <speaker-pod> --force --grace-period=0
 ```
 
-**8. BGP Peers Not Establishing**
+**8. MetalLB/FRR BGP peers not establishing**
 
 **Symptoms:**
 ```
-BIRD is not ready: BGP not established with [node-ip-1],[node-ip-2]
+metallb-speaker: failed to establish BGP session to peer [bgp-router-wg-ip]
 ```
 
-**Cause:** WireGuard tunnel not up, firewall blocking, or BGP port conflict
+**Cause:** WireGuard path down, firewall blocking TCP/179, or FRR neighbor mismatch
 
 **Fix:**
 ```bash
 # Check WireGuard connectivity
 wg show wg99
 
-# Test BGP port from node
-nc -zv [node-ip] [bgp-port]
+# Check MetalLB speakers
+kubectl -n metallb-system get pods -o wide
+kubectl -n metallb-system logs -l component=speaker --tail=80
 
-# Check Calico BGP config
-kubectl get bgpconfigurations default -o yaml
+# Confirm MetalLB BGP peers and advertisements
+kubectl get bgppeers.metallb.io -A -o yaml
+kubectl get bgpadvertisements.metallb.io -A -o yaml
 
-# If Calico BGP conflicts with MetalLB, move Calico to different port
-kubectl patch bgpconfigurations default --type=merge -p '{"spec":{"listenPort":178}}'
+# Test BGP port from a Kubernetes node to FRR peer
+nc -zv [bgp-router-wg-ip] 179
+
+# On FRR router host, verify neighbors
+vtysh -c "show bgp summary"
 ```
 
 **9. MTU Issues - Packet Fragmentation**
@@ -744,18 +722,18 @@ kubectl patch bgpconfigurations default --type=merge -p '{"spec":{"listenPort":1
 - Large file transfers fail
 - TCP connections hang
 
-**Cause:** MTU too high for WireGuard + IPIP encapsulation
+**Cause:** MTU too high for WireGuard + VXLAN encapsulation
 
 **Fix:**
 ```bash
 # Check current MTU
 kubectl get installation default -o jsonpath='{.spec.calicoNetwork.mtu}'
 
-# Should be 1380 for WireGuard + IPIP
-# WireGuard: 1420, IPIP: -20, safety: -20 = 1380
+# Should start at 1360 for WireGuard + VXLAN
+# WireGuard: 1420, VXLAN: -50, safety: -10 = 1360
 
 # Patch if needed
-kubectl patch installation default --type=merge -p '{"spec":{"calicoNetwork":{"mtu":1380}}}'
+kubectl patch installation default --type=merge -p '{"spec":{"calicoNetwork":{"mtu":1360}}}'
 ```
 
 ---
@@ -764,7 +742,7 @@ kubectl patch installation default --type=merge -p '{"spec":{"calicoNetwork":{"m
 
 - SSH access required to all nodes
 - Root/ sudo access required for package installation and system configuration
-- Calico custom resources file must be accessible on Ansible controller
+- Flannel manifest is managed by `kuber_flannel_install.yaml`
 - Join tokens are generated dynamically (ttl=0 for one-time use)
 - No hardcoded tokens in playbooks
 
@@ -815,7 +793,7 @@ All playbooks support the following tags for selective execution:
 - `test` - Network and DNS testing
 - `plane` - Control plane operations
 - `worker` - Worker node operations
-- `cni` - Calico CNI installation
+- `cni` - CNI-related tasks
 - `nfd` - Node Feature Discovery installation
 - `node_info` - Node metadata labeling tasks
 - `k9s` - Node metadata tasks for K9s visibility/filtering
@@ -829,7 +807,7 @@ All playbooks support the following tags for selective execution:
 
 - Kubernetes version: v1.35 (from pkgs.k8s.io)
 - Container runtime: containerd with systemd cgroup driver
-- CNI: Calico v3.31.3 (Tigera Operator)
+- CNI default: Flannel (Legacy Calico Path (optional))
 - Pod CIDR: [internal-ip]/16
 - Service CIDR: [internal-ip]/16
 - Ansible version: 2.16+

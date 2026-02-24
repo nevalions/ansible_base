@@ -1,6 +1,9 @@
 # BGP HA Kubernetes Cluster Architecture
 
-This document describes the high-availability architecture for the Kubernetes cluster with BGP-based load balancing.
+This document describes the high-availability architecture for the Kubernetes cluster with
+BGP-based load balancing.
+
+Default CNI in this repository is Flannel (VXLAN over WireGuard). Calico notes are legacy.
 
 Operational steps (deploy/verify/test/remove) are documented in `docs/BGP_HA_GUIDE.md`.
 
@@ -83,7 +86,7 @@ Operational steps (deploy/verify/test/remove) are documented in `docs/BGP_HA_GUI
 |-----------|-------------|
 | kubelet | Node agent managing pods |
 | MetalLB Speaker | BGP speaker advertising LoadBalancer IPs |
-| Calico | CNI for pod networking (IPIP mode over WireGuard) |
+| Flannel (default) / Legacy Calico Path (optional) | CNI for pod networking over WireGuard |
 | WireGuard | Encrypted tunnel for cross-network communication |
 
 ### WireGuard VPN Mesh
@@ -93,6 +96,26 @@ Operational steps (deploy/verify/test/remove) are documented in `docs/BGP_HA_GUI
 | wg99 | WireGuard interface on all cluster nodes |
 | Peer IPs | Each node has a unique VPN IP |
 | Routed CIDRs | API VIP and BGP VIP routed through tunnel |
+
+### API VIP Ownership Sync (Keepalived + WireGuard)
+
+Kubernetes API VIP (`vault_k8s_api_vip/32`) can move between control planes via Keepalived,
+but WireGuard `AllowedIPs` is static until updated.
+
+To avoid stale routing after a MASTER switch, this repository uses Keepalived `notify_master`
+automation to run a WireGuard VIP ownership update script.
+
+Current behavior:
+
+- Keepalived MASTER transition on a control plane runs `/usr/local/sbin/wg-api-vip-notify.sh`.
+- The notify script triggers gateway-side helper `/usr/local/sbin/wg-api-vip-failover.sh`.
+- The helper moves `vault_k8s_api_vip/32` between control-plane peer `AllowedIPs` via `wg set`.
+
+Operational note:
+
+- This updates runtime WireGuard state immediately.
+- A subsequent `wireguard_manage.yaml` run will regenerate config files and should be used to
+  persist desired ownership in rendered configuration.
 
 ## Network Flows
 
@@ -119,6 +142,10 @@ Admin -> API VIP -> Control Plane (MASTER) -> kube-apiserver
 ### 3. Pod-to-Pod Communication (Cross-Node)
 
 ```
+# Flannel (recommended):
+Pod A -> Flannel (VXLAN) -> flannel.1 -> WireGuard (wg99) -> Node B -> Flannel -> Pod B
+
+# Legacy Calico Path (optional):
 Pod A -> Calico (IPIP) -> tunl0 -> WireGuard (wg99) -> Node B -> Calico -> Pod B
 ```
 
@@ -161,6 +188,8 @@ MetalLB Speaker -> BGP (ASN [k8s-asn]) -> FRR Router (ASN [router-asn])
 | `bgp_ha_verify.yaml` | Verify BGP HA status and VIP reachability |
 | `bgp_ha_test.yaml` | Test end-to-end connectivity |
 | `wireguard_manage.yaml` | Manage WireGuard VPN mesh |
+| `kuber_flannel_install.yaml` | Install Flannel CNI (VXLAN over WireGuard) |
+| `kuber_flannel_remove.yaml` | Remove Flannel CNI |
 | `kuber_metallb_install.yaml` | Install/configure MetalLB |
 
 ## Troubleshooting
