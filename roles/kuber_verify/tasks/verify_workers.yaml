@@ -43,28 +43,59 @@
     fail_msg: "Some worker nodes are not Ready"
   when: workers_ready.stdout is defined and workers_ready.stdout | length > 0
 
-- name: Get Calico pods on all nodes
-  ansible.builtin.command: kubectl get pods -n calico-system -l k8s-app=calico-node -o wide
+- name: Set CNI daemonset namespace and selector for worker checks
+  ansible.builtin.set_fact:
+    verify_cni_namespace: "{{ 'kube-flannel' if cni_type == 'flannel' else 'calico-system' if cni_type == 'calico' else '' }}"
+    verify_cni_label_selector: "{{ 'app=flannel' if cni_type == 'flannel' else 'k8s-app=calico-node' if cni_type == 'calico' else '' }}"
+
+- name: Get total cluster node count
+  ansible.builtin.command: kubectl get nodes -o jsonpath='{.items[*].metadata.name}'
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_pods_wide
+  register: cluster_node_names
   changed_when: false
 
-- name: Display Calico pods distribution
-  ansible.builtin.debug:
-    var: calico_pods_wide.stdout_lines
-
-- name: Count Calico pods
+- name: Set total cluster node count fact
   ansible.builtin.set_fact:
-    calico_pod_count: "{{ calico_pods_wide.stdout_lines[1:] | length if calico_pods_wide.stdout_lines is defined and calico_pods_wide.stdout_lines | length > 1 else 0 }}"
+    cluster_node_count: "{{ cluster_node_names.stdout.split() | length if cluster_node_names.stdout is defined and cluster_node_names.stdout | length > 0 else 0 }}"
 
-- name: Verify Calico pods match cluster nodes
+- name: Get CNI daemonset pods on all nodes
+  ansible.builtin.command: >-
+    kubectl get pods -n {{ verify_cni_namespace }}
+    -l {{ verify_cni_label_selector }} -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_cni_pods_wide
+  changed_when: false
+  when:
+    - cni_type in ['flannel', 'calico']
+
+- name: Display CNI daemonset pods distribution
+  ansible.builtin.debug:
+    var: verify_cni_pods_wide.stdout_lines
+  when:
+    - cni_type in ['flannel', 'calico']
+
+- name: Count CNI daemonset pods
+  ansible.builtin.set_fact:
+    verify_cni_pod_count: "{{ verify_cni_pods_wide.stdout_lines[1:] | length if verify_cni_pods_wide.stdout_lines is defined and verify_cni_pods_wide.stdout_lines | length > 1 else 0 }}"
+  when:
+    - cni_type in ['flannel', 'calico']
+
+- name: Verify CNI daemonset pods match cluster nodes
   ansible.builtin.assert:
     that:
-      - calico_pod_count | int == worker_node_count | int + 1
-    success_msg: "Calico pods ({{ calico_pod_count }}) match cluster nodes"
-    fail_msg: "Calico pods ({{ calico_pod_count }}) do not match expected cluster nodes"
-  when: calico_pod_count is defined and worker_node_count is defined
+      - verify_cni_pod_count | int == cluster_node_count | int
+    success_msg: "{{ cni_type | upper }} daemon pods ({{ verify_cni_pod_count }}) match cluster nodes ({{ cluster_node_count }})"
+    fail_msg: "{{ cni_type | upper }} daemon pods ({{ verify_cni_pod_count }}) do not match cluster nodes ({{ cluster_node_count }})"
+  when:
+    - cni_type in ['flannel', 'calico']
+
+- name: Skip CNI daemonset node-match check for unknown CNI type
+  ansible.builtin.debug:
+    msg: "Skipping CNI daemonset count verification because CNI type is '{{ cni_type | default('unknown') }}'"
+  when:
+    - cni_type not in ['flannel', 'calico']
 
 - name: Get node details for each worker
   ansible.builtin.command: kubectl describe node {{ item }}

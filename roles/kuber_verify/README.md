@@ -7,7 +7,7 @@ Comprehensive verification of Kubernetes cluster health and functionality.
 This role performs comprehensive verification of a Kubernetes cluster:
 
 - Verifies control plane node status and readiness
-- Checks Calico CNI installation and pod status
+- Checks active CNI installation and daemon pod status (Flannel or Calico)
 - Validates worker node joining and readiness
 - Tests pod-to-pod networking connectivity
 - Tests DNS resolution within cluster
@@ -32,6 +32,9 @@ This role performs comprehensive verification of a Kubernetes cluster:
 - `verify_retry_count` - Retry count (default: `20`)
 - `verify_dns_service` - DNS service to test (from vault)
 - `verify_external_hostname` - External hostname for DNS test (from vault)
+- `verify_node_dns_probe_enabled` - Enable per-worker DNS probes via kube-dns service (default: `true`)
+- `verify_node_dns_probe_domain` - Domain used for node-scoped DNS checks (default: `{{ verify_dns_service }}`)
+- `verify_worker_label_selector` - Label selector used to discover worker nodes (default: `node-role.kubernetes.io/worker`)
 
 ## Vault Variables
 
@@ -64,12 +67,9 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 
 1. Get and display all cluster nodes
 2. Verify control plane node is Ready
-3. Get Calico node pod status
-4. Get Tigera Operator pod status
-5. Verify Tigera Operator is Running
-6. Wait for all Calico node pods to be Ready
-7. Display cluster information
-8. Display Calico installation status
+3. Verify active CNI control-plane components (Flannel or Calico)
+4. Wait for CNI pods to be Ready
+5. Display cluster and CNI status
 
 ### Worker Verification
 
@@ -79,9 +79,9 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 4. Check if all worker nodes are Ready
 5. Display worker readiness status
 6. Assert all worker nodes are Ready
-7. Get Calico pods on all nodes
-8. Display Calico pods distribution
-9. Verify Calico pods match cluster nodes
+7. Get CNI daemon pods on all nodes
+8. Display CNI daemon pod distribution
+9. Verify CNI daemon pod count matches cluster node count
 10. Get node details for each worker
 
 ### Networking Verification
@@ -94,13 +94,14 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 6. Get pod IP addresses
 7. Test pod-to-pod connectivity (same namespace)
 8. Test DNS resolution within cluster
-9. Clean up test namespace and pods
+9. Run per-worker DNS probe pods pinned to each worker node
+10. Clean up test namespace and pods (force-delete stuck pods before namespace deletion)
 
 ### Report Generation
 
 - Displays comprehensive verification report with:
   - Control plane readiness status
-  - Calico CNI operational status
+  - CNI operational status
   - Worker node count
   - Networking functionality
   - DNS resolution status
@@ -109,21 +110,22 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 
 ### Control Plane
 - ✅ Control plane node is Ready
-- ✅ Calico node pods are Running
+- ✅ CNI control-plane pods are Running
 - ✅ Tigera Operator is Running
 - ✅ Cluster info accessible
 
 ### Workers
 - ✅ Worker nodes are joined to cluster
 - ✅ All worker nodes are Ready
-- ✅ Calico pods distributed across nodes
-- ✅ Calico pod count matches node count
+- ✅ CNI daemon pods distributed across nodes
+- ✅ CNI daemon pod count matches cluster node count
 
 ### Networking
 - ✅ Test pods created successfully
 - ✅ Pods are Ready and reachable
 - ✅ Pod-to-pod connectivity working
 - ✅ DNS resolution functional within cluster
+- ✅ Node-scoped DNS resolution through kube-dns service
 
 ## Exit Codes
 

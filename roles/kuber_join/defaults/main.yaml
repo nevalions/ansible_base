@@ -27,3 +27,18 @@ kuber_join_kubelet_extra_args:
       .get('address', ansible_default_ipv4.address)
     }}
 kubeadm_api_version: "v1beta4"
+
+# CNI validation after worker join
+# Global source of truth: vault_k8s_cni_type (example: flannel or calico)
+kuber_join_cni_type: "{{ vault_k8s_cni_type | default('flannel') }}"
+kuber_join_cni_namespace: "{{ 'kube-flannel' if kuber_join_cni_type == 'flannel' else 'kube-system' }}"
+kuber_join_cni_label_selector: "{{ 'app=flannel' if kuber_join_cni_type == 'flannel' else 'k8s-app=calico-node' }}"
+
+# Node-local DNS verification after worker join
+kuber_join_node_dns_probe_enabled: true
+kuber_join_node_dns_probe_domain: "kubernetes.default.svc.cluster.local"
+kuber_join_node_dns_probe_image: "busybox:1.36"
+kuber_join_node_dns_probe_namespace: "kube-system"
+kuber_join_node_dns_probe_retries: "20"
+kuber_join_node_dns_probe_delay: "3"
+kuber_join_node_dns_auto_repair: true

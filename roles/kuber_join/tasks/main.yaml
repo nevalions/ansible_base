@@ -51,6 +51,83 @@
     dest: /tmp/kube-join.yaml
     mode: "0644"
 
+- name: Install base CNI plugin package on Debian
+  ansible.builtin.apt:
+    name: containernetworking-plugins
+    state: present
+    update_cache: true
+  when: ansible_os_family == 'Debian'
+
+- name: Ensure CNI plugin directory exists
+  ansible.builtin.file:
+    path: /opt/cni/bin
+    state: directory
+    mode: "0755"
+
+- name: Discover base CNI plugin binaries
+  ansible.builtin.find:
+    paths: /usr/lib/cni
+    file_type: file
+  register: kuber_join_base_cni_plugins
+  when: ansible_os_family == 'Debian'
+
+- name: Copy base CNI plugins to runtime directory
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "/opt/cni/bin/{{ item.path | basename }}"
+    mode: "0755"
+    remote_src: true
+  loop: "{{ kuber_join_base_cni_plugins.files | default([]) }}"
+  when: ansible_os_family == 'Debian'
+
+- name: Verify loopback CNI plugin exists
+  ansible.builtin.stat:
+    path: /opt/cni/bin/loopback
+  register: kuber_join_loopback_plugin
+
+- name: Assert loopback CNI plugin is present
+  ansible.builtin.assert:
+    that:
+      - kuber_join_loopback_plugin.stat.exists
+    fail_msg: "CNI loopback plugin missing at /opt/cni/bin/loopback; worker join will fail for sandbox networking."
+    success_msg: "CNI loopback plugin is present"
+
+- name: Check for stale cni0 interface
+  ansible.builtin.command: ip link show cni0
+  register: kuber_join_cni0_interface
+  changed_when: false
+  failed_when: false
+
+- name: Check for stale flannel.1 interface
+  ansible.builtin.command: ip link show flannel.1
+  register: kuber_join_flannel_interface
+  changed_when: false
+  failed_when: false
+
+- name: Fail when stale CNI interfaces are present before join
+  ansible.builtin.fail:
+    msg: >-
+      Stale CNI interfaces detected before join
+      (cni0={{ 'present' if kuber_join_cni0_interface.rc == 0 else 'absent' }},
+      flannel.1={{ 'present' if kuber_join_flannel_interface.rc == 0 else 'absent' }}).
+      Run kuber_worker_reset.yaml for this node, verify interfaces are gone, then retry kuber_worker_join.yaml.
+  when:
+    - kuber_join_cni0_interface.rc == 0 or kuber_join_flannel_interface.rc == 0
+
+- name: Check listeners on MetalLB memberlist port before join
+  ansible.builtin.shell: ss -H -ltnup '( sport = :7946 )' || true
+  register: kuber_join_memberlist_listeners
+  changed_when: false
+  failed_when: false
+
+- name: Fail when MetalLB memberlist port is already in use
+  ansible.builtin.fail:
+    msg: >-
+      Port 7946 is already in use before join; MetalLB speaker will fail to bind memberlist.
+      Listener(s): {{ kuber_join_memberlist_listeners.stdout_lines | join('; ') }}.
+      Run kuber_worker_reset.yaml for this node or stop the conflicting daemon, then retry kuber_worker_join.yaml.
+  when: kuber_join_memberlist_listeners.stdout_lines | length > 0
+
 - name: Ensure kubelet service is enabled and started (required for kubeadm join)
   ansible.builtin.systemd:
     name: kubelet
@@ -126,6 +203,259 @@
     fail_msg: "Worker node {{ ansible_facts['hostname'] }} is not Ready after 600s"
   when: node_ready.rc is defined
 
+- name: Discover kube-dns service cluster IP for post-join probe
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - get
+      - svc
+      - kube-dns
+      - -o
+      - jsonpath={.spec.clusterIP}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_kube_dns_ip
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  when: kuber_join_node_dns_probe_enabled | bool
+
+- name: Assert kube-dns service IP discovered for post-join probe
+  ansible.builtin.assert:
+    that:
+      - kuber_join_kube_dns_ip.stdout | default('') | length > 0
+    fail_msg: "Could not discover kube-dns ClusterIP in kube-system namespace"
+    success_msg: "kube-dns ClusterIP discovered: {{ kuber_join_kube_dns_ip.stdout }}"
+  when: kuber_join_node_dns_probe_enabled | bool
+
+- name: Set post-join DNS probe pod names
+  ansible.builtin.set_fact:
+    kuber_join_dns_probe_pod: "join-dns-probe-{{ ansible_facts['hostname'] | lower | regex_replace('[^a-z0-9-]', '-') | truncate(35, true, '') }}"
+    kuber_join_dns_probe_pod_retry: "join-dns-retry-{{ ansible_facts['hostname'] | lower | regex_replace('[^a-z0-9-]', '-') | truncate(35, true, '') }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_kube_dns_ip.stdout | default('') | length > 0
+
+- name: Delete stale post-join DNS probe pod
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - delete
+      - pod
+      - "{{ kuber_join_dns_probe_pod }}"
+      - --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_kube_dns_ip.stdout | default('') | length > 0
+
+- name: Run post-join DNS probe on joined node
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - run
+      - "{{ kuber_join_dns_probe_pod }}"
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - --image={{ kuber_join_node_dns_probe_image }}
+      - --restart=Never
+      - --overrides={"spec":{"nodeName":"{{ ansible_facts['hostname'] }}","terminationGracePeriodSeconds":0}}
+      - --command
+      - --
+      - sh
+      - -c
+      - nslookup {{ kuber_join_node_dns_probe_domain }} {{ kuber_join_kube_dns_ip.stdout }} >/dev/null
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_dns_probe_create
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: true
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_kube_dns_ip.stdout | default('') | length > 0
+
+- name: Wait for post-join DNS probe completion
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - get
+      - pod
+      - "{{ kuber_join_dns_probe_pod }}"
+      - -o
+      - jsonpath={.status.phase}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_dns_probe_phase
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  until:
+    - kuber_join_dns_probe_phase.stdout in ['Succeeded', 'Failed']
+  retries: "{{ kuber_join_node_dns_probe_retries }}"
+  delay: "{{ kuber_join_node_dns_probe_delay }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_kube_dns_ip.stdout | default('') | length > 0
+
+- name: Set initial post-join DNS probe status
+  ansible.builtin.set_fact:
+    kuber_join_node_dns_failed: "{{ kuber_join_dns_probe_phase.stdout != 'Succeeded' }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_dns_probe_phase is defined
+
+- name: Recycle kube-proxy on joined node when DNS probe fails
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - delete
+      - pod
+      - -l
+      - k8s-app=kube-proxy
+      - --field-selector
+      - spec.nodeName={{ ansible_facts['hostname'] }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_kube_proxy_restart
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: true
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_failed | default(false)
+
+- name: Wait after kube-proxy recycle
+  ansible.builtin.pause:
+    seconds: 20
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_failed | default(false)
+
+- name: Delete stale retry DNS probe pod
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - delete
+      - pod
+      - "{{ kuber_join_dns_probe_pod_retry }}"
+      - --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  failed_when: false
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_failed | default(false)
+
+- name: Re-run DNS probe after kube-proxy recycle
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - run
+      - "{{ kuber_join_dns_probe_pod_retry }}"
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - --image={{ kuber_join_node_dns_probe_image }}
+      - --restart=Never
+      - --overrides={"spec":{"nodeName":"{{ ansible_facts['hostname'] }}","terminationGracePeriodSeconds":0}}
+      - --command
+      - --
+      - sh
+      - -c
+      - nslookup {{ kuber_join_node_dns_probe_domain }} {{ kuber_join_kube_dns_ip.stdout }} >/dev/null
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_dns_probe_create_retry
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: true
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_failed | default(false)
+
+- name: Wait for retry DNS probe completion
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - get
+      - pod
+      - "{{ kuber_join_dns_probe_pod_retry }}"
+      - -o
+      - jsonpath={.status.phase}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kuber_join_dns_probe_phase_retry
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  until:
+    - kuber_join_dns_probe_phase_retry.stdout in ['Succeeded', 'Failed']
+  retries: "{{ kuber_join_node_dns_probe_retries }}"
+  delay: "{{ kuber_join_node_dns_probe_delay }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_failed | default(false)
+
+- name: Set final post-join DNS probe status
+  ansible.builtin.set_fact:
+    kuber_join_node_dns_failed: "{{ kuber_join_dns_probe_phase_retry.stdout != 'Succeeded' }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - kuber_join_node_dns_auto_repair | bool
+    - kuber_join_node_dns_probe_phase_retry is defined
+
+- name: Clean up post-join DNS probe pods
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ kuber_join_node_dns_probe_namespace }}"
+      - delete
+      - pod
+      - "{{ item }}"
+      - --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  failed_when: false
+  loop:
+    - "{{ kuber_join_dns_probe_pod | default('') }}"
+    - "{{ kuber_join_dns_probe_pod_retry | default('') }}"
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+    - item | length > 0
+
+- name: Assert node-local DNS is healthy after join
+  ansible.builtin.assert:
+    that:
+      - not (kuber_join_node_dns_failed | default(false))
+    success_msg: "Joined node {{ ansible_facts['hostname'] }} passed node-local DNS probe"
+    fail_msg: >-
+      Joined node {{ ansible_facts['hostname'] }} failed node-local DNS probe for
+      {{ kuber_join_node_dns_probe_domain }} via kube-dns {{ kuber_join_kube_dns_ip.stdout | default('unknown') }}.
+      You can repair without SSH by running:
+      kubectl -n kube-system delete pod -l k8s-app=kube-proxy --field-selector spec.nodeName={{ ansible_facts['hostname'] }}
+  when:
+    - kuber_join_node_dns_probe_enabled | bool
+
 - name: Label worker node role
   ansible.builtin.command: kubectl label node {{ ansible_facts['hostname'] }} node-role.kubernetes.io/worker= --overwrite
   environment:
@@ -136,20 +466,22 @@
   ignore_errors: true
   when: not ansible_check_mode
 
-- name: Get Calico pod on this worker
-  ansible.builtin.command: kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+- name: Get CNI pods
+  ansible.builtin.command: >-
+    kubectl get pods -n {{ kuber_join_cni_namespace }}
+    -l {{ kuber_join_cni_label_selector }} -o wide
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  register: calico_pod_check
+  register: cni_pod_check
   delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
   changed_when: false
   ignore_errors: true
 
-- name: Display Calico pods
+- name: Display CNI pods
   ansible.builtin.debug:
-    var: calico_pod_check.stdout_lines
-  when: calico_pod_check.rc == 0
+    var: cni_pod_check.stdout_lines
+  when: cni_pod_check.rc == 0
 
 - name: Display worker join summary
   ansible.builtin.debug:
@@ -157,5 +489,5 @@
       - "=== Worker Join Complete ==="
       - "Node: {{ ansible_facts['hostname'] }}"
       - "Status: Ready"
-      - "Calico CNI: Active"
+      - "CNI: {{ kuber_join_cni_type }}"
       - "Next step: Run kuber_verify.yaml for full cluster health check"

@@ -154,6 +154,210 @@
     msg: "{{ 'DNS resolution: SUCCESS' if dns_resolution.rc == 0 else 'DNS resolution: FAILED' }}"
   when: dns_resolution.rc is defined
 
+- name: Discover kube-dns service cluster IP
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - get
+      - svc
+      - kube-dns
+      - -o
+      - jsonpath={.spec.clusterIP}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_kube_dns_ip
+  changed_when: false
+  when:
+    - verify_node_dns_probe_enabled | bool
+    - verify_node_dns_probe_domain is defined
+    - verify_node_dns_probe_domain | length > 0
+    - verify_node_dns_probe_domain is not match('^\[.*\]$')
+
+- name: Get worker node names from Kubernetes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - nodes
+      - -l
+      - "{{ verify_worker_label_selector }}"
+      - -o
+      - jsonpath={range .items[*]}{.metadata.name}{"\n"}{end}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_worker_nodes_raw
+  changed_when: false
+  when:
+    - verify_kube_dns_ip is defined
+    - verify_kube_dns_ip.stdout | default('') | length > 0
+
+- name: Build worker node list for DNS probing
+  ansible.builtin.set_fact:
+    verify_worker_nodes: >-
+      {{
+        (verify_worker_nodes_raw.stdout_lines | default([]))
+        | map('trim')
+        | reject('equalto', '')
+        | list
+      }}
+  when:
+    - verify_worker_nodes_raw is defined
+
+- name: Build node-specific DNS probe targets
+  ansible.builtin.set_fact:
+    verify_worker_probe_targets: >-
+      {{
+        (verify_worker_probe_targets | default([]))
+        + [
+            {
+              'node': item,
+              'pod': verify_dns_probe_pod_prefix
+                     ~ '-'
+                     ~ (
+                         item
+                         | lower
+                         | regex_replace('[^a-z0-9-]', '-')
+                         | regex_replace('^-+', '')
+                         | regex_replace('-+$', '')
+                         | truncate(40, true, '')
+                       )
+            }
+          ]
+      }}
+  loop: "{{ verify_worker_nodes | default([]) }}"
+  when:
+    - verify_worker_nodes is defined
+    - verify_worker_nodes | length > 0
+
+- name: Delete stale node DNS probe pods
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ verify_test_namespace }}"
+      - delete
+      - pod
+      - "{{ item.pod }}"
+      - --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
+  failed_when: false
+  loop: "{{ verify_worker_probe_targets | default([]) }}"
+  when:
+    - verify_worker_probe_targets is defined
+    - verify_worker_probe_targets | length > 0
+
+- name: Run DNS probe pod on each worker node
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - run
+      - "{{ item.pod }}"
+      - -n
+      - "{{ verify_test_namespace }}"
+      - --image={{ verify_node_dns_probe_image }}
+      - --restart=Never
+      - --overrides={"spec":{"nodeName":"{{ item.node }}","terminationGracePeriodSeconds":0}}
+      - --command
+      - --
+      - sh
+      - -c
+      - nslookup {{ verify_node_dns_probe_domain }} {{ verify_kube_dns_ip.stdout }} >/dev/null
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_node_dns_probe_create
+  changed_when: true
+  loop: "{{ verify_worker_probe_targets | default([]) }}"
+  when:
+    - verify_worker_probe_targets is defined
+    - verify_worker_probe_targets | length > 0
+
+- name: Wait for node DNS probe completion
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ verify_test_namespace }}"
+      - get
+      - pod
+      - "{{ item.pod }}"
+      - -o
+      - jsonpath={.status.phase}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_node_dns_probe_phase
+  changed_when: false
+  until:
+    - verify_node_dns_probe_phase.stdout in ['Succeeded', 'Failed']
+  retries: "{{ verify_node_dns_probe_retries }}"
+  delay: "{{ verify_node_dns_probe_delay }}"
+  loop: "{{ verify_worker_probe_targets | default([]) }}"
+  when:
+    - verify_worker_probe_targets is defined
+    - verify_worker_probe_targets | length > 0
+
+- name: Build list of worker nodes with DNS probe failures
+  ansible.builtin.set_fact:
+    verify_node_dns_failed_nodes: >-
+      {{
+        (verify_node_dns_probe_phase.results | default([]))
+        | rejectattr('stdout', 'equalto', 'Succeeded')
+        | map(attribute='item.node')
+        | list
+      }}
+  when:
+    - verify_node_dns_probe_phase is defined
+
+- name: Remove node DNS probe pods
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - "{{ verify_test_namespace }}"
+      - delete
+      - pod
+      - "{{ item.pod }}"
+      - --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: false
+  failed_when: false
+  loop: "{{ verify_worker_probe_targets | default([]) }}"
+  when:
+    - verify_worker_probe_targets is defined
+    - verify_worker_probe_targets | length > 0
+
+- name: Display node-scoped DNS probe summary
+  ansible.builtin.debug:
+    msg:
+      - "Node DNS probes checked: {{ verify_worker_nodes | default([]) | length }}"
+      - "Node DNS probe failures: {{ verify_node_dns_failed_nodes | default([]) | join(', ') if (verify_node_dns_failed_nodes | default([]) | length > 0) else 'none' }}"
+  when:
+    - verify_node_dns_probe_enabled | bool
+    - verify_node_dns_probe_domain is defined
+    - verify_node_dns_probe_domain | length > 0
+    - verify_node_dns_probe_domain is not match('^\[.*\]$')
+
+- name: Assert worker nodes can resolve DNS through kube-dns service
+  ansible.builtin.assert:
+    that:
+      - (verify_node_dns_failed_nodes | default([]) | length) == 0
+    fail_msg: >-
+      Worker node DNS probe failed on: {{ verify_node_dns_failed_nodes | default([]) | join(', ') }}.
+      You can repair without SSH by restarting kube-proxy on affected nodes:
+      kubectl -n kube-system delete pod -l k8s-app=kube-proxy --field-selector spec.nodeName=<node>
+    success_msg: "All worker nodes passed node-scoped DNS probe"
+  when:
+    - verify_node_dns_probe_enabled | bool
+    - verify_node_dns_probe_domain is defined
+    - verify_node_dns_probe_domain | length > 0
+    - verify_node_dns_probe_domain is not match('^\[.*\]$')
+    - verify_worker_probe_targets is defined
+    - verify_worker_probe_targets | length > 0
+
 - name: Test external connectivity
   ansible.builtin.command: kubectl exec -n {{ verify_test_namespace }} test-pod-1 -- wget -q -O- https://{{ verify_external_hostname }} --timeout=5 --spider
   environment:
@@ -187,15 +391,35 @@
   changed_when: false
   ignore_errors: true
 
+- name: Force delete remaining test pods before namespace cleanup
+  ansible.builtin.command: >-
+    kubectl -n {{ verify_test_namespace }} delete pod --all --grace-period=0 --force --ignore-not-found=true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: delete_test_pods
+  changed_when: false
+  failed_when: false
+
 - name: Clean up test namespace
-  ansible.builtin.command: kubectl delete namespace {{ verify_test_namespace }}
+  ansible.builtin.command: kubectl delete namespace {{ verify_test_namespace }} --ignore-not-found=true
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: delete_namespace
   changed_when: "'deleted' in delete_namespace.stdout"
   ignore_errors: true
 
+- name: Wait for test namespace to be removed
+  ansible.builtin.command: kubectl get namespace {{ verify_test_namespace }}
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: verify_namespace_gone
+  changed_when: false
+  failed_when: false
+  retries: 20
+  delay: 3
+  until: verify_namespace_gone.rc != 0
+
 - name: Display cleanup result
   ansible.builtin.debug:
     msg: "Test namespace {{ verify_test_namespace }} deleted"
-  when: delete_namespace.rc == 0
+  when: delete_namespace.rc == 0 or verify_namespace_gone.rc != 0

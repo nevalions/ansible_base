@@ -11,6 +11,8 @@ This role joins worker nodes to an existing Kubernetes cluster:
 - Configures kubelet node IP for WireGuard network
 - Verifies node is visible from control plane
 - Supports both VIP and direct control plane endpoints
+- Validates CNI prerequisites before join (loopback plugin, stale interfaces)
+- Verifies node-local DNS after join and auto-recovers kube-proxy when enabled
 
 ## Requirements
 
@@ -35,6 +37,15 @@ This role joins worker nodes to an existing Kubernetes cluster:
 ### API Version
 
 - `kubeadm_api_version` - kubeadm API version (default: `v1beta4`)
+
+### CNI Validation and Post-Join DNS Probe
+
+- `kuber_join_cni_type` - CNI type used for post-join checks (default: `flannel`)
+- `kuber_join_cni_namespace` - CNI namespace selector target
+- `kuber_join_cni_label_selector` - CNI daemon pod selector
+- `kuber_join_node_dns_probe_enabled` - Enable node-local DNS probe after join (default: `true`)
+- `kuber_join_node_dns_probe_domain` - Domain probed via kube-dns (default: `kubernetes.default.svc.cluster.local`)
+- `kuber_join_node_dns_auto_repair` - Restart kube-proxy on failed DNS probe and retry (default: `true`)
 
 ## Vault Variables
 
@@ -110,8 +121,10 @@ ansible-playbook -i hosts_bay.ini kuber_worker_rejoin.yaml --limit [worker-hostn
 5. Create kubeadm join configuration
 6. Join worker node to cluster
 7. Wait for kubelet to be ready
-8. Verify node is visible from control plane
-9. Display join success message
+8. Run post-join DNS probe on the joined node
+9. Optionally recycle kube-proxy on that node and retry probe
+10. Verify node is visible from control plane
+11. Display join success message
 
 ## Verification
 
