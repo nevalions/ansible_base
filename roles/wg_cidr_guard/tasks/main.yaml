@@ -1,0 +1,19 @@
+---
+- name: Validate WG CIDR guard operation
+  ansible.builtin.assert:
+    that:
+      - wg_cidr_guard_operation in ['install', 'remove', 'verify']
+    fail_msg: "wg_cidr_guard_operation must be one of: install, remove, verify"
+    success_msg: "WG CIDR guard operation: {{ wg_cidr_guard_operation }}"
+
+- name: Deploy WG CIDR guard
+  ansible.builtin.include_tasks: install.yaml
+  when: wg_cidr_guard_operation == 'install'
+
+- name: Remove WG CIDR guard
+  ansible.builtin.include_tasks: remove.yaml
+  when: wg_cidr_guard_operation == 'remove'
+
+- name: Verify WG CIDR guard
+  ansible.builtin.include_tasks: verify.yaml
+  when: wg_cidr_guard_operation == 'verify'

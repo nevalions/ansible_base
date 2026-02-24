@@ -1,0 +1,15 @@
+---
+- name: Deploy WireGuard CIDR guard
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  tags:
+    - wireguard
+    - wg_cidr_guard
+    - manage
+
+  vars:
+    wg_cidr_guard_operation: "install"
+
+  roles:
+    - wg_cidr_guard

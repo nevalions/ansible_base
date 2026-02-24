@@ -1,0 +1,69 @@
+---
+- name: Gather WG CIDR guard timer status
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_timer_unit }}"
+  register: wg_cidr_guard_timer_status
+  failed_when: false
+  changed_when: false
+
+- name: Gather WG CIDR guard service status
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_service_unit }}"
+  register: wg_cidr_guard_service_status
+  failed_when: false
+  changed_when: false
+
+- name: Read runtime WireGuard allowed IPs
+  ansible.builtin.command: "wg show {{ wg_cidr_guard_interface }} allowed-ips"
+  register: wg_cidr_guard_allowed_ips_raw
+  failed_when: false
+  changed_when: false
+
+- name: Parse runtime allowed IP tokens
+  ansible.builtin.set_fact:
+    wg_cidr_guard_allowed_ip_tokens: >-
+      {{
+        (wg_cidr_guard_allowed_ips_raw.stdout | default(''))
+        | regex_replace('[\t\n]+', ' ')
+        | split(' ')
+        | reject('equalto', '')
+        | unique
+        | list
+      }}
+
+- name: Set required CIDR presence flag
+  ansible.builtin.set_fact:
+    wg_cidr_guard_required_cidr_present: "{{ wg_cidr_guard_required_cidr in wg_cidr_guard_allowed_ip_tokens }}"
+
+- name: Assert WG CIDR guard timer is enabled and active
+  ansible.builtin.assert:
+    that:
+      - wg_cidr_guard_timer_status.status is defined
+      - wg_cidr_guard_timer_status.status.LoadState == 'loaded'
+      - wg_cidr_guard_timer_status.status.UnitFileState == 'enabled'
+      - wg_cidr_guard_timer_status.status.ActiveState == 'active'
+    fail_msg: "WG CIDR guard timer is not enabled/active"
+    success_msg: "WG CIDR guard timer is enabled and active"
+
+- name: Assert required CIDR exists in runtime WireGuard allowed IPs
+  ansible.builtin.assert:
+    that:
+      - wg_cidr_guard_required_cidr_present | bool
+    fail_msg: >-
+      Required CIDR {{ wg_cidr_guard_required_cidr }} is missing from runtime
+      allowed IPs on interface {{ wg_cidr_guard_interface }}.
+    success_msg: >-
+      Required CIDR {{ wg_cidr_guard_required_cidr }} is present in runtime
+      allowed IPs on interface {{ wg_cidr_guard_interface }}.
+
+- name: Display WG CIDR guard verification summary
+  ansible.builtin.debug:
+    msg:
+      - "=== WG CIDR Guard Verification Report ==="
+      - "Timer ActiveState: {{ wg_cidr_guard_timer_status.status.ActiveState | default('unknown') }}"
+      - "Timer UnitFileState: {{ wg_cidr_guard_timer_status.status.UnitFileState | default('unknown') }}"
+      - "Service ActiveState: {{ wg_cidr_guard_service_status.status.ActiveState | default('unknown') }}"
+      - "WireGuard Interface: {{ wg_cidr_guard_interface }}"
+      - "Required CIDR: {{ wg_cidr_guard_required_cidr }}"
+      - "CIDR Present: {{ wg_cidr_guard_required_cidr_present }}"
+      - "========================================="

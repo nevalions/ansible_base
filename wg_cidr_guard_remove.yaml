@@ -1,0 +1,15 @@
+---
+- name: Remove WireGuard CIDR guard
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  tags:
+    - wireguard
+    - wg_cidr_guard
+    - remove
+
+  vars:
+    wg_cidr_guard_operation: "remove"
+
+  roles:
+    - wg_cidr_guard

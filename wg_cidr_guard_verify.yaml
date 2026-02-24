@@ -1,0 +1,15 @@
+---
+- name: Verify WireGuard CIDR guard
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  tags:
+    - wireguard
+    - wg_cidr_guard
+    - verify
+
+  vars:
+    wg_cidr_guard_operation: "verify"
+
+  roles:
+    - wg_cidr_guard

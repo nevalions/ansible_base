@@ -1,0 +1,45 @@
+---
+- name: Ensure libexec directory exists
+  ansible.builtin.file:
+    path: "{{ wg_cidr_guard_script_path | dirname }}"
+    state: directory
+    mode: '0755'
+
+- name: Deploy WG CIDR guard script
+  ansible.builtin.template:
+    src: wg-cidr-guard.sh.j2
+    dest: "{{ wg_cidr_guard_script_path }}"
+    mode: '0755'
+    backup: true
+
+- name: Deploy WG CIDR guard systemd service
+  ansible.builtin.template:
+    src: wg-cidr-guard.service.j2
+    dest: "/etc/systemd/system/{{ wg_cidr_guard_service_unit }}"
+    mode: '0644'
+  register: wg_cidr_guard_service_deployed
+
+- name: Deploy WG CIDR guard systemd timer
+  ansible.builtin.template:
+    src: wg-cidr-guard.timer.j2
+    dest: "/etc/systemd/system/{{ wg_cidr_guard_timer_unit }}"
+    mode: '0644'
+  register: wg_cidr_guard_timer_deployed
+
+- name: Reload systemd daemon for WG CIDR guard units
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - wg_cidr_guard_service_deployed.changed or wg_cidr_guard_timer_deployed.changed
+
+- name: Enable and start WG CIDR guard timer
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_timer_unit }}"
+    state: started
+    enabled: true
+
+- name: Run WG CIDR guard once after deployment
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_service_unit }}"
+    state: started
+  when: wg_cidr_guard_run_on_install | bool

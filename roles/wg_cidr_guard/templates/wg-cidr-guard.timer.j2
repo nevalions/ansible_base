@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic WireGuard CIDR guard check for {{ wg_cidr_guard_interface }}
+
+[Timer]
+OnBootSec={{ wg_cidr_guard_check_on_boot_delay }}
+OnUnitActiveSec={{ wg_cidr_guard_check_interval }}
+Persistent=true
+Unit={{ wg_cidr_guard_service_unit }}
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=WireGuard CIDR guard for {{ wg_cidr_guard_interface }}
+After=network-online.target wg-quick@{{ wg_cidr_guard_interface }}.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ wg_cidr_guard_script_path }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,32 @@
+---
+- name: Stop and disable WG CIDR guard timer
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_timer_unit }}"
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Stop WG CIDR guard service
+  ansible.builtin.systemd:
+    name: "{{ wg_cidr_guard_service_unit }}"
+    state: stopped
+  failed_when: false
+
+- name: Remove WG CIDR guard timer unit
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ wg_cidr_guard_timer_unit }}"
+    state: absent
+
+- name: Remove WG CIDR guard service unit
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ wg_cidr_guard_service_unit }}"
+    state: absent
+
+- name: Remove WG CIDR guard script
+  ansible.builtin.file:
+    path: "{{ wg_cidr_guard_script_path }}"
+    state: absent
+
+- name: Reload systemd daemon after removing WG CIDR guard units
+  ansible.builtin.systemd:
+    daemon_reload: true

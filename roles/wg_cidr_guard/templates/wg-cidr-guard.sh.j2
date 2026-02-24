@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LOCK_FILE="/run/wg-cidr-guard.lock"
+IFACE="{{ wg_cidr_guard_interface }}"
+CIDR="{{ wg_cidr_guard_required_cidr }}"
+SERVICE="wg-quick@${IFACE}.service"
+
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  exit 0
+fi
+
+if wg show "${IFACE}" allowed-ips | grep -qw "${CIDR}"; then
+  exit 0
+fi
+
+logger -t wg-cidr-guard "missing ${CIDR} on ${IFACE}; restarting ${SERVICE}"
+systemctl restart "${SERVICE}"
+
+if ! wg show "${IFACE}" allowed-ips | grep -qw "${CIDR}"; then
+  logger -t wg-cidr-guard "cidr ${CIDR} still missing after restart"
+  exit 1
+fi
