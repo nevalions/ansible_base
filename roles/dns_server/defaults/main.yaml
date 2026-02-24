@@ -3,6 +3,12 @@ skip_folder_check: true
 
 dns_listen_interface: "0.0.0.0"
 dns_operation: "install"
-dns_upstream_dns: "{{ vault_dns_upstream_dns | default(dns_upstrea_dns | default(['1.1.1.1', '8.8.8.8'])) }}"
+dns_upstream_dns: >-
+  {{
+    (vault_dns_upstream_dns_by_host | default({})).get(
+      inventory_hostname,
+      vault_dns_upstream_dns | default(['1.1.1.1', '8.8.8.8'])
+    )
+  }}
 dns_cache_size: 256
 dns_do_ipv6: false
