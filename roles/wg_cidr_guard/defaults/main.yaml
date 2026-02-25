@@ -3,7 +3,7 @@ skip_folder_check: true
 
 wg_cidr_guard_operation: "install"
 wg_cidr_guard_interface: "wg99"
-wg_cidr_guard_required_cidr: "11.11.0.0/24"
+wg_cidr_guard_required_cidr: "[metallb-vip-cidr]"
 wg_cidr_guard_check_interval: "2min"
 wg_cidr_guard_check_on_boot_delay: "2min"
 wg_cidr_guard_script_path: "/usr/local/libexec/wg-cidr-guard.sh"

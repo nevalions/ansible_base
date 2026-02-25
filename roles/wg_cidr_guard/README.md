@@ -15,7 +15,7 @@ The timer runs every `wg_cidr_guard_check_interval` and also after boot delay
 ## Default behavior
 
 - Interface: `wg99`
-- Required CIDR: `11.11.0.0/24`
+- Required CIDR: `[metallb-vip-cidr]`
 - On missing CIDR: restart `wg-quick@wg99.service`
 - Uses `flock` lock file at `/run/wg-cidr-guard.lock` to prevent overlap
 

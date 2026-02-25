@@ -49,7 +49,7 @@ obtain the real client IP.
 **Important:** use `vault_traefik_external_traffic_policy: Cluster` (not
 `Local`) alongside PROXY Protocol. With `Local`, kube-proxy only forwards
 traffic on nodes that host the Traefik pod. The MetalLB VIP subnet
-(`11.11.0.0/24`) is routed through WireGuard via the BGP-announcing node,
+(`[metallb-vip-cidr]`) is routed through WireGuard via the BGP-announcing node,
 and that node changes whenever the Traefik pod reschedules. `Cluster` policy
 lets any node forward to the Traefik pod regardless of placement, avoiding
 silent packet drops. Real client IP is preserved by the PROXY header, not by

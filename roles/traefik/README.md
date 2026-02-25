@@ -49,7 +49,7 @@ vault_traefik_proxy_protocol_enabled: true
 
 # WireGuard subnet (or any CIDR) that HAProxy connects from
 vault_traefik_proxy_protocol_trusted_ips:
-  - "9.11.0.0/24"
+  - "[wireguard-network-cidr]"
 ```
 
 ### externalTrafficPolicy: Cluster vs Local
