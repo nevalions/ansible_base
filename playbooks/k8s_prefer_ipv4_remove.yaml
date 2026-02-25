@@ -1,0 +1,17 @@
+---
+- name: Remove IPv4 preference from Kubernetes nodes
+  hosts: "{{ k8s_prefer_ipv4_hosts | default('kuber_small_all_with_services') }}"
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../vault_secrets.yml
+  tags:
+    - network
+    - ipv6
+    - k8s
+  tasks:
+    - name: Remove IPv4 preference line from gai.conf
+      ansible.builtin.lineinfile:
+        path: /etc/gai.conf
+        regexp: '^\s*precedence\s+::ffff:0:0/96\s+'
+        state: absent
