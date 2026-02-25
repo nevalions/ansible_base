@@ -60,3 +60,6 @@ traefik_wait_for_external_ip: "{{ vault_traefik_wait_for_external_ip | default(t
 traefik_external_traffic_policy: "{{ vault_traefik_external_traffic_policy | default('Local') }}"
 traefik_proxy_protocol_enabled: "{{ vault_traefik_proxy_protocol_enabled | default(false) }}"
 traefik_proxy_protocol_trusted_ips: "{{ vault_traefik_proxy_protocol_trusted_ips | default([]) }}"
+
+# Replica count (2 = recommended for rolling updates and basic HA)
+traefik_replica_count: "{{ vault_traefik_replica_count | default(2) }}"

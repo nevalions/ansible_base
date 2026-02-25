@@ -1,6 +1,12 @@
 ---
 # Traefik Helm values managed by Ansible
 
+replicaCount: {{ traefik_replica_count }}
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
 service:
   enabled: true
   type: LoadBalancer
