@@ -10,10 +10,11 @@ service:
     metallb.universe.tf/address-pool: "{{ traefik_metallb_address_pool_name }}"
     metallb.io/address-pool: "{{ traefik_metallb_address_pool_name }}"
 {% endif %}
-{% if traefik_load_balancer_ip | default('') | length > 0 %}
   spec:
+{% if traefik_load_balancer_ip | default('') | length > 0 %}
     loadBalancerIP: "{{ traefik_load_balancer_ip }}"
 {% endif %}
+    externalTrafficPolicy: {{ traefik_external_traffic_policy }}
 
 ingressClass:
   enabled: {{ traefik_ingress_class_enabled | bool | lower }}
@@ -50,6 +51,18 @@ ports:
           scheme: https
           permanent: true
 {% endif %}
+{% if traefik_proxy_protocol_enabled | default(false) | bool and traefik_proxy_protocol_trusted_ips | default([]) | length > 0 %}
+    proxyProtocol:
+      trustedIPs:
+{% for ip in traefik_proxy_protocol_trusted_ips %}
+        - "{{ ip }}"
+{% endfor %}
+    forwardedHeaders:
+      trustedIPs:
+{% for ip in traefik_proxy_protocol_trusted_ips %}
+        - "{{ ip }}"
+{% endfor %}
+{% endif %}
   websecure:
     expose:
       default: true
@@ -59,6 +72,18 @@ ports:
         enabled: {{ traefik_tls_enabled | bool | lower }}
 {% if traefik_certresolver_enabled | bool %}
         certResolver: {{ traefik_certresolver_name | default('letsencrypt') }}
+{% endif %}
+{% if traefik_proxy_protocol_enabled | default(false) | bool and traefik_proxy_protocol_trusted_ips | default([]) | length > 0 %}
+    proxyProtocol:
+      trustedIPs:
+{% for ip in traefik_proxy_protocol_trusted_ips %}
+        - "{{ ip }}"
+{% endfor %}
+    forwardedHeaders:
+      trustedIPs:
+{% for ip in traefik_proxy_protocol_trusted_ips %}
+        - "{{ ip }}"
+{% endfor %}
 {% endif %}
 
 {% if traefik_certresolver_enabled | bool %}

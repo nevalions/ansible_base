@@ -1,12 +1,16 @@
 # HAProxy Kubernetes API
 
-This role configures HAProxy for Kubernetes API server load balancing.
+This role configures HAProxy for Kubernetes API server load balancing and
+optional HTTP/HTTPS ingress forwarding to the Kubernetes cluster via a
+MetalLB BGP VIP.
 
 ## Purpose
 
 - Configure HAProxy as TCP load balancer for Kubernetes API server
 - Support single or multiple control plane nodes
 - Health checks for API server backend(s)
+- Forward HTTP/HTTPS ingress traffic to a MetalLB BGP VIP (optional)
+- Support PROXY Protocol v2 for real client IP preservation (optional)
 
 ## Variables
 
@@ -21,7 +25,35 @@ vault_haproxy_k8s_backend_ip: "[control-plane-ip]"
 # Kubernetes Network Configuration
 vault_k8s_pod_subnet: "[pod-network-cidr]"
 vault_k8s_service_subnet: "[service-network-cidr]"
+
+# Ingress forwarding (HTTP/HTTPS → MetalLB BGP VIP)
+vault_haproxy_ingress_enabled: true
+vault_haproxy_ingress_backend_ip: "[bgp-vip-address]"
+vault_haproxy_ingress_http_port: 80
+vault_haproxy_ingress_https_port: 443
+vault_haproxy_ingress_backend_http_port: 80
+vault_haproxy_ingress_backend_https_port: 443
+
+# PROXY Protocol v2 — send real client IP to Traefik
+# Requires Traefik to be configured with vault_traefik_proxy_protocol_enabled: true
+# and vault_traefik_external_traffic_policy: Cluster
+vault_haproxy_ingress_proxy_protocol: true
 ```
+
+### PROXY Protocol and externalTrafficPolicy
+
+When `vault_haproxy_ingress_proxy_protocol: true` is set, HAProxy appends a
+PROXY v2 header to every ingress connection. Traefik reads this header to
+obtain the real client IP.
+
+**Important:** use `vault_traefik_external_traffic_policy: Cluster` (not
+`Local`) alongside PROXY Protocol. With `Local`, kube-proxy only forwards
+traffic on nodes that host the Traefik pod. The MetalLB VIP subnet
+(`11.11.0.0/24`) is routed through WireGuard via the BGP-announcing node,
+and that node changes whenever the Traefik pod reschedules. `Cluster` policy
+lets any node forward to the Traefik pod regardless of placement, avoiding
+silent packet drops. Real client IP is preserved by the PROXY header, not by
+`externalTrafficPolicy: Local`.
 
 ## Usage
 

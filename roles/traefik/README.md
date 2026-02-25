@@ -36,3 +36,40 @@ Recommended:
 ## Variables
 
 See `roles/traefik/defaults/main.yaml`.
+
+Key vault variables:
+
+```yaml
+# externalTrafficPolicy for the Traefik LoadBalancer service.
+# Must be "Cluster" when PROXY Protocol is enabled — see note below.
+vault_traefik_external_traffic_policy: "Cluster"
+
+# Enable PROXY Protocol v2 support (HAProxy must send send-proxy-v2)
+vault_traefik_proxy_protocol_enabled: true
+
+# WireGuard subnet (or any CIDR) that HAProxy connects from
+vault_traefik_proxy_protocol_trusted_ips:
+  - "9.11.0.0/24"
+```
+
+### externalTrafficPolicy: Cluster vs Local
+
+When Traefik runs behind HAProxy with PROXY Protocol enabled, set
+`vault_traefik_external_traffic_policy: Cluster`.
+
+**Why not `Local`?**  
+With `Local`, MetalLB only announces the VIP from nodes where Traefik has a
+local endpoint. The MetalLB VIP subnet is routed through WireGuard to
+whichever node BGP-advertises it. If that BGP peer's WireGuard AllowedIPs
+for the VIP subnet does not match the node Traefik currently runs on, packets
+are silently dropped:
+
+```
+HAProxy → WireGuard (AllowedIPs routes VIP to node A)
+         → node A has no local Traefik endpoint (externalTrafficPolicy:Local)
+         → KUBE-SVL chain empty → packet dropped
+```
+
+With `Cluster`, any node (including the one WireGuard routes to) forwards
+the packet to the Traefik pod via the pod overlay network. Real client IP is
+preserved by the PROXY v2 header, not by `externalTrafficPolicy: Local`.

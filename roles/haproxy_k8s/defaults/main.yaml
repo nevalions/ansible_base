@@ -41,3 +41,6 @@ haproxy_k8s_timeout_server: 30000
 haproxy_k8s_check_interval: 2000
 haproxy_k8s_check_rise: 2
 haproxy_k8s_check_fall: 3
+
+# PROXY protocol for real client IPs (requires Traefik to accept proxyProtocol)
+haproxy_ingress_proxy_protocol: "{{ vault_haproxy_ingress_proxy_protocol | default(false) }}"

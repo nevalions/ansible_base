@@ -55,3 +55,8 @@ traefik_remove_namespace: "{{ vault_traefik_remove_namespace | default(false) }}
 
 # Optional: wait for EXTERNAL-IP on install
 traefik_wait_for_external_ip: "{{ vault_traefik_wait_for_external_ip | default(true) }}"
+
+# PROXY protocol for real client IPs (requires HAProxy to send-proxy-v2)
+traefik_external_traffic_policy: "{{ vault_traefik_external_traffic_policy | default('Local') }}"
+traefik_proxy_protocol_enabled: "{{ vault_traefik_proxy_protocol_enabled | default(false) }}"
+traefik_proxy_protocol_trusted_ips: "{{ vault_traefik_proxy_protocol_trusted_ips | default([]) }}"

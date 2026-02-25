@@ -70,7 +70,7 @@ backend ingress-http-backend
     option tcp-check
     timeout connect {{ haproxy_k8s_timeout_connect }}
     timeout server  {{ haproxy_k8s_timeout_server }}
-    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_http_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_http_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_ingress_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
 # END ANSIBLE MANAGED SECTION - Ingress HTTP Backend
 
 # BEGIN ANSIBLE MANAGED SECTION - Ingress HTTPS Frontend
@@ -88,6 +88,6 @@ backend ingress-https-backend
     option tcp-check
     timeout connect {{ haproxy_k8s_timeout_connect }}
     timeout server  {{ haproxy_k8s_timeout_server }}
-    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_https_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+    server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_https_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_ingress_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
 # END ANSIBLE MANAGED SECTION - Ingress HTTPS Backend
 {% endif %}
