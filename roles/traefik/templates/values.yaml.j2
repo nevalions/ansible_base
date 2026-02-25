@@ -1,7 +1,8 @@
 ---
 # Traefik Helm values managed by Ansible
 
-replicaCount: {{ traefik_replica_count }}
+deployment:
+  replicas: {{ traefik_replica_count }}
 
 podDisruptionBudget:
   enabled: true
