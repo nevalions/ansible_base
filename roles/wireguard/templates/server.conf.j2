@@ -44,52 +44,62 @@ Address = {{ server_ip }}/{{ vault_wg_network_cidr.split('/')[1] }}
 PrivateKey = {{ vault_wg_peer_private_keys[server_name] | default(vault_wg_server_private_key) }}
 ListenPort = {{ server_port | default(vault_wg_server_port) }}
 
-# BEGIN ANSIBLE MANAGED PEERS
-{% set ns = namespace(seen_ips=[], reserved_peer_ips=[]) %}
-{% set current_in_bgp_routers = inventory_hostname in groups.get('bgp_routers', []) %}
-{% for peer in vault_wg_peers %}
-{%   set ns.reserved_peer_ips = (
-      ns.reserved_peer_ips +
-      (
-        peer.allowed_ips
-        | default(peer.address)
-        | string
-        | replace(' ', '')
-        | split(',')
-        | reject('equalto', '')
-        | list
-      )
-    ) | unique | list %}
+{% for rule in wg_postup_rules | default([]) %}
+PostUp = {{ rule }}
 {% endfor %}
+{% for rule in wg_predown_rules | default([]) %}
+PreDown = {{ rule }}
+{% endfor %}
+
+# BEGIN ANSIBLE MANAGED PEERS
+{#
+  Routing ownership rules (in priority order):
+  1. vault_wg_peers_extra_cidrs[peer.name] — explicit per-peer extra CIDRs (authoritative)
+  2. is_server: true + vault_wg_routed_cidrs — legacy fallback (only when no explicit entry)
+  3. No dedup-based ownership assignment: each peer owns exactly what is configured for it.
+     If two peers claim the same CIDR, the first one wins in the kernel (WireGuard limitation).
+#}
+{% set ns = namespace(all_assigned_cidrs=[]) %}
+{% set current_in_bgp_routers = inventory_hostname in groups.get('bgp_routers', []) %}
+
 {% for peer in vault_wg_peers %}
 {%   if peer.host_group is defined and inventory_hostname not in groups[peer.host_group] | default([]) %}
-{%     set peer_ips = peer.allowed_ips | default(peer.address) | string | replace(' ', '') | split(',') | reject('equalto', '') | unique | list %}
-{%     if (peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
-{%       set routed_extra_ips = (vault_wg_routed_cidrs | default([]) | list) %}
+{#     Compute base peer IPs #}
+{%     set peer_base_ips = peer.allowed_ips | default(peer.address) | string | replace(' ', '') | split(',') | reject('equalto', '') | unique | list %}
+
+{#     Determine extra CIDRs for this peer (explicit takes precedence over legacy is_server) #}
+{%     if peer.name in (vault_wg_peers_extra_cidrs | default({})) %}
+{#       Explicit mode: use vault_wg_peers_extra_cidrs[peer.name] #}
+{%       set extra_cidrs = vault_wg_peers_extra_cidrs[peer.name] | list %}
+{%     elif (peer.is_server | default(false) | bool) and (vault_wg_routed_cidrs | default([]) | length > 0) %}
+{#       Legacy mode: is_server gets vault_wg_routed_cidrs, skip if peer is BGP-to-BGP #}
+{%       set routed_extra = vault_wg_routed_cidrs | list %}
 {%       set peer_in_bgp_routers = (
-          peer.host_group is defined
-          and peer.host_group in groups
-          and ((groups[peer.host_group] | default([])) | intersect(groups.get('bgp_routers', [])) | length > 0)
-        ) %}
+            peer.host_group is defined
+            and peer.host_group in groups
+            and ((groups[peer.host_group] | default([])) | intersect(groups.get('bgp_routers', [])) | length > 0)
+          ) %}
 {%       if current_in_bgp_routers and peer_in_bgp_routers %}
-{%         set routed_extra_ips = [] %}
+{%         set routed_extra = [] %}
 {%       endif %}
-{%       set routed_extra_ips = routed_extra_ips | reject('in', ns.reserved_peer_ips) | list %}
-{%       set candidate_ips = (peer_ips + routed_extra_ips) | unique | list %}
+{%       set extra_cidrs = routed_extra %}
 {%     else %}
-{%       set candidate_ips = peer_ips %}
+{%       set extra_cidrs = [] %}
 {%     endif %}
-{%     set effective_ips = candidate_ips | reject('in', ns.seen_ips) | list %}
-{%     if effective_ips | length > 0 %}
+
+{#     Build candidate AllowedIPs = base + extra, deduplicated #}
+{%     set candidate_ips = (peer_base_ips + extra_cidrs) | unique | list %}
+
+{%     if candidate_ips | length > 0 %}
 [Peer]
 # {{ peer.name }} - {{ peer.host_group | default('unknown') }}
 PublicKey = {{ vault_wg_peer_public_keys[peer.name] }}
-AllowedIPs = {{ effective_ips | join(', ') }}
-{%   if peer.endpoint is defined %}
+AllowedIPs = {{ candidate_ips | join(', ') }}
+{%       if peer.endpoint is defined %}
 Endpoint = {{ peer.endpoint }}
-{%   endif %}
+{%       endif %}
 PersistentKeepalive = 25
-{%       set ns.seen_ips = (ns.seen_ips + effective_ips) | unique | list %}
+{%       set ns.all_assigned_cidrs = (ns.all_assigned_cidrs + candidate_ips) | list %}
 {%     endif %}
 {%   endif %}
 {% endfor %}

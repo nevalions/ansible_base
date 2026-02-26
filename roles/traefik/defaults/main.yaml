@@ -61,5 +61,9 @@ traefik_external_traffic_policy: "{{ vault_traefik_external_traffic_policy | def
 traefik_proxy_protocol_enabled: "{{ vault_traefik_proxy_protocol_enabled | default(false) }}"
 traefik_proxy_protocol_trusted_ips: "{{ vault_traefik_proxy_protocol_trusted_ips | default([]) }}"
 
-# Replica count (2 = recommended for rolling updates and basic HA)
+# Deployment kind: Deployment or DaemonSet
+# DaemonSet recommended with externalTrafficPolicy: Local for real client IPs
+traefik_deployment_kind: "{{ vault_traefik_deployment_kind | default('Deployment') }}"
+
+# Replica count (only applies when kind == Deployment)
 traefik_replica_count: "{{ vault_traefik_replica_count | default(2) }}"

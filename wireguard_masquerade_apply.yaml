@@ -1,0 +1,65 @@
+---
+# Apply MASQUERADE iptables rule on K8s worker nodes so that pod return traffic
+# (src 10.244.0.0/16) destined for HAProxy (9.11.0.100) is SNATed to the
+# worker's own WireGuard IP. Required when Traefik uses externalTrafficPolicy: Local
+# because kube-proxy does NOT masquerade external traffic in that mode, causing
+# reply packets to carry pod IPs that HAProxy cannot route back.
+#
+# Usage:
+#   ansible-playbook wireguard_masquerade_apply.yaml \
+#     --vault-password-file vault_password_client.sh \
+#     --become-password-file /path/to/become_pass
+#
+# Check mode (dry-run):
+#   ansible-playbook wireguard_masquerade_apply.yaml --check \
+#     --vault-password-file vault_password_client.sh
+
+- name: Apply pod MASQUERADE rule on Kubernetes worker nodes
+  hosts: kuber_small_workers:vas_workers_all
+  become: true
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+
+  vars:
+    masq_src: "{{ vault_k8s_pod_subnet }}"       # pod CIDR, e.g. [pod-network-cidr]
+    masq_dst: "{{ vault_wg_masquerade_dst }}"    # WG IP of the ingress node (from vault)
+
+  tasks:
+    - name: Check if MASQUERADE rule already exists
+      ansible.builtin.command:
+        cmd: "iptables -t nat -C POSTROUTING -s {{ masq_src }} -d {{ masq_dst }} -j MASQUERADE"
+      register: masq_check
+      changed_when: false
+      failed_when: false
+
+    - name: Add MASQUERADE rule if missing
+      ansible.builtin.command:
+        cmd: "iptables -t nat -A POSTROUTING -s {{ masq_src }} -d {{ masq_dst }} -j MASQUERADE"
+      when:
+        - masq_check.rc != 0
+        - not ansible_check_mode
+      register: masq_added
+
+    - name: Report rule was already present
+      ansible.builtin.debug:
+        msg: "[{{ inventory_hostname }}] MASQUERADE rule already active (no change needed)"
+      when: masq_check.rc == 0
+
+    - name: Report rule was added
+      ansible.builtin.debug:
+        msg: "[{{ inventory_hostname }}] MASQUERADE rule ADDED: -s {{ masq_src }} -d {{ masq_dst }} -j MASQUERADE"
+      when:
+        - masq_check.rc != 0
+        - masq_added is not skipped
+
+    - name: Show current NAT POSTROUTING rules
+      ansible.builtin.command:
+        cmd: iptables -t nat -S POSTROUTING
+      register: postrouting_rules
+      changed_when: false
+      failed_when: false
+
+    - name: Display NAT POSTROUTING rules
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} POSTROUTING:\n{{ postrouting_rules.stdout }}"

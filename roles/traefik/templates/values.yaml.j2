@@ -2,6 +2,7 @@
 # Traefik Helm values managed by Ansible
 
 deployment:
+  kind: {{ traefik_deployment_kind | default('Deployment') }}
   replicas: {{ traefik_replica_count }}
 
 podDisruptionBudget:

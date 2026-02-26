@@ -5,6 +5,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-02-26
+
+### Added
+
+- **filter_plugins/wg_routing_filters.py** (new):
+  - `build_peers_extra_cidrs` filter: computes explicit per-peer `AllowedIPs` assignments
+    from Ansible group membership, replacing complex Jinja2 deduplication logic in templates.
+  - MetalLB pool CIDR assigned to the **first worker peer** only (WireGuard kernel dedup
+    silently drops duplicates; Traefik DaemonSet means any worker handles VIP traffic).
+  - Pod CIDR intentionally omitted — MASQUERADE PostUp on workers rewrites pod reply src
+    to worker wg99 IP, so HAProxy never needs a pod CIDR route.
+  - DB WG route added only when DB has no dedicated peer entry, preventing AllowedIPs conflicts.
+  - `peers_in_groups` helper for group-membership filtering.
+
+- **wireguard_manage.yaml** — explicit per-peer routing ownership:
+  - Replaces legacy `is_server + vault_wg_routed_cidrs` with `vault_wg_peers_extra_cidrs`
+    computed by `build_peers_extra_cidrs`.
+  - Adds `wg_worker_postup_rules` / `wg_worker_predown_rules` for worker MASQUERADE rules
+    (`iptables -t nat -A POSTROUTING -s <pod_cidr> -d <haproxy_wg_ip> -j MASQUERADE`)
+    required when Traefik uses `externalTrafficPolicy: Local`.
+  - `vault_wg_routed_cidrs` is now always `[]` — legacy is_server path is a no-op.
+  - Debug task logs computed `wg_computed_peers_extra_cidrs`; assert validates no intra-peer
+    CIDR duplicates.
+
+- **roles/wireguard/templates/client.conf.j2** and **server.conf.j2** — template refactor:
+  - Removed global `ns.seen_ips` / `ns.reserved_peer_ips` deduplication state. Each peer
+    now owns exactly the CIDRs configured for it; WireGuard kernel dedup is the source of
+    truth for conflicts.
+  - Added `wg_postup_rules` / `wg_predown_rules` rendering loops (PostUp/PreDown lines).
+  - `vault_wg_peers_extra_cidrs` lookup takes precedence over legacy `is_server` path.
+  - Jinja2 indentation and comment blocks added for maintainability.
+
+- **wireguard_masquerade_apply.yaml** (new playbook):
+  - Idempotent one-shot playbook to apply MASQUERADE rule on K8s workers for the pod→HAProxy
+    reply path. Checks if rule exists before adding; displays current POSTROUTING table.
+
+- **docs/REDEPLOY_FROM_SCRATCH.md** (new):
+  - Full ordered runbook for rebuilding the cluster from zero.
+  - Covers all 18 phases: WireGuard → DNS → BGP → HAProxy → Kubernetes → MetalLB →
+    Traefik → MASQUERADE → NFS CSI → verification.
+  - Troubleshooting quick reference table.
+
+- **roles/traefik/defaults/main.yaml**:
+  - `traefik_deployment_kind` variable (`vault_traefik_deployment_kind`, default `Deployment`).
+    Supports `DaemonSet` for `externalTrafficPolicy: Local` deployments.
+
+- **roles/traefik/tasks/main.yaml**:
+  - Separate rollout-wait tasks for DaemonSet (`ds/traefik`) and Deployment (`deploy/traefik`),
+    each guarded by `when: traefik_deployment_kind == '...'`.
+
+- **roles/traefik/templates/values.yaml.j2**:
+  - `deployment.kind` rendered from `traefik_deployment_kind`.
+
+- **WIREGUARD_SETUP.md** — AllowedIPs design rules section:
+  - Documents WireGuard kernel-level CIDR deduplication behaviour.
+  - Table: which CIDR is assigned to which peer and why.
+  - VIP failover and `notify_master` wg-api-vip-notify.sh pattern.
+  - Stale interface recovery (`ip link delete wg99`).
+
+### Changed
+
+- **wireguard_manage.yaml** routing comment block: replaced "MetalLB pool IS included"
+  rationale with accurate description of BGP-primary / WG-secondary routing design and
+  root cause of the previous MetalLB→Traefik HTTP 000 failure.
+
+### Fixed
+
+- **Traefik real-client-IP with externalTrafficPolicy: Local** (root cause fix):
+  - The primary control-plane peer (is_server: true) previously had the MetalLB pool CIDR
+    in WireGuard AllowedIPs via `vault_wg_routed_cidrs`. WireGuard's kernel scope-link route
+    (distance 0) beat FRR BGP routes (distance 20), directing MetalLB VIP traffic to the
+    control plane — which has no Traefik pod — causing HTTP 000 responses.
+  - Fix: MetalLB CIDR is **never** added to WireGuard AllowedIPs on HAProxy; BGP routes
+    (learned from worker nodes) are the authoritative path to the MetalLB pool.
+  - Worker nodes MASQUERADE pod reply traffic to their wg99 IPs before leaving the tunnel.
+
 ## [1.9.0] - 2026-02-26
 
 ### Added

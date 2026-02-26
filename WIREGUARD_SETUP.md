@@ -157,6 +157,54 @@ ansible -i hosts_bay.ini [SERVER_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
 ansible -i hosts_bay.ini [CLIENT_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
 ```
 
+## AllowedIPs Design Rules
+
+### WireGuard CIDR deduplication (critical)
+
+WireGuard silently deduplicates `AllowedIPs` across peers at the kernel level.
+If the same CIDR appears in multiple `[Peer]` entries, **only the first occurrence is kept**.
+The rest are silently dropped — no error, no warning.
+
+**Consequences for this cluster:**
+
+| CIDR | Assigned to | Why |
+|------|-------------|-----|
+| `[k8s-api-vip]/32` (k8s API VIP) | Primary control-plane peer only | Primary plane holds the keepalived VIP (priority 150). If the secondary plane also lists it, WG dedup gives it to whichever peer appears first in the config — workers routing to the wrong peer lose API access. |
+| `[metallb-pool-cidr]` (MetalLB pool) | First worker peer only (on HAProxy node) | Traefik is a DaemonSet; any worker handles it. Only one peer can own the CIDR. The first worker in `vault_wg_peers` is authoritative. |
+| `[pod-network-cidr]` (pod CIDR) | Not in AllowedIPs | Workers apply `iptables MASQUERADE` on PostUp — pod replies are rewritten to worker WG IPs before leaving the tunnel. No peer entry needed. |
+
+**Rule:** In `vault_wg_peers`, the peer that should own a shared CIDR must appear **before** any other peer that might claim the same CIDR.
+
+### VIP failover and WireGuard
+
+The k8s API VIP (`[k8s-api-vip]`) floats between control-plane peers via Keepalived.
+When the VIP moves, the WireGuard `AllowedIPs` routing does not move automatically.
+
+This is handled by a `notify_master` script (`/usr/local/sbin/wg-api-vip-notify.sh`) that
+updates the runtime WG config via `wg set` when keepalived promotes a new MASTER.
+
+To persist the change after a failover, re-run:
+```bash
+ansible-playbook wireguard_manage.yaml --vault-password-file vault_password_client.sh \
+  --limit kuber_small_planes,kuber_small_workers,vas_workers_all
+```
+
+### Stale interface after failed restart
+
+If `wg-quick` fails to stop cleanly (e.g. a PostDown iptables rule references a rule that
+no longer exists), the `wg99` interface is left up. A subsequent `systemctl start` fails with:
+```
+wg-quick: `wg99' already exists
+```
+
+Fix:
+```bash
+sudo ip link delete wg99
+sudo systemctl restart wg-quick@wg99
+```
+
+---
+
 ## Troubleshooting
 
  ### Service fails to start

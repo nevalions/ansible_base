@@ -72,12 +72,26 @@ vault_wg_allowed_networks:
    - "[vpn-network-cidr]"
    - "127.0.0.0/8"
 
-# Routed CIDRs (optional)
+# Routed CIDRs (optional, legacy)
 # Networks that are routed through WireGuard server peers.
-# These CIDRs are added to AllowedIPs for peers with is_server: true
-# Example: Kubernetes pod CIDR ([pod-network-cidr] for Calico)
+# These CIDRs are added to AllowedIPs for ALL peers with is_server: true.
+# Prefer vault_wg_peers_extra_cidrs for explicit per-peer control.
 vault_wg_routed_cidrs: []
 
+# Per-peer extra AllowedIPs (explicit, authoritative)
+# Maps peer name to list of additional CIDRs to append to that peer's AllowedIPs.
+# These are added on TOP of the peer's base allowed_ips/address.
+# Takes precedence over the legacy is_server+vault_wg_routed_cidrs mechanism.
+#
+# Example:
+#   vault_wg_peers_extra_cidrs:
+#     bay_bgp: ["11.11.0.0/24"]          # MetalLB pool - BGP router routes to workers
+#     bay_worker2: ["10.244.0.0/16"]     # Pod CIDR - return path for Traefik replies
+#     bay_worker_office1: ["10.244.0.0/16"]
+#     bay_worker_super1: ["10.244.0.0/16"]
+#     vas_worker1: ["10.244.0.0/16"]
+vault_wg_peers_extra_cidrs: {}
+
 # Deprecated: Primary server peer name for routed CIDRs
-# Use is_server: true on individual peers instead
+# Use vault_wg_peers_extra_cidrs instead
 vault_wg_primary_server_name: ""

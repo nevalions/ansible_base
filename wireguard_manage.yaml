@@ -72,33 +72,107 @@
       ansible.builtin.set_fact:
         wg_allowed_networks_merged: "{{ (vault_wg_allowed_networks | default([])) + [vault_k8s_pod_subnet] | unique }}"
 
-    # NOTE: Pod CIDR is NOT included in routed_cidrs because Calico IPIP
-    # encapsulates pod traffic and sends it to node WireGuard IPs ([vpn-network-cidr]).
-    # Including pod CIDR creates a broad 10.244.0.0/16 route via wg99 that
-    # conflicts with Calico's per-node /26 routes via tunl0, breaking
-    # ClusterIP connectivity from pods (e.g. MetalLB controller cannot
-    # reach kubernetes API at 10.96.0.1).
+    # Routing design for Traefik real-client-IP with externalTrafficPolicy: Local
     #
-    # MetalLB pool IS included so HAProxy can reach Traefik LoadBalancer IP
-    # through WireGuard, allowing external HTTP/HTTPS traffic to reach K8s ingress.
-    - name: Set WireGuard routed CIDRs (MetalLB pool, optional DB WG route)
+    # Root cause of previous failure:
+    #   bay_plane1 (is_server: true) had vault_wg_routed_cidrs which included the
+    #   MetalLB pool CIDR (11.11.0.0/24). WireGuard's kernel scope-link route
+    #   (distance 0) for that CIDR beat the FRR BGP routes (distance 20).
+    #   Result: traffic to 11.11.0.1 went via plane1's WG tunnel — plane1 has no
+    #   Traefik pod, so connections failed with HTTP 000.
+    #
+    # Fix applied here:
+    #   - MetalLB pool CIDR is NEVER added to any WireGuard peer's AllowedIPs.
+    #     Both HAProxy and bay_bgp learn 11.11.0.0/24 via FRR BGP from workers.
+    #     BGP routes resolve to correct worker nodes (9.11.0.22, .31, .39, .41).
+    #   - Worker peers get pod CIDR (10.244.0.0/16) in AllowedIPs on HAProxy.
+    #     After MASQUERADE on workers, Traefik pod replies arrive at HAProxy from
+    #     worker WG IPs — but HAProxy needs 10.244.0.0/16 routed via workers to
+    #     accept the inbound packets correctly.
+    #   - vault_wg_routed_cidrs is set to [] — legacy is_server mechanism disabled.
+
+    - name: Normalize MetalLB pool CIDR
       ansible.builtin.set_fact:
-        wg_routed_cidrs: >-
+        wg_metallb_pool_cidr_normalized: >-
           {{
-            [
-              (
-                vault_metallb_pool_cidr
-                if (vault_metallb_pool_cidr | string) is search('/')
-                else (vault_metallb_pool_cidr | string) + '/24'
-              ),
-              (
-                (vault_db_wg_route_cidr | default(''))
-                if inventory_hostname not in (groups.get('db', []))
-                else ''
+            vault_metallb_pool_cidr
+            if (vault_metallb_pool_cidr | string) is search('/')
+            else (vault_metallb_pool_cidr | string) + '/24'
+          }}
+
+    # Build per-peer extra AllowedIPs using the wg_routing_filters plugin.
+    # build_peers_extra_cidrs(peers, groups, bgp_hosts, worker_hosts, metallb_cidr, pod_cidr, db_route, db_hosts)
+    #
+    # Routing ownership rules (replaces legacy is_server + vault_wg_routed_cidrs):
+    #   MetalLB CIDR → intentionally omitted from WG (BGP routes used; WG link-route would override)
+    #   Pod CIDR     → intentionally omitted from WG (MASQUERADE on workers rewrites to worker /32)
+    #   DB WG route  → only added when DB has no dedicated peer entry (avoids AllowedIPs conflict)
+    - name: Build per-peer extra CIDRs (explicit routing ownership)
+      ansible.builtin.set_fact:
+        wg_computed_peers_extra_cidrs: >-
+          {{
+            vault_wg_peers | default([])
+            | build_peers_extra_cidrs(
+                groups,
+                groups.get('bgp_routers', []),
+                groups.get('kuber_small_workers', []) + groups.get('vas_workers_all', []),
+                wg_metallb_pool_cidr_normalized,
+                vault_k8s_pod_subnet,
+                vault_db_wg_route_cidr | default(''),
+                groups.get('db', [])
               )
-            ]
-            | reject('equalto', '')
-            | list
+          }}
+
+    - name: Debug computed peer extra CIDRs
+      ansible.builtin.debug:
+        msg: "Per-peer extra CIDRs: {{ wg_computed_peers_extra_cidrs }}"
+
+    - name: Assert no duplicate CIDRs within a peer entry
+      ansible.builtin.assert:
+        that:
+          - item.value | length == (item.value | unique | list | length)
+        fail_msg: "Duplicate CIDRs for peer {{ item.key }}: {{ item.value }}"
+        success_msg: "No duplicate CIDRs for peer {{ item.key }}"
+      loop: "{{ wg_computed_peers_extra_cidrs | dict2items }}"
+
+    - name: Set WireGuard routed CIDRs (legacy - empty; all routing is now explicit)
+      ansible.builtin.set_fact:
+        wg_routed_cidrs: []
+        # vault_wg_masquerade_dst: WG IP of the ingress/HAProxy node.
+        # Defined here so worker PostUp/PreDown rules can reference it without
+        # embedding a hardcoded dict key. Override via vault_wg_masquerade_dst in vault.
+        vault_wg_masquerade_dst: "{{ vault_wg_masquerade_dst | default(vault_wg_server_ips.values() | list | first) }}"
+      # vault_wg_peers_extra_cidrs takes full ownership of CIDRs.
+      # The legacy is_server + vault_wg_routed_cidrs path in templates is
+      # now a no-op (empty list), preventing unintended route ownership.
+
+    - name: Set masquerade PostUp/PreDown rules for worker nodes
+      # Workers need MASQUERADE so Traefik pod reply traffic (pod CIDR src)
+      # is SNATed to the worker's own WireGuard IP before going back to the HAProxy node.
+      # Required when externalTrafficPolicy: Local is used (kube-proxy does not masquerade).
+      # vault_wg_masquerade_dst: WG IP of the HAProxy/ingress node (from vault_wg_server_ips)
+      ansible.builtin.set_fact:
+        wg_worker_postup_rules: >-
+          {{
+            vault_wg_worker_postup_rules | default([
+              'iptables -t nat -A POSTROUTING -s ' + vault_k8s_pod_subnet + ' -d ' + vault_wg_masquerade_dst + ' -j MASQUERADE'
+            ])
+            if inventory_hostname in (
+              groups.get('kuber_small_workers', []) +
+              groups.get('vas_workers_all', [])
+            )
+            else []
+          }}
+        wg_worker_predown_rules: >-
+          {{
+            vault_wg_worker_predown_rules | default([
+              'iptables -t nat -D POSTROUTING -s ' + vault_k8s_pod_subnet + ' -d ' + vault_wg_masquerade_dst + ' -j MASQUERADE'
+            ])
+            if inventory_hostname in (
+              groups.get('kuber_small_workers', []) +
+              groups.get('vas_workers_all', [])
+            )
+            else []
           }}
 
     - name: Apply WireGuard role
@@ -106,7 +180,16 @@
         name: wireguard
       vars:
         vault_wg_allowed_networks: "{{ wg_allowed_networks_merged }}"
+        # Legacy vault_wg_routed_cidrs is now empty - all CIDRs are explicit via
+        # vault_wg_peers_extra_cidrs. This prevents is_server peers from
+        # accidentally claiming MetalLB pool routes.
         vault_wg_routed_cidrs: "{{ wg_routed_cidrs }}"
+        # Explicit per-peer extra CIDRs (authoritative):
+        #   - BGP router peers get MetalLB pool CIDR (HAProxy routes via FRR)
+        #   - Worker peers get pod CIDR (return path for Traefik pod replies)
+        vault_wg_peers_extra_cidrs: "{{ wg_computed_peers_extra_cidrs }}"
+        wg_postup_rules: "{{ wg_worker_postup_rules }}"
+        wg_predown_rules: "{{ wg_worker_predown_rules }}"
 
     - name: Check if dnsmasq service exists
       ansible.builtin.systemd:

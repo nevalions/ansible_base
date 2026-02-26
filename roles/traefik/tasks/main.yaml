@@ -155,7 +155,18 @@
       register: traefik_helm_install
       changed_when: "'deployed' in traefik_helm_install.stdout or 'upgraded' in traefik_helm_install.stdout"
 
-    - name: Wait for Traefik deployment rollout
+    - name: Wait for Traefik DaemonSet rollout
+      ansible.builtin.command: kubectl -n {{ traefik_namespace }} rollout status ds/{{ traefik_release_name }} --timeout=300s
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: traefik_rollout
+      changed_when: false
+      retries: 10
+      delay: 10
+      until: traefik_rollout.rc == 0
+      when: traefik_deployment_kind | default('Deployment') == 'DaemonSet'
+
+    - name: Wait for Traefik Deployment rollout
       ansible.builtin.command: kubectl -n {{ traefik_namespace }} rollout status deploy/{{ traefik_release_name }} --timeout=300s
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
@@ -164,6 +175,7 @@
       retries: 10
       delay: 10
       until: traefik_rollout.rc == 0
+      when: traefik_deployment_kind | default('Deployment') == 'Deployment'
 
     - name: Wait for Traefik external IP assignment
       ansible.builtin.command: >-

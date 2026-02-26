@@ -40,9 +40,17 @@ See `roles/traefik/defaults/main.yaml`.
 Key vault variables:
 
 ```yaml
+# Deployment kind: "Deployment" (default) or "DaemonSet"
+# DaemonSet is recommended when using externalTrafficPolicy: Local
+# so that every node that BGP-advertises the MetalLB VIP has a local
+# Traefik pod (prevents KUBE-SVL packet drops).
+vault_traefik_deployment_kind: "DaemonSet"
+
+# Replica count — only applies when vault_traefik_deployment_kind == "Deployment"
+vault_traefik_replica_count: 2
+
 # externalTrafficPolicy for the Traefik LoadBalancer service.
-# Must be "Cluster" when PROXY Protocol is enabled — see note below.
-vault_traefik_external_traffic_policy: "Cluster"
+vault_traefik_external_traffic_policy: "Local"
 
 # Enable PROXY Protocol v2 support (HAProxy must send send-proxy-v2)
 vault_traefik_proxy_protocol_enabled: true
@@ -52,24 +60,42 @@ vault_traefik_proxy_protocol_trusted_ips:
   - "[wireguard-network-cidr]"
 ```
 
+### Deployment kind: Deployment vs DaemonSet
+
+**DaemonSet** (recommended for this cluster):
+
+Use `vault_traefik_deployment_kind: DaemonSet` when `externalTrafficPolicy: Local`
+is set. Traefik runs on every worker node. MetalLB (BGP mode) announces the VIP
+from every node that has a local Traefik pod — any worker handling the connection
+is correct.
+
+The rollout wait task automatically switches to `ds/traefik` instead of
+`deploy/traefik` when `DaemonSet` is selected.
+
+**Deployment** (default):
+
+Use when replica scheduling is preferred over per-node presence. With `externalTrafficPolicy: Cluster`
+(required for Deployment + PROXY Protocol), kube-proxy forwards to any available
+replica regardless of which node received the packet.
+
 ### externalTrafficPolicy: Cluster vs Local
 
-When Traefik runs behind HAProxy with PROXY Protocol enabled, set
-`vault_traefik_external_traffic_policy: Cluster`.
+**With DaemonSet + Local:**  
+Every worker has a Traefik pod. MetalLB announces the VIP from all workers.
+WireGuard on HAProxy must route the MetalLB CIDR to one worker peer
+(`vault_wg_peers_extra_cidrs`). Worker MASQUERADE rules (PostUp) SNAT
+pod reply traffic to the worker's own wg99 IP so HAProxy does not see raw
+pod IPs (`10.244.x.x`).
 
-**Why not `Local`?**  
-With `Local`, MetalLB only announces the VIP from nodes where Traefik has a
-local endpoint. The MetalLB VIP subnet is routed through WireGuard to
-whichever node BGP-advertises it. If that BGP peer's WireGuard AllowedIPs
-for the VIP subnet does not match the node Traefik currently runs on, packets
-are silently dropped:
+**With Deployment + Cluster (legacy):**  
+`externalTrafficPolicy: Cluster` allows any node to receive and proxy the packet.
+Real client IP is preserved by the PROXY v2 header, not by `Local`. The MetalLB
+pool CIDR must be in a peer's WireGuard AllowedIPs — routing the VIP subnet via
+a WireGuard link-route overrides FRR BGP routes (lower administrative distance),
+so assignment must target the correct worker.
 
 ```
 HAProxy → WireGuard (AllowedIPs routes VIP to node A)
          → node A has no local Traefik endpoint (externalTrafficPolicy:Local)
-         → KUBE-SVL chain empty → packet dropped
+         → KUBE-SVL chain empty → packet dropped   ← avoided with DaemonSet
 ```
-
-With `Cluster`, any node (including the one WireGuard routes to) forwards
-the packet to the Traefik pod via the pod overlay network. Real client IP is
-preserved by the PROXY v2 header, not by `externalTrafficPolicy: Local`.

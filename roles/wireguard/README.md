@@ -70,6 +70,10 @@ Clients (Multi-Server):
 |----------|-------------|
 | `vault_wg_peers` | List of peer configurations |
 | `vault_wg_server_ips` | Per-host server IP addresses for mesh |
+| `vault_wg_peers_extra_cidrs` | Dict of `peer_name → [CIDRs]` for explicit per-peer AllowedIPs (authoritative; replaces legacy `is_server` + `vault_wg_routed_cidrs`) |
+| `vault_wg_routed_cidrs` | Legacy: CIDRs added to all `is_server: true` peers. Set to `[]` in current playbook. |
+| `wg_postup_rules` | List of PostUp iptables rules rendered into wg99.conf (e.g. MASQUERADE for worker nodes) |
+| `wg_predown_rules` | List of PreDown iptables rules rendered into wg99.conf (cleanup of MASQUERADE rules) |
 
 Each peer requires:
 ```yaml
@@ -139,34 +143,59 @@ AllowedIPs = [server-vpn-ip]/32  # Only routes to this server
 - Automatic deduplication of AllowedIPs across peers (prevents duplicate routes)
 - Smart CIDR routing: server peers get routed CIDRs (e.g., MetalLB pools), but API VIP is excluded for non-plane peers
 
-### Routed CIDRs for Kubernetes + DB
+### Per-peer explicit CIDR routing (current, authoritative)
 
-For peers marked with `is_server: true`, the playbook appends routed CIDRs in addition to peer /32 addresses.
-
-Current routed sources in `wireguard_manage.yaml`:
-- `vault_k8s_api_vip/32`
-- `vault_metallb_pool_cidr`
-- `vault_db_wg_route_cidr` (only for non-DB hosts)
-
-Recommended value for DB endpoint routing:
+`vault_wg_peers_extra_cidrs` maps each peer name to a list of additional CIDRs
+appended to that peer's `AllowedIPs`. This is the **authoritative** mechanism.
 
 ```yaml
-vault_db_wg_route_cidr: "[db-wg-ip]/32"
+# In wireguard_manage.yaml, built automatically by build_peers_extra_cidrs filter:
+vault_wg_peers_extra_cidrs:
+  bay_worker2: ["11.11.0.0/24"]   # MetalLB pool — first worker peer owns it
+  # Pod CIDR (10.244.0.0/16) intentionally omitted — MASQUERADE on workers rewrites src
 ```
 
-This enables the simple Kubernetes model where pod traffic is SNATed to node `wg99` IPs and then routed to DB over WireGuard.
+Ownership rules computed by `filter_plugins/wg_routing_filters.py`:
+
+| CIDR | Assigned to | Why |
+|------|-------------|-----|
+| MetalLB pool (`vault_metallb_pool_cidr`) | First worker peer in `vault_wg_peers` | Traefik DaemonSet runs on every worker; one peer must own the CIDR for outbound routing |
+| Pod CIDR (`vault_k8s_pod_subnet`) | **Not assigned** | Workers apply MASQUERADE PostUp — replies arrive from worker /32 IPs, already in AllowedIPs |
+| DB WG route (`vault_db_wg_route_cidr`) | Non-DB peers, only when DB has no dedicated peer entry | Avoids AllowedIPs conflict with existing /32 peer entry |
+
+### PostUp / PreDown rules for worker MASQUERADE
+
+When Traefik uses `externalTrafficPolicy: Local`, kube-proxy does not SNAT external
+traffic. Pod reply packets carry source IPs in `10.244.0.0/16` (pod CIDR). HAProxy
+cannot route those back — it only knows worker WG IPs.
+
+Workers apply an iptables MASQUERADE rule on wg99 PostUp:
+
+```
+iptables -t nat -A POSTROUTING -s <pod_cidr> -d <haproxy_wg_ip> -j MASQUERADE
+```
+
+This is set automatically in `wireguard_manage.yaml` via `wg_worker_postup_rules`
+and `wg_worker_predown_rules` (passed to the role as `wg_postup_rules` /
+`wg_predown_rules`). The rules are rendered into wg99.conf by the templates.
+
+### Legacy: Routed CIDRs for is_server peers (deprecated)
+
+The `vault_wg_routed_cidrs` + `is_server: true` mechanism is still supported
+but is now a no-op in `wireguard_manage.yaml` (`wg_routed_cidrs: []`).
+
+Prefer `vault_wg_peers_extra_cidrs` for explicit per-peer control. The legacy
+path exists for backward compatibility with existing vault configurations.
 
 ### BGP Router Peer Routing Exception
 
 When both the current host and a peer are members of the `bgp_routers` inventory group,
-routed CIDRs (e.g., `vault_wg_routed_cidrs`) are **not** added to `AllowedIPs` for that peer.
+routed CIDRs via the legacy `is_server` path are **not** added to `AllowedIPs` for that peer.
 
 **Why:** BGP routers learn routes dynamically via BGP sessions. Adding static WireGuard
 routes for the same prefixes would conflict with or duplicate the BGP-learned routes.
 
-This logic is automatic: if your inventory has a `[bgp_routers]` group containing
-multiple hosts, WireGuard configs generated on those hosts will exclude routed CIDRs
-when peering with each other, while still including them for non-BGP peers.
+This logic is automatic and applies to both the legacy and explicit routing paths.
 
 ## Dependencies
 
@@ -249,18 +278,18 @@ sudo cat /etc/wireguard/wg99.conf
 
 ## Troubleshooting
 
-### Routed CIDRs missing from AllowedIPs
-**Symptoms:** WireGuard handshakes work, but traffic to routed networks (e.g., VIPs / LoadBalancer pools) does not flow; generated config shows:
-`AllowedIPs = <peer VPN IPs only>`
+### Extra CIDRs missing from AllowedIPs
+**Symptoms:** WireGuard handshakes work, but traffic to MetalLB pool or DB route does not flow.
 
-**Why it happened:** on WireGuard servers the role assigns per-peer `client_listen_port` values. An older implementation rebuilt `vault_wg_peers` from scratch during that step and accidentally dropped optional peer fields like `is_server` (and sometimes `address`). The templates gate routed CIDRs on `peer.is_server`, so once that key was lost the condition evaluated to false and routed CIDRs were not appended.
+**With explicit routing (current):**
+1. Check `wg_computed_peers_extra_cidrs` in the debug task output — confirm the expected CIDR appears for the correct peer.
+2. Verify the target peer appears **before** any competing peer in `vault_wg_peers` (WireGuard silently deduplicates identical CIDRs at the kernel level; first peer wins).
+3. Re-run: `ansible-playbook wireguard_manage.yaml --vault-password-file vault_password_client.sh --limit <host> --diff`
 
-**Fix:** keep peer dictionaries intact when assigning ports (only add/override `client_listen_port`) and cast `is_server` with `| bool` in templates.
-
-**Quick checks:**
-1. Confirm the peer entry in `vault_wg_peers` includes `is_server: true` (in `vault_secrets.yml`).
-2. On the WireGuard server, confirm `/etc/wireguard/<iface>.conf` contains the routed CIDRs in `AllowedIPs` for the server peers.
-3. Re-run `ansible-playbook wireguard_manage.yaml -e wg_operation=install --diff` on the WireGuard server(s).
+**With legacy is_server routing:**
+1. Confirm the peer entry in `vault_wg_peers` includes `is_server: true`.
+2. Confirm `vault_wg_routed_cidrs` is non-empty.
+3. Note: `wireguard_manage.yaml` sets `wg_routed_cidrs: []` — the legacy path is disabled. Use `vault_wg_peers_extra_cidrs` instead.
 
 ### Pods cannot reach DB over WireGuard
 
