@@ -1,0 +1,64 @@
+{% set resolvers = coredns_upstream_resolvers | list %}
+{% set proto = coredns_upstream_protocol | default('') %}
+{# Build the space-separated list of upstream forwarder addresses #}
+{% set upstream_list = [] %}
+{% for r in resolvers %}
+{% set _ = upstream_list.append(proto ~ r) %}
+{% endfor %}
+# Managed by Ansible (coredns role) - DO NOT EDIT
+# Generated: {{ ansible_facts['date_time']['iso8601'] }}
+#
+# Changes from kubeadm default:
+#  - forward . uses explicit upstream IPs instead of /etc/resolv.conf
+#    → CoreDNS behaviour is identical on all nodes regardless of /etc/resolv.conf
+#    → Eliminates SERVFAIL when a node's resolver path is degraded (e.g. vas-worker1)
+#  - cache TTL raised from 30 s to {{ coredns_cache_ttl }} s (positive) / {{ coredns_cache_ttl_negative }} s (negative)
+#    → A brief upstream hiccup does not stall pods — cached answers cover the gap
+#  - health plugin exposes /health on port {{ coredns_health_port }} for liveness probes
+
+.:53 {
+    errors
+    health {
+        lameduck 5s
+    }
+    ready
+{% if coredns_log_enabled | bool %}
+    log
+{% endif %}
+
+    # ── Kubernetes cluster.local / in-addr.arpa / ip6.arpa ──────────────────
+    kubernetes {{ coredns_cluster_domain }} in-addr.arpa ip6.arpa {
+        pods insecure
+        fallthrough in-addr.arpa ip6.arpa
+        ttl 30
+    }
+
+    # ── Optional stub zones (split-horizon / private DNS) ────────────────────
+{% for stub in coredns_stub_zones %}
+    forward {{ stub.zone }} {{ stub.resolvers | join(' ') }} {
+        prefer_udp
+    }
+{% endfor %}
+
+    # ── External upstream forwarders ─────────────────────────────────────────
+    # Explicit IPs — not /etc/resolv.conf — so CoreDNS is node-independent.
+    # prefer_udp tries UDP first, falls back to TCP on truncation or timeout.
+    # Upstreams: {{ resolvers | join(', ') }}
+    forward . {{ upstream_list | join(' ') }} {
+        max_concurrent 1000
+        prefer_udp
+    }
+
+    # ── Cache ────────────────────────────────────────────────────────────────
+    # Positive TTL: {{ coredns_cache_ttl }} s  — absorbs brief upstream hiccups
+    # Negative TTL: {{ coredns_cache_ttl_negative }} s — heals transient NXDOMAIN/SERVFAIL quickly
+    cache {
+        success 9984 {{ coredns_cache_ttl }} {{ coredns_cache_ttl }}
+        denial  9984 {{ coredns_cache_ttl_negative }} {{ coredns_cache_ttl_negative }}
+        prefetch 10
+    }
+
+    loop
+    reload
+    loadbalance
+}

@@ -5,6 +5,102 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-02-26
+
+### Added
+
+- **coredns Role** (new):
+  - Manages the CoreDNS ConfigMap in kubeadm clusters via `kubectl apply`
+  - Renders a Corefile with **explicit upstream resolvers** (not `forward . /etc/resolv.conf`)
+    so CoreDNS behaviour is identical on all nodes regardless of network segment
+  - Raises external cache TTL from kubeadm default 30 s to 300 s (configurable via
+    `vault_coredns_cache_ttl`) — absorbs brief WireGuard path hiccups without stalling pods
+  - Separate negative cache TTL (`vault_coredns_cache_ttl_negative`, default 30 s) heals
+    transient failures quickly
+  - Optional stub zones for split-horizon DNS (`vault_coredns_stub_zones`)
+  - Optional DNS-over-TLS protocol prefix (`vault_coredns_upstream_protocol: "tls://"`)
+  - Optional query logging (`vault_coredns_log_enabled`, default false for production)
+  - Post-deploy resolution probe: runs a busybox pod inside the cluster to verify
+    `github.com` resolves end-to-end after every ConfigMap patch
+  - Waits for rollout to complete before returning (`vault_coredns_wait_for_rollout`)
+  - Idempotent: detects current vs desired Corefile content, only applies when changed
+
+- **kuber_coredns_install.yaml** (new playbook):
+  - Applies the Ansible-managed CoreDNS ConfigMap to the cluster
+  - Supports `--check` mode (dry-run preview)
+  - Automatically included in `kuber_cluster_deploy.yaml` Phase 3 (Step 3.4)
+  - Skip with `-e skip_coredns=true`
+
+- **kuber_coredns_verify.yaml** (new playbook):
+  - Verifies CoreDNS deployment health, ConfigMap is Ansible-managed, and can resolve
+    `github.com`, `actions.githubusercontent.com`, `ghcr.io`, `kubernetes.default.svc.cluster.local`
+  - Tag `--tags coredns_resolution` for resolution-only check
+
+- **dns_client Role** — CI/CD domain failover:
+  - New `dns_client_dnsmasq_ci_domains` variable (override: `vault_dns_client_ci_domains`)
+  - CI/CD and container registry domains (`githubusercontent.com`, `github.com`, `ghcr.io`,
+    `docker.io`, etc.) are now routed across **all** configured upstreams with round-robin
+    failover instead of being pinned to a single primary upstream
+  - Eliminates the root cause of intermittent SERVFAIL on vas-worker1: previously
+    `githubusercontent.com` was pinned to `vault_dns_server_primary` with zero fallback;
+    a brief WireGuard path degradation returned SERVFAIL immediately, triggering the
+    100-second OAuth timeout chain in GitHub Actions runner pods
+  - Updated `dnsmasq-k8s-filter-aaaa.conf.j2` to emit per-upstream `server=` lines for
+    every CI domain (dnsmasq round-robins and retries automatically)
+
+- **dns_client Role** — `filter_aaaa` documentation and group support:
+  - Expanded inline docs explaining when and why to enable `vault_dns_client_filter_aaaa`
+  - Recommended for all WireGuard-client nodes without IPv6 egress
+
+- **group_vars/workers_vas.example.yml**:
+  - Added `vault_dns_client_filter_aaaa: true` with full explanation
+  - Copy to `group_vars/workers_vas.yml` to auto-apply AAAA filtering on every redeploy
+    to all VAS workers (no manual step required)
+
+- **dns_client_manage.yaml** — VAS-only tag:
+  - New `--tags vas_dns` target runs only against `vas_workers_all`
+  - Enables a quick targeted re-apply of the DNS fix without touching bay-* nodes
+
+- **Tests**:
+  - `tests/unit/test_dns_client_variables.yaml`: 12 assertions covering `ci_domains`,
+    `primary_only_domains`, overlap detection, self-exclusion from upstream list,
+    and variable naming convention
+  - `tests/unit/test_coredns_variables.yaml`: 10 assertions covering all coredns role
+    defaults, cache TTL sanity, stub zones, and TLS prefix logic
+
+### Changed
+
+- **dns_client Role** — `dns_client_dnsmasq_primary_only_domains` default list:
+  - Removed: `githubusercontent.com`, `github.io`, `docker.io`, `docker.com`, `ghcr.io`,
+    `quay.io`, `gcr.io`
+  - Remaining: `pkg.dev`, `googleusercontent.com`, `amazonaws.com`, `registry.k8s.io`
+    (these remain primary-only because the secondary Unbound/BGP resolver is rate-limited
+    for Google/AWS CDN infrastructure)
+  - Removed domains are now in `dns_client_dnsmasq_ci_domains` with full upstream failover
+
+- **kuber_cluster_deploy.yaml**:
+  - Phase 3 now includes Step 3.4 (CoreDNS ConfigMap patch) between worker join/verify
+    and Helm installation
+  - Previous Step 3.4 (Helm) renumbered to 3.5; Step 3.5 (Helm verify) to 3.6
+
+- **vault_secrets.example.yml**:
+  - Added documentation for `vault_coredns_upstream_resolvers`, `vault_coredns_cache_ttl`,
+    `vault_coredns_cache_ttl_negative`, `vault_coredns_log_enabled`, `vault_coredns_cluster_domain`,
+    `vault_coredns_stub_zones`, `vault_coredns_wait_for_rollout`
+  - Added documentation for `vault_dns_client_filter_aaaa` (expanded, with vas-worker1 context)
+  - Added documentation for `vault_dns_client_ci_domains` override
+
+### Fixed
+
+- **Intermittent upstream DNS resolution failure on vas-worker1**:
+  - Root cause: `githubusercontent.com` pinned to primary-only upstream with no fallback;
+    brief WireGuard path degradation → SERVFAIL → 100-second OAuth timeout chain in runners
+  - Fix 1 (dnsmasq layer): CI domains now round-robin across all upstreams with automatic retry
+  - Fix 2 (CoreDNS layer): explicit upstreams in Corefile eliminate node-resolv.conf dependency
+  - Fix 3 (AAAA layer): `vault_dns_client_filter_aaaa: true` in `group_vars/workers_vas.yml`
+    eliminates AAAA-first timeouts on nodes with no IPv6 egress
+  - All three fixes are fully automated and applied on every cluster redeploy
+
 ## [1.8.0] - 2026-02-14
 
 ### Added

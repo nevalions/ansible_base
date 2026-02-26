@@ -1,4 +1,21 @@
 ---
+# Manage DNS client configuration (dnsmasq + resolv.conf) on all k8s nodes.
+#
+# This playbook configures node-local dnsmasq on all dns_clients group members.
+# dnsmasq listens on the node's WireGuard (wg99) IP and forwards to the cluster's
+# Unbound DNS servers. This is what CoreDNS reads as its upstream when running
+# with dnsPolicy: Default.
+#
+# Usage:
+#   # All DNS client nodes
+#   ansible-playbook -i hosts_bay.ini dns_client_manage.yaml
+#
+#   # VAS workers only (quick fix for vas-worker1 DNS issues)
+#   ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
+#
+#   # Remove DNS client configuration
+#   ansible-playbook -i hosts_bay.ini dns_client_manage.yaml -e dns_operation=remove
+
 - name: Manage DNS client configuration
   hosts: dns_clients
   become: true
@@ -22,3 +39,22 @@
     - name: Run DNS client removal tasks
       ansible.builtin.include_tasks: roles/dns_client/tasks/remove.yaml
       when: dns_operation == "remove"
+
+# ── VAS workers only — targeted re-apply for DNS reliability fix ───────────────
+# Run with: ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
+- name: Manage DNS client configuration (VAS workers only)
+  hosts: vas_workers_all
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - vas_dns
+    - never
+  vars:
+    dns_operation: "install"
+
+  tasks:
+    - name: Apply DNS client role (VAS workers)
+      ansible.builtin.include_role:
+        name: dns_client

@@ -1,0 +1,128 @@
+---
+skip_folder_check: true
+
+coredns_operation: "install"
+
+# Kubernetes namespace where CoreDNS lives (never changes in kubeadm clusters)
+coredns_namespace: "kube-system"
+
+# CoreDNS deployment name (never changes in kubeadm clusters)
+coredns_deployment: "coredns"
+
+# CoreDNS ConfigMap name (never changes in kubeadm clusters)
+coredns_configmap: "coredns"
+
+# ── Upstream DNS resolvers ─────────────────────────────────────────────────────
+# Explicit upstream forwarders written into the Corefile.
+# Using explicit IPs makes CoreDNS behaviour IDENTICAL regardless of which node
+# it runs on — it no longer depends on the node's /etc/resolv.conf chain, which
+# varies per network segment (bay-* vs vas-worker1 on 9.11.0.x).
+#
+# Preferred: your internal Unbound/HAProxy resolvers (vault_dns_server_primary /
+# vault_dns_server_secondary). These are already reachable over WireGuard.
+# Fallback:  a public resolver as last resort.
+#
+# Set vault_coredns_upstream_resolvers in vault_secrets.yml to override.
+coredns_upstream_resolvers: >-
+  {{
+    vault_coredns_upstream_resolvers | default(
+      [vault_dns_server_primary, vault_dns_server_secondary]
+      | select('defined') | select('ne', '') | list
+    )
+  }}
+
+# Protocol prefix for upstream forwarders.
+# Options: "" (plain UDP/TCP, default), "tls://" (DNS-over-TLS).
+coredns_upstream_protocol: "{{ vault_coredns_upstream_protocol | default('') }}"
+
+# ── Cache tuning ───────────────────────────────────────────────────────────────
+# Cache TTL for successful (positive) answers, in seconds.
+# Default: 300 s (5 min). The kubeadm default is 30 s — too short to absorb a
+# brief WireGuard path hiccup without stalling pods.
+# Override via vault_coredns_cache_ttl.
+coredns_cache_ttl: "{{ vault_coredns_cache_ttl | default(300) }}"
+
+# Cache TTL for negative (NXDOMAIN / SERVFAIL) answers.
+# Keep short so transient failures heal quickly.
+coredns_cache_ttl_negative: "{{ vault_coredns_cache_ttl_negative | default(30) }}"
+
+# ── Health and readiness ───────────────────────────────────────────────────────
+# Port for the health check endpoint (curl http://<node>:<port>/health)
+coredns_health_port: "{{ vault_coredns_health_port | default(8080) }}"
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Enable query logging (useful for debugging DNS failures; disable in production
+# to reduce log volume).
+coredns_log_enabled: "{{ vault_coredns_log_enabled | default(false) | bool }}"
+
+# ── Cluster domain ────────────────────────────────────────────────────────────
+# Kubernetes cluster domain. Matches the value set in kubeadm --service-dns-domain
+# (default: cluster.local). Override via vault_coredns_cluster_domain.
+coredns_cluster_domain: "{{ vault_coredns_cluster_domain | default('cluster.local') }}"
+
+# ── Stub zones ────────────────────────────────────────────────────────────────
+# Optional list of private DNS zones to forward to a specific resolver instead of
+# the global upstream. Useful for split-horizon DNS where internal hostnames
+# resolve differently from the public internet.
+#
+# Format:
+#   vault_coredns_stub_zones:
+#     - zone: "internal.example.com"
+#       resolvers:
+#         - "9.11.0.1"
+#
+# Override via vault_coredns_stub_zones.
+coredns_stub_zones: "{{ vault_coredns_stub_zones | default([]) }}"
+
+# ── Rollout control ───────────────────────────────────────────────────────────
+# Wait for CoreDNS rollout to complete after applying the ConfigMap patch.
+coredns_wait_for_rollout: "{{ vault_coredns_wait_for_rollout | default(true) | bool }}"
+
+# Timeout for the rollout wait (passed to kubectl rollout status --timeout)
+coredns_rollout_timeout: "{{ vault_coredns_rollout_timeout | default('120s') }}"
+
+# kubectl binary path
+coredns_kubectl_bin: "{{ vault_coredns_kubectl_bin | default('kubectl') }}"
+
+# Path to the kubeconfig file used by kubectl.
+# Required when using coredns_kubectl_server to override the API server address:
+# kubectl --server does not change which kubeconfig file provides credentials,
+# but on some systems the automatic kubeconfig discovery may pick the wrong file
+# or fail to load credentials when combined with --insecure-skip-tls-verify.
+# Explicitly pointing to /etc/kubernetes/admin.conf (kubeadm's cluster-admin
+# kubeconfig) ensures correct credentials on the control plane node.
+# Set to "" to let kubectl discover the kubeconfig automatically (default).
+coredns_kubectl_kubeconfig: "{{ vault_coredns_kubectl_kubeconfig | default('/etc/kubernetes/admin.conf') }}"
+
+# Path to write the rendered Corefile manifest on the control plane host
+coredns_manifest_dest: "/tmp/coredns-configmap.yaml"
+
+# ── kubectl connectivity ───────────────────────────────────────────────────────
+# Override the API server address for all kubectl calls.
+# Recommended for kubeadm control planes: set to https://127.0.0.1:<port> so
+# kubectl bypasses DNS resolution entirely. This is required when the kubeconfig
+# server entry is a DNS name (e.g. k8s-api.cluster.local) that itself depends on
+# CoreDNS — the chicken-and-egg problem when you are patching CoreDNS.
+#
+# Example: vault_coredns_kubectl_server: "https://127.0.0.1:6443"
+# Leave empty ("") to use whatever server is in the kubeconfig (default).
+coredns_kubectl_server: "{{ vault_coredns_kubectl_server | default('') }}"
+
+# Skip TLS verification for kubectl calls.
+# Required when using --server=https://127.0.0.1:6443 because the API server
+# certificate is issued for the DNS name / VIP, not for 127.0.0.1.
+# Safe on the control plane node itself: traffic never leaves localhost.
+# Default: true when coredns_kubectl_server is set, false otherwise.
+coredns_kubectl_insecure: >-
+  {{
+    vault_coredns_kubectl_insecure
+    | default(coredns_kubectl_server | length > 0)
+    | bool
+  }}
+
+# Skip kubectl server-side schema validation.
+# When coredns_kubectl_server overrides the endpoint, schema validation still
+# attempts to download the OpenAPI spec from the new server. Set false (default)
+# to pass --validate=false and skip that download entirely. The YAML is still
+# parsed by kubectl's built-in parser.
+coredns_kubectl_validate: "{{ vault_coredns_kubectl_validate | default(false) | bool }}"

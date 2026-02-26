@@ -56,8 +56,8 @@ while read LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r "$COMMIT_SHA" 2>/dev/null || true)
         
         if [ -n "$FILES_CHANGED" ]; then
-            # Check for sensitive files (exclude .example files)
-            SENSITIVE_FILES=$(echo "$FILES_CHANGED" | grep -E 'vault_secrets\.yml$|wg_keys|\.vault$|group_vars/.*\.yml$|hosts_' || true)
+            # Check for sensitive files (exclude .example.yml files)
+            SENSITIVE_FILES=$(echo "$FILES_CHANGED" | grep -E 'vault_secrets\.yml$|wg_keys|\.vault$|group_vars/.*\.yml$|hosts_' | grep -v '\.example\.yml$' || true)
             
             if [ -n "$SENSITIVE_FILES" ]; then
                 echo -e "${RED}  ✗ Sensitive files detected:${NC}"

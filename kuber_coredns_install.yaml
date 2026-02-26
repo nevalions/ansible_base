@@ -1,0 +1,43 @@
+---
+# Apply Ansible-managed CoreDNS ConfigMap to the cluster.
+#
+# This playbook patches the CoreDNS Corefile to use explicit upstream resolvers
+# (instead of forward . /etc/resolv.conf) and raises the external cache TTL.
+# Together these eliminate intermittent SERVFAIL on nodes that sit on a different
+# network segment from the primary DNS server (e.g. vas-worker1 on 9.11.0.x).
+#
+# The play runs on a single control plane host (bay_plane1) which is where kubectl
+# is configured with cluster-admin credentials.
+#
+# Usage:
+#   # Apply CoreDNS Corefile patch
+#   ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml
+#
+#   # Dry-run (check mode — shows what would change)
+#   ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml --check
+#
+#   # Enable query logging for debugging DNS failures
+#   ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml -e vault_coredns_log_enabled=true
+#
+#   # Override cache TTL only
+#   ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml -e vault_coredns_cache_ttl=600
+
+- name: Manage CoreDNS ConfigMap
+  hosts: bay_plane1
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - coredns
+    - dns
+    - kubernetes
+    - manage
+  vars:
+    coredns_operation: "install"
+
+  tasks:
+    - name: Apply CoreDNS role
+      ansible.builtin.include_role:
+        name: coredns
+      when: coredns_operation == "install"

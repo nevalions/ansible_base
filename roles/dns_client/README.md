@@ -24,12 +24,14 @@ Configure DNS client settings on Debian/Ubuntu systems by managing `/etc/resolv.
 |----------|-------------|---------|
 | `vault_dns_client_options` | List of resolv.conf options | `["timeout:2", "attempts:3", "rotate"]` |
 
-### Kubernetes (Optional)
+### Kubernetes / dnsmasq (Optional)
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `vault_dns_client_node_local_enabled` | Enable node-local `dnsmasq` on Kubernetes nodes to filter AAAA answers (helps when IPv6 is not routed) | Auto-enabled for common k8s inventory groups |
-| `vault_dns_client_filter_aaaa` | Filter AAAA DNS answers in node-local dnsmasq | `true` |
+| `vault_dns_client_node_local_enabled` | Enable node-local `dnsmasq` on Kubernetes nodes | Auto-enabled for k8s inventory groups |
+| `vault_dns_client_filter_aaaa` | Drop AAAA answers — eliminates AAAA-first timeouts when node has no IPv6 egress | `false` (set `true` for WG-client nodes) |
+| `vault_dns_client_primary_only_domains` | Domains routed exclusively to the primary upstream (secondary is rate-limited for these) | `pkg.dev`, `googleusercontent.com`, `amazonaws.com`, `registry.k8s.io` |
+| `vault_dns_client_ci_domains` | CI/CD and container registry domains routed across **all** upstreams with round-robin failover — never pinned to a single upstream | `githubusercontent.com`, `github.com`, `ghcr.io`, `docker.io`, etc. |
 
 ## Dependencies
 
@@ -72,8 +74,11 @@ None
 ### Using the provided playbook:
 
 ```bash
-# Install DNS client configuration
+# Install on all dns_clients
 ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+
+# VAS workers only (targeted re-apply without touching bay-* nodes)
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
 
 # Install on specific hosts
 ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --limit wireguard_clients
@@ -154,6 +159,29 @@ nslookup google.com [dns-server-vpn-ip]
 dig @[dns-server-vpn-ip] google.com
 ```
 
+## DNS reliability architecture
+
+The full chain for Kubernetes pod DNS queries is:
+
+```
+Pod → CoreDNS → node /etc/resolv.conf → dnsmasq (wg99 IP) → Unbound DNS servers
+```
+
+dnsmasq on each node manages two upstream lists:
+
+**`dns_client_dnsmasq_primary_only_domains`** — sent only to the primary Unbound server.
+Used for Google/AWS CDN domains where the secondary resolver is known to be rate-limited.
+
+**`dns_client_dnsmasq_ci_domains`** — sent to **all** configured upstreams with round-robin.
+Used for CI/CD and container registry domains (GitHub, Docker, ghcr.io, etc.) so that
+a brief WireGuard path degradation on the primary does not return SERVFAIL and stall jobs.
+This is the fix for the intermittent 100-second OAuth timeout on vas-worker1.
+
+For nodes on a separate network segment (VAS workers on `9.11.0.x`):
+- Set `vault_dns_client_filter_aaaa: true` in `group_vars/workers_vas.yml` to drop AAAA
+  answers at the dnsmasq layer — eliminates 30–90 s AAAA-first timeouts.
+- The `--tags vas_dns` target lets you re-apply dnsmasq config on VAS workers only.
+
 ## Troubleshooting
 
 ### dnsmasq fails to start on boot
@@ -194,13 +222,30 @@ dig @[dns-server-vpn-ip] google.com
    cat /etc/resolv.conf
    ```
 
-### Kubernetes nodes can resolve, but containerd/ACME fails (IPv6 AAAA selected)
+### Kubernetes nodes can resolve, but containerd/ACME/GitHub Actions fails (AAAA selected)
 
 If your nodes have no IPv6 default route but your upstream resolver returns AAAA records,
-some clients (containerd pulls, ACME) may try IPv6 first and fail.
+some clients (containerd pulls, ACME, GitHub Actions runners) may try IPv6 first and time
+out (30–90 s) before falling back to IPv4.
 
-For Kubernetes nodes, enable node-local dnsmasq AAAA filtering so both the node and CoreDNS
-(when using `dnsPolicy: Default`) get IPv4-only upstream answers.
+Enable node-local dnsmasq AAAA filtering — set `vault_dns_client_filter_aaaa: true` in
+`vault_secrets.yml` or in `group_vars/workers_vas.yml` for VAS-segment nodes only.
+This drops AAAA answers at the dnsmasq layer so both the node and CoreDNS (when using
+`dnsPolicy: Default`) get IPv4-only upstream answers.
+
+### GitHub Actions runner times out resolving `actions.githubusercontent.com`
+
+This is the intermittent SERVFAIL caused by `githubusercontent.com` being pinned to a
+single upstream with no fallback. As of v1.9.0 this is fixed: CI/CD domains are in
+`dns_client_dnsmasq_ci_domains` and routed across all upstreams.
+
+If you see this on a fresh deploy, ensure `group_vars/workers_vas.yml` exists (copy from
+`workers_vas.example.yml`) with `vault_dns_client_filter_aaaa: true`, and re-run:
+
+```bash
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
+ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml
+```
 
 ### systemd-resolved keeps taking over:
 

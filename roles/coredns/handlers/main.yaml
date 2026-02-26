@@ -1,0 +1,11 @@
+---
+- name: Rollout restart coredns
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['rollout', 'restart', 'deploy/' ~ coredns_deployment,
+           '-n', coredns_namespace]
+      }}
+  changed_when: true
+  when: not ansible_check_mode

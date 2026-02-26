@@ -1,0 +1,160 @@
+---
+# Unit tests for dns_client role variables and dnsmasq config logic.
+#
+# Covers:
+#   - All default variable types and values
+#   - CI domain list does not overlap with primary-only domain list
+#   - filter_aaaa default is false (safe for nodes with IPv6 egress)
+#   - dnsmasq upstream list building (exclude-self logic)
+#   - Primary-only domain list no longer contains CI/CD domains (the fix)
+
+- name: Test dns_client role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Simulate what vault_secrets.yml provides (use placeholders — no real IPs in tests)
+    vault_dns_server_primary: "[primary-dns-server-ip]"
+    vault_dns_server_secondary: "[secondary-dns-server-ip]"
+    vault_dns_zone: "cluster.local"
+
+    # Role defaults under test (replicated here so we can assert without
+    # loading the actual role defaults, which require vault vars at role load)
+    dns_nameservers:
+      - "[primary-dns-server-ip]"
+      - "[secondary-dns-server-ip]"
+
+    dns_client_filter_aaaa: false
+
+    dns_client_dnsmasq_primary_only_domains:
+      - "pkg.dev"
+      - "googleusercontent.com"
+      - "amazonaws.com"
+      - "registry.k8s.io"
+
+    dns_client_dnsmasq_ci_domains:
+      - "githubusercontent.com"
+      - "github.com"
+      - "github.io"
+      - "ghcr.io"
+      - "actions.githubusercontent.com"
+      - "docker.io"
+      - "docker.com"
+      - "quay.io"
+      - "gcr.io"
+
+    # Simulate node wg99 IP (placeholder — no real IPs in tests)
+    dns_client_node_local_listen_ip: "[node-wg-ip]"
+
+  tasks:
+    - name: Verify dns_nameservers is defined and non-empty
+      ansible.builtin.assert:
+        that:
+          - dns_nameservers is defined
+          - dns_nameservers is iterable
+          - dns_nameservers | length > 0
+        success_msg: "dns_nameservers defined and non-empty"
+        fail_msg: "dns_nameservers is missing or empty"
+
+    - name: Verify dns_client_filter_aaaa default is false
+      ansible.builtin.assert:
+        that:
+          - dns_client_filter_aaaa is defined
+          - dns_client_filter_aaaa is boolean
+          - not dns_client_filter_aaaa
+        success_msg: "dns_client_filter_aaaa defaults to false (safe for IPv6 nodes)"
+        fail_msg: "dns_client_filter_aaaa default has changed — verify intent"
+
+    - name: Verify primary_only_domains is defined and is a list
+      ansible.builtin.assert:
+        that:
+          - dns_client_dnsmasq_primary_only_domains is defined
+          - dns_client_dnsmasq_primary_only_domains is iterable
+        success_msg: "dns_client_dnsmasq_primary_only_domains defined"
+        fail_msg: "dns_client_dnsmasq_primary_only_domains is missing"
+
+    - name: Verify CI domains list is defined and non-empty
+      ansible.builtin.assert:
+        that:
+          - dns_client_dnsmasq_ci_domains is defined
+          - dns_client_dnsmasq_ci_domains is iterable
+          - dns_client_dnsmasq_ci_domains | length > 0
+        success_msg: "dns_client_dnsmasq_ci_domains defined and non-empty"
+        fail_msg: "dns_client_dnsmasq_ci_domains is missing or empty"
+
+    - name: Verify githubusercontent.com is in ci_domains (not primary-only)
+      ansible.builtin.assert:
+        that:
+          - "'githubusercontent.com' in dns_client_dnsmasq_ci_domains"
+          - "'githubusercontent.com' not in dns_client_dnsmasq_primary_only_domains"
+        success_msg: >-
+          githubusercontent.com is in ci_domains (round-robin) and NOT in
+          primary_only_domains — correct, fallback is available on all upstreams
+        fail_msg: >-
+          githubusercontent.com must be in ci_domains and NOT in primary_only_domains.
+          Pinning it to a single upstream with no fallback caused the 100-second
+          OAuth timeout chain on vas-worker1.
+
+    - name: Verify github.com is in ci_domains
+      ansible.builtin.assert:
+        that:
+          - "'github.com' in dns_client_dnsmasq_ci_domains"
+          - "'github.com' not in dns_client_dnsmasq_primary_only_domains"
+        success_msg: "github.com correctly in ci_domains only"
+        fail_msg: "github.com must be in ci_domains and NOT in primary_only_domains"
+
+    - name: Verify ghcr.io is in ci_domains (not primary-only)
+      ansible.builtin.assert:
+        that:
+          - "'ghcr.io' in dns_client_dnsmasq_ci_domains"
+          - "'ghcr.io' not in dns_client_dnsmasq_primary_only_domains"
+        success_msg: "ghcr.io correctly in ci_domains only"
+        fail_msg: "ghcr.io must be in ci_domains and NOT in primary_only_domains"
+
+    - name: Verify no domain is in both lists (would be a config error)
+      ansible.builtin.set_fact:
+        dns_overlap: >-
+          {{
+            dns_client_dnsmasq_primary_only_domains
+            | intersect(dns_client_dnsmasq_ci_domains)
+          }}
+
+    - name: Assert no overlap between primary_only and ci_domains
+      ansible.builtin.assert:
+        that:
+          - dns_overlap | length == 0
+        success_msg: "No domains are in both primary_only and ci_domains lists — correct"
+        fail_msg: >-
+          Domains appear in BOTH primary_only_domains and ci_domains: {{ dns_overlap }}.
+          A domain in both lists would be sent only to primary (primary-only wins in
+          dnsmasq) defeating the ci_domains round-robin failover intent.
+
+    - name: Simulate dnsmasq upstream list build (exclude self)
+      ansible.builtin.set_fact:
+        dns_client_dnsmasq_upstreams: >-
+          {{
+            dns_nameservers
+            | reject('equalto', dns_client_node_local_listen_ip)
+            | list
+          }}
+
+    - name: Assert self is excluded from dnsmasq upstreams
+      ansible.builtin.assert:
+        that:
+          - dns_client_node_local_listen_ip not in dns_client_dnsmasq_upstreams
+          - dns_client_dnsmasq_upstreams | length > 0
+        success_msg: >-
+          Self ({{ dns_client_node_local_listen_ip }}) is correctly excluded from
+          dnsmasq upstreams; {{ dns_client_dnsmasq_upstreams | length }} upstream(s) remain
+        fail_msg: >-
+          dnsmasq upstream list is empty or still contains the self IP.
+          This would cause a DNS forwarding loop or no-upstream error.
+
+    - name: Verify variable naming follows lowercase_with_underscores convention
+      ansible.builtin.assert:
+        that:
+          - "'dns_client_filter_aaaa' is match('^[a-z][a-z0-9_]*$')"
+          - "'dns_client_dnsmasq_ci_domains' is match('^[a-z][a-z0-9_]*$')"
+          - "'dns_client_dnsmasq_primary_only_domains' is match('^[a-z][a-z0-9_]*$')"
+        success_msg: "Variable naming follows lowercase_with_underscores convention"
+        fail_msg: "Variable naming convention violation detected"

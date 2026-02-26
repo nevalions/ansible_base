@@ -1,9 +1,36 @@
 ---
-# Example connection variables for workers_vas group
-# Copy this file to group_vars/workers_vas.yml and customize for your environment
+# Example variables for the vas_workers_all group.
+# Copy this file to group_vars/workers_vas.yml and fill in real values.
+#
+# VAS workers (e.g. vas-worker1 on 9.11.0.x) are WireGuard clients on a
+# different physical/network segment from the bay-* nodes. They have no
+# external IP and route all traffic through the WireGuard tunnel.
+#
+# DNS reliability fixes applied via these group vars:
+#
+#   vault_dns_client_filter_aaaa: true
+#     Forces dnsmasq to drop AAAA answers on this node.
+#     Eliminates the AAAA-first timeout (30-90 s) that occurs when a node
+#     has no working IPv6 egress — the primary cause of the 100-second
+#     OAuth timeout chain in GitHub Actions runner pods on vas-worker1.
+#     Safe because IPv6 is disabled cluster-wide (Unbound: do-ip6: no).
+#
+# These vars are read by roles/dns_client via vault_dns_client_filter_aaaa.
+# They are group-scoped so the fix applies automatically on every full cluster
+# redeploy without any manual intervention.
 
 ansible_port: [custom-ssh-port]
 ansible_user: [your-username]
 ansible_become: true
 ansible_become_method: sudo
 ansible_python_interpreter: /usr/bin/python3
+
+# ── DNS reliability settings for VAS workers ──────────────────────────────────
+# Drop AAAA responses at the dnsmasq layer.
+# Required: VAS nodes have no IPv6 egress; AAAA answers cause 30-90 s timeouts.
+vault_dns_client_filter_aaaa: true
+
+# No primary-only domain pinning override needed for VAS: the dns_client role
+# defaults now route CI/CD domains (githubusercontent.com, ghcr.io, etc.) over
+# all upstreams using round-robin, providing automatic failover if the primary
+# WireGuard path from this node is momentarily degraded.

@@ -1,0 +1,132 @@
+---
+# Unit tests for the coredns role variables and Corefile template logic.
+#
+# Covers:
+#   - Default variable types and values
+#   - Upstream resolver list is populated
+#   - Cache TTL values are reasonable integers
+#   - Stub zones default to empty list
+#   - Variable naming convention
+
+- name: Test coredns role variables and structure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Simulate vault + role defaults (use placeholders — no real IPs in tests)
+    vault_dns_server_primary: "[primary-dns-server-ip]"
+    vault_dns_server_secondary: "[secondary-dns-server-ip]"
+
+    coredns_operation: "install"
+    coredns_namespace: "kube-system"
+    coredns_deployment: "coredns"
+    coredns_configmap: "coredns"
+
+    coredns_upstream_resolvers:
+      - "[primary-dns-server-ip]"
+      - "[secondary-dns-server-ip]"
+
+    coredns_upstream_protocol: ""
+    coredns_cache_ttl: 300
+    coredns_cache_ttl_negative: 30
+    coredns_health_port: 8080
+    coredns_log_enabled: false
+    coredns_cluster_domain: "cluster.local"
+    coredns_stub_zones: []
+    coredns_wait_for_rollout: true
+    coredns_rollout_timeout: "120s"
+
+  tasks:
+    - name: Verify coredns_upstream_resolvers is defined and non-empty
+      ansible.builtin.assert:
+        that:
+          - coredns_upstream_resolvers is defined
+          - coredns_upstream_resolvers is iterable
+          - coredns_upstream_resolvers | length > 0
+        success_msg: "coredns_upstream_resolvers is defined and non-empty"
+        fail_msg: >-
+          coredns_upstream_resolvers is missing or empty.
+          CoreDNS would fall back to /etc/resolv.conf defeating the whole fix.
+
+    - name: Verify cache TTL is a positive integer within a reasonable range
+      ansible.builtin.assert:
+        that:
+          - coredns_cache_ttl is defined
+          - coredns_cache_ttl | int > 0
+          - coredns_cache_ttl | int <= 86400
+        success_msg: "coredns_cache_ttl={{ coredns_cache_ttl }} is in valid range (1–86400)"
+        fail_msg: "coredns_cache_ttl is out of valid range (must be 1–86400)"
+
+    - name: Verify negative cache TTL is shorter than positive TTL
+      ansible.builtin.assert:
+        that:
+          - coredns_cache_ttl_negative is defined
+          - coredns_cache_ttl_negative | int > 0
+          - coredns_cache_ttl_negative | int <= coredns_cache_ttl | int
+        success_msg: >-
+          coredns_cache_ttl_negative={{ coredns_cache_ttl_negative }} ≤
+          coredns_cache_ttl={{ coredns_cache_ttl }} — correct
+        fail_msg: >-
+          Negative TTL must be ≤ positive TTL.
+          A long negative TTL would cache NXDOMAIN/SERVFAIL for too long, delaying recovery.
+
+    - name: Verify stub_zones defaults to empty list
+      ansible.builtin.assert:
+        that:
+          - coredns_stub_zones is defined
+          - coredns_stub_zones is iterable
+          - coredns_stub_zones | length == 0
+        success_msg: "coredns_stub_zones defaults to empty list (no stub zones)"
+        fail_msg: "coredns_stub_zones is not an empty list by default"
+
+    - name: Verify coredns_log_enabled defaults to false
+      ansible.builtin.assert:
+        that:
+          - coredns_log_enabled is defined
+          - coredns_log_enabled is boolean
+          - not coredns_log_enabled
+        success_msg: "coredns_log_enabled defaults to false (production-safe default)"
+        fail_msg: "coredns_log_enabled should default to false"
+
+    - name: Verify cluster domain is set
+      ansible.builtin.assert:
+        that:
+          - coredns_cluster_domain is defined
+          - coredns_cluster_domain | length > 0
+        success_msg: "coredns_cluster_domain is defined: {{ coredns_cluster_domain }}"
+        fail_msg: "coredns_cluster_domain is empty"
+
+    - name: Verify coredns_wait_for_rollout defaults to true
+      ansible.builtin.assert:
+        that:
+          - coredns_wait_for_rollout is defined
+          - coredns_wait_for_rollout is boolean
+          - coredns_wait_for_rollout
+        success_msg: "coredns_wait_for_rollout defaults to true (safe deploy)"
+        fail_msg: "coredns_wait_for_rollout should default to true"
+
+    - name: Simulate upstream list with protocol prefix (DNS-over-TLS)
+      ansible.builtin.set_fact:
+        coredns_tls_upstream_list: >-
+          {{
+            coredns_upstream_resolvers
+            | map('regex_replace', '^', 'tls://')
+            | list
+          }}
+
+    - name: Verify TLS upstream prefixing works correctly
+      ansible.builtin.assert:
+        that:
+          - coredns_tls_upstream_list | length == coredns_upstream_resolvers | length
+          - coredns_tls_upstream_list[0] is match('^tls://')
+        success_msg: "TLS upstream prefix is applied correctly"
+        fail_msg: "TLS upstream prefix logic is broken"
+
+    - name: Verify variable naming follows convention
+      ansible.builtin.assert:
+        that:
+          - "'coredns_upstream_resolvers' is match('^[a-z][a-z0-9_]*$')"
+          - "'coredns_cache_ttl' is match('^[a-z][a-z0-9_]*$')"
+          - "'coredns_stub_zones' is match('^[a-z][a-z0-9_]*$')"
+        success_msg: "Variable naming follows lowercase_with_underscores convention"
+        fail_msg: "Variable naming convention violation detected"

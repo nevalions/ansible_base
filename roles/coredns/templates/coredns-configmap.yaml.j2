@@ -1,0 +1,11 @@
+---
+# Managed by Ansible (coredns role) - DO NOT EDIT
+# Generated: {{ ansible_facts['date_time']['iso8601'] }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ coredns_configmap }}
+  namespace: {{ coredns_namespace }}
+data:
+  Corefile: |
+{{ lookup('template', 'Corefile.j2') | indent(4, first=True) }}

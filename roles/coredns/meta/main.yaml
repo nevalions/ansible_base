@@ -1,0 +1,31 @@
+---
+galaxy_info:
+  author: linroot
+  description: >
+    Manage the CoreDNS ConfigMap in a kubeadm cluster.
+    Applies a Corefile that sets explicit upstream resolvers, a tuned cache TTL,
+    the health and ready plugins, and per-domain forward rules.
+    Designed to eliminate intermittent SERVFAIL caused by relying on a node's
+    /etc/resolv.conf chain (forward . /etc/resolv.conf) when nodes sit on
+    different WireGuard segments (e.g. nodes on isolated VPN subnets).
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - focal
+        - jammy
+
+  galaxy_tags:
+    - kubernetes
+    - coredns
+    - dns
+    - network
+
+dependencies: []

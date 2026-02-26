@@ -1,0 +1,206 @@
+---
+# ── CoreDNS ConfigMap management ─────────────────────────────────────────────
+# Applies a Corefile that:
+#   1. Uses explicit upstream resolvers (not /etc/resolv.conf) so CoreDNS
+#      behaviour is node-independent across all network segments.
+#   2. Raises cache TTL from 30 s to coredns_cache_ttl (default 300 s) so a
+#      brief WireGuard path hiccup does not stall running pods.
+#   3. Enables the health, ready, reload, and loadbalance plugins.
+#   4. Optionally supports stub zones for split-horizon DNS.
+#
+# This role must run on a host that has kubectl configured with cluster-admin
+# privileges (typically a control plane node or a host with a valid kubeconfig).
+#
+# Chicken-and-egg note: if the kubeconfig server entry is a DNS name
+# (e.g. k8s-api.cluster.local) that resolves through CoreDNS, kubectl will fail
+# when CoreDNS is broken — exactly when this role is needed most. Set
+# vault_coredns_kubectl_server: "https://127.0.0.1:6443" in vault_secrets.yml
+# to make kubectl connect to the local API server by IP, bypassing DNS entirely.
+
+- name: Validate CoreDNS role prerequisites
+  ansible.builtin.assert:
+    that:
+      - coredns_upstream_resolvers is defined
+      - coredns_upstream_resolvers | length > 0
+    success_msg: "CoreDNS upstream resolvers are configured"
+    fail_msg: >-
+      coredns_upstream_resolvers is empty. Set vault_coredns_upstream_resolvers
+      (or vault_dns_server_primary / vault_dns_server_secondary) in vault_secrets.yml.
+  when: coredns_operation == "install"
+
+# Build a shared list of common kubectl flags used in every call.
+# Centralised here so adding --server / --insecure-skip-tls-verify in one place
+# propagates to all subsequent tasks automatically.
+- name: Build shared kubectl argument prefix
+  ansible.builtin.set_fact:
+    coredns_kubectl_args: >-
+      {{
+        [coredns_kubectl_bin]
+        + (['--kubeconfig', coredns_kubectl_kubeconfig] if coredns_kubectl_kubeconfig | length > 0 else [])
+        + (['--server', coredns_kubectl_server] if coredns_kubectl_server | length > 0 else [])
+        + (['--insecure-skip-tls-verify'] if coredns_kubectl_insecure | bool else [])
+      }}
+  when: coredns_operation == "install"
+
+- name: Display kubectl connectivity settings
+  ansible.builtin.debug:
+    msg:
+      - "kubectl kubeconfig      : {{ coredns_kubectl_kubeconfig if coredns_kubectl_kubeconfig | length > 0 else '(auto-discovered)' }}"
+      - "kubectl server override : {{ coredns_kubectl_server if coredns_kubectl_server | length > 0 else '(from kubeconfig)' }}"
+      - "TLS verification        : {{ 'disabled (--insecure-skip-tls-verify)' if coredns_kubectl_insecure | bool else 'enabled' }}"
+      - "Schema validation       : {{ 'enabled' if coredns_kubectl_validate | bool else 'disabled (--validate=false)' }}"
+  when: coredns_operation == "install"
+
+- name: Render CoreDNS ConfigMap manifest
+  ansible.builtin.template:
+    src: coredns-configmap.yaml.j2
+    dest: "{{ coredns_manifest_dest }}"
+    mode: "0600"
+  register: coredns_manifest_rendered
+  when: coredns_operation == "install"
+
+- name: Display rendered Corefile (preview)
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['apply', '-f', coredns_manifest_dest, '--dry-run=client', '-o', 'yaml']
+        + ([] if coredns_kubectl_validate | bool else ['--validate=false'])
+      }}
+  register: coredns_preview
+  changed_when: false
+  when:
+    - coredns_operation == "install"
+    - ansible_check_mode or coredns_manifest_rendered.changed
+
+- name: Show Corefile preview
+  ansible.builtin.debug:
+    var: coredns_preview.stdout_lines
+  when:
+    - coredns_operation == "install"
+    - coredns_preview is defined
+    - coredns_preview.stdout_lines is defined
+
+- name: Get current CoreDNS ConfigMap Corefile
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['get', 'configmap', coredns_configmap,
+           '-n', coredns_namespace,
+           '-o', 'jsonpath={.data.Corefile}']
+      }}
+  register: coredns_current_corefile
+  changed_when: false
+  failed_when: false
+  when: coredns_operation == "install"
+
+- name: Compute desired Corefile content
+  ansible.builtin.set_fact:
+    coredns_desired_corefile: "{{ lookup('template', 'Corefile.j2') }}"
+  when: coredns_operation == "install"
+
+- name: Apply CoreDNS ConfigMap (kubectl apply)
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['apply', '-f', coredns_manifest_dest]
+        + ([] if coredns_kubectl_validate | bool else ['--validate=false'])
+      }}
+  register: coredns_apply
+  changed_when: >-
+    coredns_current_corefile.stdout | default('') != coredns_desired_corefile
+  when:
+    - coredns_operation == "install"
+    - not ansible_check_mode
+  notify: Rollout restart coredns
+
+- name: Flush handlers to trigger CoreDNS rollout immediately
+  ansible.builtin.meta: flush_handlers
+  when:
+    - coredns_operation == "install"
+    - not ansible_check_mode
+
+- name: Wait for CoreDNS rollout to complete
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['rollout', 'status', 'deploy/' ~ coredns_deployment,
+           '-n', coredns_namespace,
+           '--timeout=' ~ coredns_rollout_timeout]
+      }}
+  register: coredns_rollout_status
+  changed_when: false
+  when:
+    - coredns_operation == "install"
+    - coredns_wait_for_rollout | bool
+    - not ansible_check_mode
+
+- name: Verify CoreDNS pods are running
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['get', 'pods', '-n', coredns_namespace,
+           '-l', 'k8s-app=kube-dns', '-o', 'wide']
+      }}
+  register: coredns_pods
+  changed_when: false
+  when:
+    - coredns_operation == "install"
+    - not ansible_check_mode
+
+- name: Display CoreDNS pod status
+  ansible.builtin.debug:
+    msg: "{{ coredns_pods.stdout_lines }}"
+  when:
+    - coredns_operation == "install"
+    - coredns_pods is defined
+    - coredns_pods.stdout_lines is defined
+
+- name: Run CoreDNS resolution probe for external domains
+  ansible.builtin.command:
+    argv: >-
+      {{
+        coredns_kubectl_args
+        + ['run', 'coredns-probe-' ~ ansible_facts['date_time']['epoch'],
+           '--image=busybox:1.36', '--restart=Never', '--rm', '-i',
+           '--namespace=' ~ coredns_namespace,
+           '--command', '--', 'nslookup', 'github.com']
+      }}
+  register: coredns_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - coredns_operation == "install"
+    - not ansible_check_mode
+
+- name: Assert CoreDNS probe succeeded
+  ansible.builtin.assert:
+    that:
+      - coredns_probe.rc == 0
+    success_msg: "CoreDNS can resolve external domains (github.com) from within the cluster"
+    fail_msg: >-
+      CoreDNS external DNS probe failed (rc={{ coredns_probe.rc }}).
+      Output: {{ coredns_probe.stdout | default('no output') }}
+      Check coredns_upstream_resolvers and WireGuard connectivity to DNS servers.
+  when:
+    - coredns_operation == "install"
+    - not ansible_check_mode
+    - coredns_probe is defined
+
+- name: Display CoreDNS management summary
+  ansible.builtin.debug:
+    msg:
+      - "=== CoreDNS ConfigMap Management Complete ==="
+      - "Operation      : {{ coredns_operation }}"
+      - "Namespace      : {{ coredns_namespace }}"
+      - "ConfigMap      : {{ coredns_configmap }}"
+      - "Upstreams      : {{ coredns_upstream_resolvers | join(', ') }}"
+      - "Cache TTL+     : {{ coredns_cache_ttl }} s"
+      - "Cache TTL-     : {{ coredns_cache_ttl_negative }} s"
+      - "Log enabled    : {{ coredns_log_enabled }}"
+      - "Stub zones     : {{ coredns_stub_zones | length }}"
+  when: coredns_operation == "install"

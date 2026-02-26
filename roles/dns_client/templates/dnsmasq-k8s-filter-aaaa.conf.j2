@@ -13,22 +13,40 @@ no-resolv
 strict-order
 {% endif %}
 
-# Upstreams (avoid self)
+# ── Upstreams (self excluded to prevent forwarding loops) ─────────────────────
 {% for ns in dns_client_dnsmasq_upstreams | default([]) %}
 server={{ ns }}
 {% endfor %}
-
 {% if (dns_client_dnsmasq_upstreams | default([]) | length) > 0 and (dns_client_dnsmasq_primary_only_domains | default([]) | length) > 0 %}
-# Pin external domains to the primary upstream only.
-# The secondary resolver (bay_bgp) is rate-limited by Google DNS for UDP queries
-# on certain domains. Routing these exclusively to the primary (haproxy_spb)
-# ensures reliable resolution regardless of secondary health.
+
+# ── Primary-only domains ──────────────────────────────────────────────────────
+# These domains are routed exclusively to the primary upstream because the
+# secondary resolver is rate-limited for them (e.g. Google/AWS CDN infrastructure
+# behind the bay_bgp Unbound instance).
+# Do NOT add CI/CD or GitHub domains here — see ci_domains section below.
 {% for domain in dns_client_dnsmasq_primary_only_domains %}
 server=/{{ domain }}/{{ dns_client_dnsmasq_upstreams[0] }}
 {% endfor %}
 {% endif %}
+{% if (dns_client_dnsmasq_upstreams | default([]) | length) > 0 and (dns_client_dnsmasq_ci_domains | default([]) | length) > 0 %}
+
+# ── CI/CD and container registry domains (round-robin, all upstreams) ─────────
+# These domains are explicitly NOT pinned to a single upstream.
+# dnsmasq round-robins across all configured resolvers so that a brief WireGuard
+# path degradation or primary Unbound hiccup does not stall GitHub Actions jobs
+# (the root cause of the 100-second OAuth timeout chain on vas-worker1 / 9.11.0.x).
+{% for domain in dns_client_dnsmasq_ci_domains %}
+{% for ns in dns_client_dnsmasq_upstreams %}
+server=/{{ domain }}/{{ ns }}
+{% endfor %}
+{% endfor %}
+{% endif %}
 
 {% if dns_client_filter_aaaa | bool %}
-# Drop AAAA answers (forces IPv4 usage for clients like containerd/ACME)
+# ── AAAA filtering ────────────────────────────────────────────────────────────
+# Drop AAAA answers to force IPv4-only resolution.
+# Eliminates the AAAA-first timeout (30-90 s) when a node has no IPv6 egress.
+# Required on WireGuard-client nodes (e.g. vas-worker1 on 9.11.0.x) because
+# IPv6 is disabled in Unbound and in the cluster network stack.
 filter-AAAA
 {% endif %}
