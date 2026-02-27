@@ -20,6 +20,25 @@
   changed_when: false
   when: nfd_state | default("install") == "install"
 
+- name: Patch nfd-worker CPU limit
+  ansible.builtin.command:
+    cmd: >-
+      kubectl -n {{ nfd_namespace }} patch daemonset nfd-worker
+      --type=json
+      --patch '[{"op":"replace","path":"/spec/template/spec/containers/0/resources/limits/cpu","value":"{{ nfd_worker_cpu_limit }}"}]'
+  register: nfd_worker_cpu_patch
+  changed_when: "'patched' in nfd_worker_cpu_patch.stdout"
+  when: nfd_state | default("install") == "install"
+
+- name: Wait for nfd-worker rollout after CPU limit patch
+  ansible.builtin.command:
+    cmd: kubectl -n {{ nfd_namespace }} rollout status daemonset/nfd-worker --timeout={{ nfd_rollout_timeout }}
+  register: nfd_worker_patch_rollout
+  changed_when: false
+  when:
+    - nfd_state | default("install") == "install"
+    - nfd_worker_cpu_patch.changed
+
 - name: Show nodes with NFD labels
   ansible.builtin.command:
     cmd: kubectl get nodes -o custom-columns=NAME:.metadata.name,OS_ID:.metadata.labels.feature\.node\.kubernetes\.io/system-os_release\.ID,KERNEL:.metadata.labels.feature\.node\.kubernetes\.io/kernel-version\.full

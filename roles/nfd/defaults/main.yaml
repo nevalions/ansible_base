@@ -4,3 +4,9 @@ nfd_namespace: "node-feature-discovery"
 nfd_manifest_url: "https://github.com/kubernetes-sigs/node-feature-discovery/deployment/overlays/default?ref={{ nfd_version }}"
 nfd_rollout_timeout: "180s"
 nfd_kubeconfig: "{{ lookup('env', 'KUBECONFIG') | default(lookup('env', 'HOME') + '/.kube/config', true) }}"
+
+# nfd-worker CPU limit. The upstream default (200m) is too low for nodes with
+# many hardware features — the worker bursts past it during discovery scans and
+# gets throttled, which fires CPUThrottlingHigh (info) → InfoInhibitor noise.
+# 500m is sufficient headroom without over-provisioning on small nodes.
+nfd_worker_cpu_limit: "500m"
