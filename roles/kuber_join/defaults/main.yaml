@@ -28,11 +28,22 @@ kuber_join_kubelet_extra_args:
     }}
 kubeadm_api_version: "v1beta4"
 
+# Kubelet graceful shutdown grace periods
+# Ensures in-flight pod lifecycle completes before kubelet exits on SIGTERM
+kuber_join_shutdown_grace_period: "60s"
+kuber_join_shutdown_grace_period_critical_pods: "20s"
+
 # CNI validation after worker join
 # Global source of truth: vault_k8s_cni_type (example: flannel or calico)
 kuber_join_cni_type: "{{ vault_k8s_cni_type | default('flannel') }}"
 kuber_join_cni_namespace: "{{ 'kube-flannel' if kuber_join_cni_type == 'flannel' else 'kube-system' }}"
 kuber_join_cni_label_selector: "{{ 'app=flannel' if kuber_join_cni_type == 'flannel' else 'k8s-app=calico-node' }}"
+
+# Flannel pre-join readiness gate
+# Blocks kubeadm join until flannel DaemonSet is fully rolled out,
+# preventing kubelet CrashLoopBackOff from missing /run/flannel/subnet.env
+kuber_join_cni_flannel_readiness_check: true
+kuber_join_cni_daemonset_name: "kube-flannel-ds"
 
 # Node-local DNS verification after worker join
 kuber_join_node_dns_probe_enabled: true

@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# containerd-shim-cleanup.service
+#
+# Oneshot systemd unit that kills orphaned containerd-shim-runc-v2 processes
+# before kubelet starts. Orphan shims survive containerd restarts and can hold
+# ports (e.g. 10249/10256 for kube-proxy), preventing new pods from binding.
+#
+[Unit]
+Description=Containerd orphan shim cleanup
+Documentation=https://github.com/containerd/containerd/blob/main/docs/shim.md
+After=containerd.service
+Before=kubelet.service
+Requires=containerd.service
+
+[Service]
+Type=oneshot
+ExecStart={{ kuber_shim_cleanup_script_path }}
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=containerd-shim-cleanup
+
+[Install]
+WantedBy=kubelet.service

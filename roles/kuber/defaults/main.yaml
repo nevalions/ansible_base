@@ -51,3 +51,11 @@ k8s_preflight_k8s_processes:
   - kube-controller-manager
   - kube-scheduler
   - kube-proxy
+
+# Orphan containerd-shim GC
+# Oneshot service that kills shim processes not tracked by any containerd task.
+# Runs Before=kubelet.service to prevent ghost containers from holding ports.
+kuber_shim_cleanup_script_path: /usr/local/sbin/containerd-shim-cleanup.sh
+kuber_shim_cleanup_binary: containerd-shim-runc-v2
+kuber_shim_cleanup_ctr_binary: /usr/local/bin/ctr
+kuber_shim_cleanup_containerd_address: /run/containerd/containerd.sock

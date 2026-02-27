@@ -26,3 +26,8 @@ nodeRegistration:
       value: "{{ value }}"
 {% endfor %}
 {% endif %}
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+shutdownGracePeriod: "{{ kuber_plane_join_shutdown_grace_period }}"
+shutdownGracePeriodCriticalPods: "{{ kuber_plane_join_shutdown_grace_period_critical_pods }}"

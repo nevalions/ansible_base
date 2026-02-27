@@ -92,6 +92,31 @@
     fail_msg: "CNI loopback plugin missing at /opt/cni/bin/loopback; worker join will fail for sandbox networking."
     success_msg: "CNI loopback plugin is present"
 
+- name: Wait for flannel DaemonSet rollout on control plane before join
+  ansible.builtin.command: >-
+    kubectl rollout status daemonset/{{ kuber_join_cni_daemonset_name }}
+    -n {{ kuber_join_cni_namespace }} --timeout=120s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  when:
+    - kuber_join_cni_type == 'flannel'
+    - kuber_join_cni_flannel_readiness_check | bool
+
+- name: Wait for flannel pods to be Ready before join
+  ansible.builtin.command: >-
+    kubectl wait pod -l {{ kuber_join_cni_label_selector }}
+    -n {{ kuber_join_cni_namespace }}
+    --for=condition=ready --timeout=120s
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ kuber_join_delegate_host }}"
+  changed_when: false
+  when:
+    - kuber_join_cni_type == 'flannel'
+    - kuber_join_cni_flannel_readiness_check | bool
+
 - name: Check for stale cni0 interface
   ansible.builtin.command: ip link show cni0
   register: kuber_join_cni0_interface

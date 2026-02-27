@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+#
+# containerd-shim-cleanup: Kill orphaned containerd-shim-runc-v2 processes.
+#
+# A containerd-shim process survives a containerd restart by design.
+# After restart, shims that are not referenced by any active containerd task
+# become invisible to all tooling but still hold ports and file descriptors.
+# This script cross-references running shim PIDs against all ctr tasks across
+# all namespaces and kills any unmatched (orphan) shims before kubelet starts.
+#
+# Run as: systemd oneshot, Before=kubelet.service, After=containerd.service
+#
+{% raw %}
+set -euo pipefail
+{% endraw %}
+
+SHIM_BINARY="{{ kuber_shim_cleanup_binary }}"
+CTR_BINARY="{{ kuber_shim_cleanup_ctr_binary }}"
+CONTAINERD_ADDRESS="{{ kuber_shim_cleanup_containerd_address }}"
+
+{% raw %}
+LOG_TAG="containerd-shim-cleanup"
+
+log() {
+  echo "$*" | systemd-cat -t "${LOG_TAG}" -p info
+  echo "$*"
+}
+
+warn() {
+  echo "$*" | systemd-cat -t "${LOG_TAG}" -p warning
+  echo "$*" >&2
+}
+
+# Collect all shim PIDs currently running on the system
+mapfile -t SHIM_PIDS < <(pgrep -x "$(basename "${SHIM_BINARY}")" 2>/dev/null || true)
+
+if [[ ${#SHIM_PIDS[@]} -eq 0 ]]; then
+  log "No ${SHIM_BINARY} processes found. Nothing to clean up."
+  exit 0
+fi
+
+log "Found ${#SHIM_PIDS[@]} shim process(es): ${SHIM_PIDS[*]}"
+
+# Collect all PIDs that are referenced by a live containerd task
+# Iterate over every containerd namespace
+mapfile -t NAMESPACES < <(
+  "${CTR_BINARY}" --address "${CONTAINERD_ADDRESS}" namespaces list -q 2>/dev/null || true
+)
+
+declare -A KNOWN_PIDS
+
+for NS in "${NAMESPACES[@]}"; do
+  while IFS= read -r line; do
+    pid=$(echo "${line}" | awk '{print $NF}')
+    if [[ "${pid}" =~ ^[0-9]+$ ]]; then
+      KNOWN_PIDS["${pid}"]=1
+    fi
+  done < <(
+    "${CTR_BINARY}" --address "${CONTAINERD_ADDRESS}" \
+      --namespace "${NS}" tasks ls 2>/dev/null || true
+  )
+done
+
+log "Known live task PIDs: ${!KNOWN_PIDS[*]:-none}"
+
+KILLED=0
+for PID in "${SHIM_PIDS[@]}"; do
+  if [[ -n "${KNOWN_PIDS[${PID}]+_}" ]]; then
+    log "Shim PID ${PID} is a known live task — skipping."
+  else
+    warn "Orphan shim PID ${PID} not found in any containerd namespace — killing."
+    if kill -9 "${PID}" 2>/dev/null; then
+      warn "Killed orphan shim PID ${PID}."
+      KILLED=$(( KILLED + 1 ))
+    else
+      warn "Could not kill PID ${PID} (already gone?)."
+    fi
+  fi
+done
+
+log "Cleanup complete. Killed ${KILLED} orphan shim(s)."
+exit 0
+{% endraw %}

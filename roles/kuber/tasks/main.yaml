@@ -521,6 +521,32 @@
     state: restarted
     enabled: true
 
+- name: Deploy containerd orphan-shim cleanup script
+  ansible.builtin.template:
+    src: containerd-shim-cleanup.sh.j2
+    dest: "{{ kuber_shim_cleanup_script_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+  notify: Reload systemd daemon
+
+- name: Deploy containerd orphan-shim cleanup systemd unit
+  ansible.builtin.template:
+    src: containerd-shim-cleanup.service.j2
+    dest: /etc/systemd/system/containerd-shim-cleanup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd daemon
+
+- name: Flush handlers to apply systemd reload before enabling service
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable containerd-shim-cleanup service
+  ansible.builtin.systemd:
+    name: containerd-shim-cleanup.service
+    enabled: true
+    daemon_reload: false
 
 - name: Check if UFW binary exists
   ansible.builtin.stat:

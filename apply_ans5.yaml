@@ -1,0 +1,153 @@
+---
+# apply_ans5.yaml
+#
+# Apply ANS-5 fixes to live cluster nodes WITHOUT full redeployment.
+# Safe to run on running nodes; kubelet is restarted one node at a time.
+#
+# Fix 1: Patch shutdownGracePeriod / shutdownGracePeriodCriticalPods in
+#         /var/lib/kubelet/config.yaml and restart kubelet.
+# Fix 3: Deploy containerd-shim-cleanup oneshot service.
+# (Fix 2 is pre-join-only; no action needed on running nodes.)
+#
+# Usage:
+#   ansible-playbook apply_ans5.yaml                   # all cluster nodes
+#   ansible-playbook apply_ans5.yaml -l bay-plane1     # single node
+#   ansible-playbook apply_ans5.yaml --check           # dry-run
+#
+- name: Apply ANS-5 fixes to live Kubernetes nodes
+  hosts: kuber_small_all
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    ans5_shutdown_grace_period: "60s"
+    ans5_shutdown_grace_period_critical_pods: "20s"
+    ans5_shim_cleanup_script: /usr/local/sbin/containerd-shim-cleanup.sh
+    ans5_shim_cleanup_service: /etc/systemd/system/containerd-shim-cleanup.service
+    # kuber role defaults required by shim cleanup templates
+    kuber_shim_cleanup_script_path: /usr/local/sbin/containerd-shim-cleanup.sh
+    kuber_shim_cleanup_binary: containerd-shim-runc-v2
+    kuber_shim_cleanup_ctr_binary: /usr/local/bin/ctr
+    kuber_shim_cleanup_containerd_address: /run/containerd/containerd.sock
+
+  tasks:
+    # ------------------------------------------------------------------ #
+    # Fix 1 — Kubelet graceful shutdown                                   #
+    # ------------------------------------------------------------------ #
+
+    - name: Read current kubelet config
+      ansible.builtin.slurp:
+        src: /var/lib/kubelet/config.yaml
+      register: ans5_kubelet_config_raw
+
+    - name: Parse kubelet config
+      ansible.builtin.set_fact:
+        ans5_kubelet_config: "{{ ans5_kubelet_config_raw.content | b64decode | from_yaml }}"
+
+    - name: Display current shutdown grace periods
+      ansible.builtin.debug:
+        msg:
+          - "Node: {{ inventory_hostname }}"
+          - "shutdownGracePeriod (current):             {{ ans5_kubelet_config.shutdownGracePeriod | default('unset') }}"
+          - "shutdownGracePeriodCriticalPods (current): {{ ans5_kubelet_config.shutdownGracePeriodCriticalPods | default('unset') }}"
+
+    - name: Patch shutdownGracePeriod in kubelet config
+      ansible.builtin.lineinfile:
+        path: /var/lib/kubelet/config.yaml
+        regexp: '^shutdownGracePeriod:'
+        line: "shutdownGracePeriod: {{ ans5_shutdown_grace_period }}"
+        backup: true
+      register: ans5_grace_changed
+
+    - name: Patch shutdownGracePeriodCriticalPods in kubelet config
+      ansible.builtin.lineinfile:
+        path: /var/lib/kubelet/config.yaml
+        regexp: '^shutdownGracePeriodCriticalPods:'
+        line: "shutdownGracePeriodCriticalPods: {{ ans5_shutdown_grace_period_critical_pods }}"
+      register: ans5_critical_changed
+
+    - name: Restart kubelet to apply shutdown grace period changes
+      ansible.builtin.systemd:
+        name: kubelet
+        state: restarted
+      when: ans5_grace_changed.changed or ans5_critical_changed.changed
+
+    - name: Wait for kubelet to be active after restart
+      ansible.builtin.command: systemctl is-active kubelet
+      register: ans5_kubelet_status
+      until: ans5_kubelet_status.rc == 0 and ans5_kubelet_status.stdout == 'active'
+      retries: 12
+      delay: 5
+      changed_when: false
+
+    - name: Verify shutdown grace periods are applied
+      ansible.builtin.command: grep -E '^shutdownGracePeriod' /var/lib/kubelet/config.yaml
+      register: ans5_verify_grace
+      changed_when: false
+
+    - name: Assert correct grace periods
+      ansible.builtin.assert:
+        that:
+          - "'shutdownGracePeriod: 60s' in ans5_verify_grace.stdout"
+          - "'shutdownGracePeriodCriticalPods: 20s' in ans5_verify_grace.stdout"
+        success_msg: "shutdownGracePeriod correctly set on {{ inventory_hostname }}"
+        fail_msg: "shutdownGracePeriod NOT correctly set on {{ inventory_hostname }}: {{ ans5_verify_grace.stdout }}"
+
+    # ------------------------------------------------------------------ #
+    # Fix 3 — Orphan-shim cleanup oneshot service                        #
+    # ------------------------------------------------------------------ #
+
+    - name: Deploy containerd orphan-shim cleanup script
+      ansible.builtin.template:
+        src: roles/kuber/templates/containerd-shim-cleanup.sh.j2
+        dest: "{{ ans5_shim_cleanup_script }}"
+        owner: root
+        group: root
+        mode: "0750"
+      register: ans5_script_changed
+
+    - name: Deploy containerd orphan-shim cleanup systemd unit
+      ansible.builtin.template:
+        src: roles/kuber/templates/containerd-shim-cleanup.service.j2
+        dest: "{{ ans5_shim_cleanup_service }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: ans5_unit_changed
+
+    - name: Reload systemd daemon if unit changed
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: ans5_unit_changed.changed
+
+    - name: Enable containerd-shim-cleanup service
+      ansible.builtin.systemd:
+        name: containerd-shim-cleanup.service
+        enabled: true
+
+    - name: Verify shim cleanup service is enabled
+      ansible.builtin.command: systemctl is-enabled containerd-shim-cleanup.service
+      register: ans5_shim_enabled
+      changed_when: false
+
+    - name: Assert shim cleanup service is enabled
+      ansible.builtin.assert:
+        that:
+          - ans5_shim_enabled.rc == 0
+          - ans5_shim_enabled.stdout | trim == 'enabled'
+        success_msg: "containerd-shim-cleanup.service enabled on {{ inventory_hostname }}"
+        fail_msg: "containerd-shim-cleanup.service NOT enabled on {{ inventory_hostname }}"
+
+    # ------------------------------------------------------------------ #
+    # Summary                                                             #
+    # ------------------------------------------------------------------ #
+
+    - name: Display node fix summary
+      ansible.builtin.debug:
+        msg:
+          - "=== ANS-5 applied: {{ inventory_hostname }} ==="
+          - "shutdownGracePeriod:             60s"
+          - "shutdownGracePeriodCriticalPods: 20s"
+          - "containerd-shim-cleanup.service: enabled"

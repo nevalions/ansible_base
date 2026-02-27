@@ -56,6 +56,11 @@ kubeadm_api_server_cert_sans: >-
 
 kubeadm_api_version: "v1beta4"
 
+# Kubelet graceful shutdown grace periods
+# Ensures in-flight pod lifecycle completes before kubelet exits on SIGTERM
+kubeadm_shutdown_grace_period: "60s"
+kubeadm_shutdown_grace_period_critical_pods: "20s"
+
 # Kubeconfig Configuration
 kubeconfig_user: "{{ vault_admin_user | default(ansible_user | default(ansible_user_id)) }}"
 # Avoid relying on top-level injected facts (ansible_env.*).

@@ -28,6 +28,11 @@ kuber_plane_join_kubelet_extra_args:
     }}
 kubeadm_api_version: "v1beta4"
 
+# Kubelet graceful shutdown grace periods
+# Ensures in-flight pod lifecycle completes before kubelet exits on SIGTERM
+kuber_plane_join_shutdown_grace_period: "60s"
+kuber_plane_join_shutdown_grace_period_critical_pods: "20s"
+
 # Safety behavior when target node is already part of a cluster
 # true: fail fast and require explicit reset
 # false: skip join tasks for that host and continue the play
