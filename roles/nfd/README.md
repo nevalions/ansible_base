@@ -10,6 +10,9 @@ Installs, verifies, or removes Kubernetes Node Feature Discovery (NFD) using ups
 - `nfd_namespace` - Target namespace (default: `node-feature-discovery`)
 - `nfd_rollout_timeout` - Rollout wait timeout (default: `180s`)
 - `nfd_kubeconfig` - Kubeconfig path, defaults to `$KUBECONFIG` then `~/.kube/config`
+- `nfd_worker_cpu_limit` - CPU limit for the nfd-worker DaemonSet (default: `500m`). The upstream
+  default of `200m` causes throttling on nodes with many hardware features, which fires
+  `CPUThrottlingHigh` (info severity) and surfaces as `InfoInhibitor` noise in Prometheus.
 
 ## Usage
 
