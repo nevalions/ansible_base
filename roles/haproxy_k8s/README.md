@@ -1,8 +1,8 @@
 # HAProxy Kubernetes API
 
-This role configures HAProxy for Kubernetes API server load balancing and
-optional HTTP/HTTPS ingress forwarding to the Kubernetes cluster via a
-MetalLB BGP VIP.
+This role configures HAProxy for Kubernetes API server load balancing,
+optional HTTP/HTTPS ingress forwarding, and optional mail server (SMTP/IMAP)
+forwarding to the Kubernetes cluster via MetalLB LoadBalancer IPs.
 
 ## Purpose
 
@@ -10,6 +10,7 @@ MetalLB BGP VIP.
 - Support single or multiple control plane nodes
 - Health checks for API server backend(s)
 - Forward HTTP/HTTPS ingress traffic to a MetalLB BGP VIP (optional)
+- Forward SMTP/SMTPS/Submission/IMAPS mail traffic to a MetalLB LB IP (optional)
 - Support PROXY Protocol v2 for real client IP preservation (optional)
 
 ## Variables
@@ -38,6 +39,23 @@ vault_haproxy_ingress_backend_https_port: 443
 # Requires Traefik to be configured with vault_traefik_proxy_protocol_enabled: true
 # and vault_traefik_external_traffic_policy: Cluster
 vault_haproxy_ingress_proxy_protocol: true
+
+# Mail Server Load Balancing (SMTP/IMAP to Kubernetes via MetalLB)
+# Set vault_haproxy_mail_enabled: true to activate; backend IP is the
+# MetalLB IP assigned to the stalwart-mail-lb LoadBalancer Service.
+vault_haproxy_mail_enabled: false
+vault_haproxy_mail_smtp_port: 25
+vault_haproxy_mail_smtps_port: 465
+vault_haproxy_mail_submission_port: 587
+vault_haproxy_mail_imaps_port: 993
+vault_haproxy_mail_backend_ip: "[mail-metallb-ip]"
+vault_haproxy_mail_backend_smtp_port: 25
+vault_haproxy_mail_backend_smtps_port: 465
+vault_haproxy_mail_backend_submission_port: 587
+vault_haproxy_mail_backend_imaps_port: 993
+# vault_haproxy_mail_timeout_client: 300000   # 5 min — SMTP transactions can be slow
+# vault_haproxy_mail_timeout_server: 300000
+# vault_haproxy_mail_proxy_protocol: false    # Keep false — Stalwart reads client IP natively
 ```
 
 ### PROXY Protocol and externalTrafficPolicy
@@ -54,6 +72,14 @@ and that node changes whenever the Traefik pod reschedules. `Cluster` policy
 lets any node forward to the Traefik pod regardless of placement, avoiding
 silent packet drops. Real client IP is preserved by the PROXY header, not by
 `externalTrafficPolicy: Local`.
+
+### Mail PROXY Protocol
+
+`vault_haproxy_mail_proxy_protocol` defaults to `false` and should remain
+`false` for Stalwart Mail Server. Stalwart reads the real client IP natively
+via the TCP connection; enabling PROXY protocol here would require Stalwart to
+be explicitly configured to accept it, and is not needed for correct IP
+logging.
 
 ## Usage
 
@@ -92,6 +118,21 @@ ansible-playbook -i hosts_bay.ini kuber_verify.yaml
 2. Add WireGuard peer configuration
 3. Update `vault_k8s_control_planes` in vault_secrets.yml
 4. Re-run `keepalived_manage.yaml` and `haproxy_k8s.yaml`
+
+**Mail Server Forwarding (optional):**
+
+```
+Internet (SMTP/SMTPS/Submission/IMAPS)
+    → HAProxy ([haproxy-public-ip]:25/465/587/993)
+    → MetalLB LoadBalancer IP ([mail-metallb-ip])
+    → Stalwart Mail Pod (Kubernetes)
+```
+
+- Enabled via `vault_haproxy_mail_enabled: true`
+- Backend IP is the MetalLB IP of the `stalwart-mail-lb` LoadBalancer Service
+- UFW rules for mail ports are automatically applied when enabled (Debian/Ubuntu)
+- Post-deploy verification checks that HAProxy is listening and the backend is reachable
+- Deployment order: HAProxy mail config → Stalwart Mail Server in Kubernetes
 
 ## Files
 
