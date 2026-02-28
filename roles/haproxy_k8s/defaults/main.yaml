@@ -44,3 +44,29 @@ haproxy_k8s_check_fall: 3
 
 # PROXY protocol for real client IPs (requires Traefik to accept proxyProtocol)
 haproxy_ingress_proxy_protocol: "{{ vault_haproxy_ingress_proxy_protocol | default(false) }}"
+
+# =============================================================================
+# Mail Server Load Balancing (SMTP/IMAP to Kubernetes via MetalLB)
+# =============================================================================
+# Enable/disable mail server forwarding (ports 25, 465, 587, 993)
+haproxy_mail_enabled: "{{ vault_haproxy_mail_enabled | default(false) }}"
+
+# Frontend ports (what HAProxy listens on — public internet)
+haproxy_mail_smtp_port: "{{ vault_haproxy_mail_smtp_port | default(25) }}"
+haproxy_mail_smtps_port: "{{ vault_haproxy_mail_smtps_port | default(465) }}"
+haproxy_mail_submission_port: "{{ vault_haproxy_mail_submission_port | default(587) }}"
+haproxy_mail_imaps_port: "{{ vault_haproxy_mail_imaps_port | default(993) }}"
+
+# Backend target (MetalLB IP assigned to stalwart-mail-lb Service)
+haproxy_mail_backend_ip: "{{ vault_haproxy_mail_backend_ip | default('[mail-lb-ip]') }}"
+haproxy_mail_backend_smtp_port: "{{ vault_haproxy_mail_backend_smtp_port | default(25) }}"
+haproxy_mail_backend_smtps_port: "{{ vault_haproxy_mail_backend_smtps_port | default(465) }}"
+haproxy_mail_backend_submission_port: "{{ vault_haproxy_mail_backend_submission_port | default(587) }}"
+haproxy_mail_backend_imaps_port: "{{ vault_haproxy_mail_backend_imaps_port | default(993) }}"
+
+# Mail-specific timeouts (longer than default — SMTP transactions can be slow)
+haproxy_mail_timeout_client: "{{ vault_haproxy_mail_timeout_client | default(300000) }}"
+haproxy_mail_timeout_server: "{{ vault_haproxy_mail_timeout_server | default(300000) }}"
+
+# PROXY protocol for mail (disabled by default — Stalwart reads client IP natively)
+haproxy_mail_proxy_protocol: "{{ vault_haproxy_mail_proxy_protocol | default(false) }}"

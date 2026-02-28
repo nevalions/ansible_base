@@ -76,6 +76,24 @@
     - ansible_facts['os_family'] == 'Debian'
     - ufw_is_active | bool
 
+- name: Configure UFW to allow mail ports from anywhere
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ mail_port | int }}"
+    direction: in
+  loop:
+    - "{{ haproxy_mail_smtp_port }}"
+    - "{{ haproxy_mail_smtps_port }}"
+    - "{{ haproxy_mail_submission_port }}"
+    - "{{ haproxy_mail_imaps_port }}"
+  loop_control:
+    loop_var: mail_port
+  when:
+    - haproxy_mail_enabled | default(false) | bool
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_is_active | bool
+
 - name: Check if HAProxy config exists
   ansible.builtin.stat:
     path: /etc/haproxy/haproxy.cfg
@@ -215,3 +233,61 @@
   failed_when: false
   ignore_errors: true
   when: haproxy_k8s_backend_hosts_dynamic | length > 0
+
+# =============================================================================
+# Mail Server Verification
+# =============================================================================
+
+- name: Verify HAProxy is listening on mail ports
+  ansible.builtin.shell: ss -tlnp | grep ':{{ mail_port }}'
+  loop:
+    - "{{ haproxy_mail_smtp_port }}"
+    - "{{ haproxy_mail_smtps_port }}"
+    - "{{ haproxy_mail_submission_port }}"
+    - "{{ haproxy_mail_imaps_port }}"
+  loop_control:
+    loop_var: mail_port
+  register: mail_port_checks
+  changed_when: false
+  failed_when: false
+  when: haproxy_mail_enabled | default(false) | bool
+
+- name: Display mail port status
+  ansible.builtin.debug:
+    msg: "Mail port {{ item.mail_port }}: {{ 'LISTENING' if item.rc == 0 else 'NOT LISTENING' }}"
+  loop: "{{ mail_port_checks.results | default([]) }}"
+  loop_control:
+    label: "port {{ item.mail_port | default('?') }}"
+  when:
+    - haproxy_mail_enabled | default(false) | bool
+    - mail_port_checks.results is defined
+
+- name: Wait for mail ports to be ready
+  ansible.builtin.wait_for:
+    port: "{{ mail_port | int }}"
+    delay: 2
+    timeout: 30
+  loop:
+    - "{{ haproxy_mail_smtp_port }}"
+    - "{{ haproxy_mail_smtps_port }}"
+    - "{{ haproxy_mail_submission_port }}"
+    - "{{ haproxy_mail_imaps_port }}"
+  loop_control:
+    loop_var: mail_port
+  when: haproxy_mail_enabled | default(false) | bool
+
+- name: Verify mail backend is reachable on SMTP
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_mail_backend_ip }}"
+    port: "{{ haproxy_mail_backend_smtp_port | int }}"
+    timeout: 10
+  register: mail_backend_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: true
+  when: haproxy_mail_enabled | default(false) | bool
+
+- name: Display mail backend connectivity
+  ansible.builtin.debug:
+    msg: "Mail backend {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_smtp_port }} {{ 'reachable' if mail_backend_check is not failed else 'NOT reachable (deploy Stalwart first, then re-run)' }}"
+  when: haproxy_mail_enabled | default(false) | bool

@@ -91,3 +91,86 @@ backend ingress-https-backend
     server bgp-vip {{ haproxy_ingress_backend_ip }}:{{ haproxy_ingress_backend_https_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_ingress_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
 # END ANSIBLE MANAGED SECTION - Ingress HTTPS Backend
 {% endif %}
+
+{% if haproxy_mail_enabled | default(false) | bool %}
+# =============================================================================
+# MAIL SERVER LOAD BALANCING (SMTP/IMAP to Kubernetes via MetalLB)
+# =============================================================================
+# Traffic flow: Internet -> HAProxy -> MetalLB LB IP -> Stalwart Mail Pod
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail SMTP Frontend
+frontend mail-smtp
+    bind *:{{ haproxy_mail_smtp_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_mail_timeout_client }}
+    default_backend mail-smtp-backend
+# END ANSIBLE MANAGED SECTION - Mail SMTP Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail SMTP Backend
+backend mail-smtp-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_mail_timeout_server }}
+    server stalwart {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_smtp_port }} check inter 5000 rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_mail_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
+
+# END ANSIBLE MANAGED SECTION - Mail SMTP Backend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail SMTPS Frontend
+frontend mail-smtps
+    bind *:{{ haproxy_mail_smtps_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_mail_timeout_client }}
+    default_backend mail-smtps-backend
+# END ANSIBLE MANAGED SECTION - Mail SMTPS Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail SMTPS Backend
+backend mail-smtps-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_mail_timeout_server }}
+    server stalwart {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_smtps_port }} check inter 5000 rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_mail_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
+
+# END ANSIBLE MANAGED SECTION - Mail SMTPS Backend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail Submission Frontend
+frontend mail-submission
+    bind *:{{ haproxy_mail_submission_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_mail_timeout_client }}
+    default_backend mail-submission-backend
+# END ANSIBLE MANAGED SECTION - Mail Submission Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail Submission Backend
+backend mail-submission-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_mail_timeout_server }}
+    server stalwart {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_submission_port }} check inter 5000 rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_mail_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
+
+# END ANSIBLE MANAGED SECTION - Mail Submission Backend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail IMAPS Frontend
+frontend mail-imaps
+    bind *:{{ haproxy_mail_imaps_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_mail_timeout_client }}
+    default_backend mail-imaps-backend
+# END ANSIBLE MANAGED SECTION - Mail IMAPS Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Mail IMAPS Backend
+backend mail-imaps-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_mail_timeout_server }}
+    server stalwart {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_imaps_port }} check inter 5000 rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}{% if haproxy_mail_proxy_protocol | default(false) | bool %} send-proxy-v2{% endif %}
+
+# END ANSIBLE MANAGED SECTION - Mail IMAPS Backend
+{% endif %}
