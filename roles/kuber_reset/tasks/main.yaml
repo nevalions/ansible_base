@@ -254,6 +254,11 @@
     - /var/lib/containerd
     - /etc/containerd
 
+- name: Remove persistent kernel module configuration
+  ansible.builtin.file:
+    path: /etc/modules-load.d/k8s.conf
+    state: absent
+
 - name: Flush iptables rules
   ansible.builtin.shell: |
     iptables -F

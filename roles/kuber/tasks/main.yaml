@@ -490,6 +490,16 @@
     - overlay
     - br_netfilter
 
+- name: Persist kernel modules across reboots
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Enable IP forwarding and bridge networking
   ansible.posix.sysctl:
     name: "{{ item.name }}"
@@ -500,6 +510,7 @@
   loop:
     - { name: "net.ipv4.ip_forward", value: "1" }
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
+    - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
 
 - name: Create containerd config directory
   ansible.builtin.file:

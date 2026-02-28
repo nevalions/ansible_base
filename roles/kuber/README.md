@@ -141,7 +141,8 @@ sudo kubeadm join <control-plane-ip>:6443 --token <token> --discovery-token-ca-c
 
 7. **Configure kernel modules**
    - Loads `overlay` and `br_netfilter` modules
-   - Enables IP forwarding and bridge networking
+   - Persists modules via `/etc/modules-load.d/k8s.conf` for reboot survival
+   - Enables IP forwarding and bridge networking (iptables and ip6tables)
 
 8. **Configure containerd**
    - Sets up containerd with systemd cgroup driver
@@ -196,7 +197,11 @@ The role sets kernel parameters:
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
 | `net.ipv4.ip_forward` | 1 | Enable IP forwarding |
-| `net.bridge.bridge-nf-call-iptables` | 1 | Enable bridge networking |
+| `net.bridge.bridge-nf-call-iptables` | 1 | Enable bridge networking (IPv4) |
+| `net.bridge.bridge-nf-call-ip6tables` | 1 | Enable bridge networking (IPv6) |
+
+Kernel modules (`overlay`, `br_netfilter`) are persisted in `/etc/modules-load.d/k8s.conf`
+so they survive reboots. The `kuber_reset` role removes this file during a full reset.
 
 ## Network Plugin
 
@@ -274,6 +279,10 @@ sysctl net.ipv4.ip_forward
 
 # Check bridge networking
 sysctl net.bridge.bridge-nf-call-iptables
+sysctl net.bridge.bridge-nf-call-ip6tables
+
+# Check persistent module config
+cat /etc/modules-load.d/k8s.conf
 
 # Check forwarding policy
 sudo iptables -S FORWARD

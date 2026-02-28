@@ -96,8 +96,8 @@ ansible-playbook -i hosts_bay.ini kuber_flannel_remove.yaml --tags flannel
 - Installs kubelet, kubeadm, kubectl, containerd
 - Holds Kubernetes packages to prevent automatic updates
 - Disables swap
-- Loads required kernel modules (overlay, br_netfilter)
-- Configures IP forwarding and bridge networking
+- Loads required kernel modules (overlay, br_netfilter) and persists via `/etc/modules-load.d/k8s.conf`
+- Configures IP forwarding and bridge networking (iptables + ip6tables)
 - Configures containerd cgroup driver (systemd)
 - Disables UFW on Kubernetes nodes (to avoid CNI/WireGuard forwarding issues)
 

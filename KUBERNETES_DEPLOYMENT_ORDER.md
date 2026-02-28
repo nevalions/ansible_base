@@ -207,8 +207,8 @@ ansible-playbook -i hosts_bay.ini kuber.yaml
 
 - Installs nfs-common, Kubernetes packages, containerd
 - Disables swap
-- Loads required kernel modules (overlay, br_netfilter)
-- Configures IP forwarding and bridge networking
+- Loads required kernel modules (overlay, br_netfilter) and persists via `/etc/modules-load.d/k8s.conf`
+- Configures IP forwarding and bridge networking (iptables + ip6tables)
 - Disables UFW (avoids blocking CNI/WireGuard forwarding)
 - Runs pre-flight checks (Docker conflicts, port availability, kernel modules)
 
