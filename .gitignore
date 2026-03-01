@@ -20,6 +20,7 @@ group_vars/*.yml
 *.vault
 group_vars/*.vault.yml
 vault_secrets.yml
+vault_secrets2.yml
 
 # Ignore inventory files (contain real hostnames and IPs)
 hosts_*.ini
