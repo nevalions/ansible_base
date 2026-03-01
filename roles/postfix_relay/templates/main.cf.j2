@@ -1,0 +1,63 @@
+# {{ ansible_managed }}
+# Postfix main.cf — relay-only configuration
+#
+# Purpose: Accept mail from Stalwart (via WireGuard) and relay to the Internet.
+# Outbound connections bind to the public IP that holds the PTR record.
+# No local delivery, no mailboxes, no authentication (WireGuard provides isolation).
+
+# --- Identity ---
+myhostname = {{ postfix_relay_myhostname }}
+mydomain = {{ postfix_relay_mydomain }}
+myorigin = $mydomain
+smtp_helo_name = {{ postfix_relay_myhostname }}
+
+# --- Network ---
+# Only listen on loopback + WireGuard interface
+inet_interfaces = 127.0.0.1, {{ postfix_relay_listen_address }}
+inet_protocols = ipv4
+
+# Only accept mail from trusted networks (WireGuard subnet)
+mynetworks = {{ postfix_relay_mynetworks | join(', ') }}
+
+# --- Relay-only mode ---
+# No local delivery — relay everything
+mydestination =
+local_transport = error:local delivery disabled
+local_recipient_maps =
+
+# Accept mail for any destination (relay from trusted networks)
+relay_domains =
+smtpd_relay_restrictions = permit_mynetworks, reject
+
+# --- Outbound delivery ---
+# Bind outbound SMTP to the public IP with PTR record
+smtp_bind_address = {{ postfix_relay_smtp_bind_address }}
+
+# --- Queue ---
+message_size_limit = {{ postfix_relay_message_size_limit }}
+maximal_queue_lifetime = {{ postfix_relay_queue_lifetime }}
+bounce_queue_lifetime = {{ postfix_relay_queue_lifetime }}
+
+# --- TLS (outbound) ---
+# Use opportunistic TLS for outbound delivery to remote MTAs
+smtp_tls_security_level = may
+smtp_tls_loglevel = 1
+
+# --- TLS (inbound) ---
+# No TLS on inbound — traffic comes over WireGuard which is already encrypted
+smtpd_tls_security_level = none
+
+# --- Security hardening ---
+# Disable VRFY and ETRN
+disable_vrfy_command = yes
+smtpd_discard_ehlo_keywords = etrn
+
+# Don't expose software version
+smtpd_banner = $myhostname ESMTP
+
+# --- Compatibility ---
+# Suppress backwards-compatibility warnings (Postfix 3.6+)
+compatibility_level = 3.6
+
+# --- Logging ---
+maillog_file = /var/log/mail.log

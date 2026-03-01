@@ -1,0 +1,13 @@
+---
+- name: Configure Postfix relay on haproxyspb for Stalwart outbound SMTP
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - postfix
+    - mail
+    - relay
+  roles:
+    - postfix_relay

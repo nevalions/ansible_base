@@ -1,0 +1,39 @@
+---
+# Postfix Relay Role — defaults
+#
+# Configures Postfix as a relay-only MTA.
+# Stalwart Mail Server submits outbound mail to this relay via WireGuard,
+# and Postfix delivers to the Internet from the public IP that holds
+# the PTR record and is listed in SPF.
+#
+# All values reference vault_* variables — these MUST be defined in
+# vault_secrets.yml. See vault_secrets.example.yml for documentation.
+
+# Listen address and port (WireGuard interface only)
+postfix_relay_listen_address: "{{ vault_postfix_relay_listen_address }}"
+postfix_relay_listen_port: "{{ vault_postfix_relay_listen_port | default(10025) }}"
+
+# Public IP to bind outbound SMTP connections to (must match PTR record)
+postfix_relay_smtp_bind_address: "{{ vault_postfix_relay_smtp_bind_address }}"
+
+# Trusted networks (only accept mail from these)
+postfix_relay_mynetworks:
+  - "127.0.0.0/8"
+  - "{{ vault_postfix_relay_trusted_network }}"
+
+# Hostname for HELO/EHLO (must match PTR record)
+postfix_relay_myhostname: "{{ vault_postfix_relay_myhostname }}"
+
+# Domain for outbound envelope
+postfix_relay_mydomain: "{{ vault_postfix_relay_mydomain }}"
+
+# Operation mode: install or remove
+postfix_relay_operation: "{{ vault_postfix_relay_operation | default('install') }}"
+
+# UFW firewall management
+postfix_relay_manage_ufw: "{{ vault_postfix_relay_manage_ufw | default(true) }}"
+postfix_relay_ufw_allowed_source: "{{ vault_postfix_relay_ufw_allowed_source }}"
+
+# Postfix queue and delivery tuning
+postfix_relay_message_size_limit: "{{ vault_postfix_relay_message_size_limit | default(52428800) }}"  # 50MB
+postfix_relay_queue_lifetime: "{{ vault_postfix_relay_queue_lifetime | default('3d') }}"

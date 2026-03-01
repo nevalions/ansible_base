@@ -1,0 +1,203 @@
+---
+# Postfix Relay Role — main tasks
+#
+# Installs and configures Postfix as a relay-only MTA on haproxyspb.
+# Stalwart submits outbound mail via WireGuard to port 10025.
+# Postfix delivers to the Internet from the public IP with PTR/SPF.
+
+# =============================================================================
+# Remove mode
+# =============================================================================
+
+- name: Remove Postfix relay (if operation=remove)
+  when: postfix_relay_operation == 'remove'
+  block:
+    - name: Stop and disable Postfix
+      ansible.builtin.systemd:
+        name: postfix
+        state: stopped
+        enabled: false
+      failed_when: false
+
+    - name: Remove Postfix packages
+      ansible.builtin.apt:
+        name:
+          - postfix
+        state: absent
+        purge: true
+
+    - name: Remove UFW rule for relay port
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postfix_relay_listen_port | int }}"
+        from: "{{ postfix_relay_ufw_allowed_source }}"
+        direction: in
+        delete: true
+      when:
+        - postfix_relay_manage_ufw | bool
+        - ufw_is_active | default(false) | bool
+      failed_when: false
+
+    - name: Postfix relay removed
+      ansible.builtin.debug:
+        msg: "Postfix relay has been removed from {{ inventory_hostname }}"
+
+# =============================================================================
+# Install mode
+# =============================================================================
+
+- name: Install and configure Postfix relay
+  when: postfix_relay_operation != 'remove'
+  block:
+    # --- Pre-flight checks ---
+
+    - name: Validate relay listen address is set
+      ansible.builtin.assert:
+        that:
+          - postfix_relay_listen_address | length > 0
+          - postfix_relay_smtp_bind_address | length > 0
+          - postfix_relay_myhostname | length > 0
+        success_msg: "Relay configuration validated"
+        fail_msg: "Missing required postfix_relay variables"
+
+    # --- Installation ---
+
+    - name: Set Postfix debconf selections (non-interactive install)
+      ansible.builtin.debconf:
+        name: postfix
+        question: "{{ item.question }}"
+        value: "{{ item.value }}"
+        vtype: "{{ item.vtype }}"
+      loop:
+        - question: postfix/main_mailer_type
+          value: "No configuration"
+          vtype: select
+        - question: postfix/mailname
+          value: "{{ postfix_relay_myhostname }}"
+          vtype: string
+      loop_control:
+        label: "{{ item.question }}"
+
+    - name: Ensure Postfix is installed
+      ansible.builtin.apt:
+        name:
+          - postfix
+        state: present
+        update_cache: true
+
+    # --- Firewall ---
+
+    - name: Check if UFW is installed
+      ansible.builtin.stat:
+        path: /usr/sbin/ufw
+      register: ufw_bin
+
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      changed_when: false
+      failed_when: false
+      when: ufw_bin.stat.exists
+
+    - name: Set UFW active fact
+      ansible.builtin.set_fact:
+        ufw_is_active: "{{ ufw_bin.stat.exists | default(false) and (ufw_status.stdout | default('')) is search('Status: active') }}"
+
+    - name: Allow relay port from WireGuard subnet
+      community.general.ufw:
+        rule: allow
+        proto: tcp
+        port: "{{ postfix_relay_listen_port | int }}"
+        from: "{{ postfix_relay_ufw_allowed_source }}"
+        direction: in
+      when:
+        - postfix_relay_manage_ufw | bool
+        - ufw_is_active | bool
+
+    # --- Configuration ---
+
+    - name: Check if Postfix config exists
+      ansible.builtin.stat:
+        path: /etc/postfix/main.cf
+      register: postfix_config
+
+    - name: Backup existing Postfix main.cf
+      ansible.builtin.copy:
+        src: /etc/postfix/main.cf
+        dest: "/etc/postfix/main.cf.backup.{{ ansible_facts['date_time']['epoch'] }}"
+        remote_src: true
+        mode: "0644"
+      when: postfix_config.stat.exists
+
+    - name: Deploy Postfix main.cf
+      ansible.builtin.template:
+        src: main.cf.j2
+        dest: /etc/postfix/main.cf
+        mode: "0644"
+        # No inline validation — postconf -c expects a directory, not a file.
+        # Postfix config is validated implicitly on service restart.
+      notify: Restart Postfix
+
+    - name: Deploy Postfix master.cf
+      ansible.builtin.template:
+        src: master.cf.j2
+        dest: /etc/postfix/master.cf
+        mode: "0644"
+      notify: Restart Postfix
+
+    # --- Service ---
+
+    - name: Ensure Postfix is enabled and started
+      ansible.builtin.systemd:
+        name: postfix
+        state: started
+        enabled: true
+
+    - name: Flush handlers to apply config changes
+      ansible.builtin.meta: flush_handlers
+
+    # --- Verification ---
+
+    - name: Wait for Postfix to listen on relay port
+      ansible.builtin.wait_for:
+        host: "{{ postfix_relay_listen_address }}"
+        port: "{{ postfix_relay_listen_port | int }}"
+        delay: 2
+        timeout: 30
+
+    - name: Verify Postfix is listening on relay port
+      ansible.builtin.shell: "ss -tlnp | grep ':{{ postfix_relay_listen_port }}'"
+      register: postfix_listening
+      changed_when: false
+      failed_when: false
+
+    - name: Assert Postfix is listening
+      ansible.builtin.assert:
+        that:
+          - postfix_listening.rc == 0
+        success_msg: "Postfix relay listening on {{ postfix_relay_listen_address }}:{{ postfix_relay_listen_port }}"
+        fail_msg: "Postfix is NOT listening on {{ postfix_relay_listen_address }}:{{ postfix_relay_listen_port }}"
+
+    - name: Verify Postfix is NOT listening on port 25
+      ansible.builtin.shell: "ss -tlnp | grep ':25 '"
+      register: port25_check
+      changed_when: false
+      failed_when: false
+
+    - name: Confirm port 25 is free for HAProxy
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'WARNING: Something is listening on port 25 — may conflict with HAProxy'
+             if port25_check.rc == 0
+             else 'OK: Port 25 is free (HAProxy can use it for inbound SMTP)' }}
+
+    - name: Display relay configuration summary
+      ansible.builtin.debug:
+        msg: |
+          Postfix relay configured:
+            Listen:     {{ postfix_relay_listen_address }}:{{ postfix_relay_listen_port }}
+            Bind out:   {{ postfix_relay_smtp_bind_address }}
+            Hostname:   {{ postfix_relay_myhostname }}
+            Trusted:    {{ postfix_relay_mynetworks | join(', ') }}
+            UFW rule:   {{ postfix_relay_listen_port }}/tcp from {{ postfix_relay_ufw_allowed_source }}

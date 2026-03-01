@@ -1,0 +1,63 @@
+# {{ ansible_managed }}
+# Postfix master.cf — relay-only configuration
+#
+# Only the relay listener on port {{ postfix_relay_listen_port }} is active.
+# Standard SMTP on port 25 is disabled to avoid conflict with HAProxy.
+
+# ==========================================================================
+# service type  private unpriv  chroot  wakeup  maxproc command + args
+# ==========================================================================
+
+# Relay listener — accepts mail from Stalwart via WireGuard
+{{ postfix_relay_listen_address }}:{{ postfix_relay_listen_port }}  inet  n  -  y  -  -  smtpd
+  -o syslog_name=postfix/relay-in
+  -o smtpd_relay_restrictions=permit_mynetworks,reject
+  -o smtpd_tls_security_level=none
+
+# Outbound SMTP client
+smtp      unix  -       -       y       -       -       smtp
+  -o syslog_name=postfix/smtp-out
+
+# Local delivery agent (disabled but required by Postfix)
+local     unix  -       n       n       -       -       local
+
+# Bounce handling
+bounce    unix  -       -       y       -       0       bounce
+defer     unix  -       -       y       -       0       bounce
+trace     unix  -       -       y       -       0       bounce
+
+# Cleanup service
+cleanup   unix  n       -       y       -       0       cleanup
+
+# Queue manager
+qmgr      unix  n       -       n       300     1       qmgr
+
+# Trivial rewrite
+rewrite   unix  -       -       y       -       -       trivial-rewrite
+
+# Transport lookup
+tlsmgr    unix  -       -       y       1000?   1       tlsmgr
+
+# Pickup from maildrop
+pickup    unix  n       -       y       60      1       pickup
+
+# Error delivery
+error     unix  -       -       y       -       -       error
+retry     unix  -       -       y       -       -       error
+discard   unix  -       -       y       -       -       discard
+
+# LMTP (unused but standard)
+lmtp      unix  -       -       y       -       -       lmtp
+
+# Anvil rate-limiting
+anvil     unix  -       -       y       -       1       anvil
+
+# Scache connection caching
+scache    unix  -       -       y       -       1       scache
+
+# Proxymap
+proxymap  unix  -       -       n       -       -       proxymap
+proxywrite unix -       -       n       -       1       proxymap
+
+# Postlog (mail logging)
+postlog   unix-dgram n  -       n       -       1       postlogd

@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  author: linroot
+  description: Postfix relay-only MTA for routing Stalwart outbound SMTP via public IP
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+  galaxy_tags: [postfix, mail, relay, smtp]
+dependencies: []
