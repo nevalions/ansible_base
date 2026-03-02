@@ -28,6 +28,7 @@
     postgres_memory: "{{ vault_postgres_mem_limit | default(vault_postgres_memory | default('2g')) }}"
     postgres_memswap_limit: "{{ vault_postgres_memswap_limit | default('2g') }}"
     postgres_shm_size: "{{ vault_postgres_shm_size | default('1g') }}"
+    postgres_restart_policy: "{{ vault_postgres_restart_policy | default('always') }}"
     postgres_manage_ufw: "{{ vault_postgres_manage_ufw | default(true) | bool }}"
     postgres_allowed_networks: "{{ vault_postgres_allowed_networks | default([]) }}"
     postgres_remove_env_file: "{{ vault_postgres_remove_env_file | default(false) | bool }}"
@@ -229,7 +230,7 @@
           -c idle_in_transaction_session_timeout={{ postgres_idle_in_transaction_timeout }}
           -c statement_timeout={{ postgres_statement_timeout }}
         state: started
-        restart_policy: unless-stopped
+        restart_policy: "{{ postgres_restart_policy }}"
         env_file: "{{ postgres_env_file_path }}"
         networks:
           - name: "{{ postgres_network_name }}"
