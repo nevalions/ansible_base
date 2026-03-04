@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-03-04
+
+### Added
+
+- **roles/coredns** — forward plugin resilience:
+  - `coredns_forward_policy` variable (default: `sequential`): deterministic failover
+    through upstream resolvers instead of random selection.
+  - `coredns_forward_health_check` variable (default: `5s`): periodic upstream probing
+    removes dead resolvers from rotation until recovery. Without this, a dead upstream
+    causes ~50% random SERVFAIL for external queries.
+  - `coredns_hosts_entries` variable: static host overrides via the CoreDNS `hosts` plugin
+    for split-horizon DNS (e.g. in-cluster traffic resolving to MetalLB LB IPs).
+
+- **roles/dns_server** — Unbound watchdog timer:
+  - Systemd timer (default: every 60s) tests external resolution via `dig`.
+  - Escalating recovery on failure: flush cache → retry → restart service.
+  - Configurable via `dns_watchdog_enabled`, `dns_watchdog_interval`, `dns_watchdog_test_domain`.
+
+- **roles/dns_server** — DNSSEC root key refresh timer:
+  - Daily systemd timer runs `unbound-anchor` to refresh the DNSSEC root trust anchor.
+  - Prevents stale `root.key` between Ansible deploys.
+  - Configurable via `dns_anchor_refresh_enabled`.
+
+- **vault_secrets.example.yml**:
+  - Added documentation for `vault_coredns_forward_policy`, `vault_coredns_forward_health_check`,
+    and `vault_coredns_hosts_entries`.
+
+### Documentation
+
+- **roles/coredns/README.md**: Added forward plugin, split-horizon hosts, and updated
+  Corefile structure sections.
+- **roles/dns_server/README.md**: Added watchdog timer and anchor refresh timer sections,
+  updated default variables and security checklist.
+
 ## [1.11.0] - 2026-03-04
 
 ### Added

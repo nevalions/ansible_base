@@ -12,3 +12,15 @@ dns_upstream_dns: >-
   }}
 dns_cache_size: 256
 dns_do_ipv6: false
+
+# ── Watchdog timer ────────────────────────────────────────────────────────────
+# Periodically tests whether Unbound can resolve an external domain.
+# On failure: flush cache → retry → restart service (escalating recovery).
+dns_watchdog_enabled: true
+dns_watchdog_interval: "60s"
+dns_watchdog_test_domain: "google.com"
+
+# ── DNSSEC root key refresh ──────────────────────────────────────────────────
+# Daily systemd timer that runs unbound-anchor to refresh the DNSSEC root
+# trust anchor. Prevents stale root.key after long periods between deploys.
+dns_anchor_refresh_enabled: true

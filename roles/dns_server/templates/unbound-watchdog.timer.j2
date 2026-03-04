@@ -1,0 +1,11 @@
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+[Unit]
+Description=Run Unbound DNS watchdog every {{ dns_watchdog_interval }}
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={{ dns_watchdog_interval }}
+RandomizedDelaySec=5s
+
+[Install]
+WantedBy=timers.target

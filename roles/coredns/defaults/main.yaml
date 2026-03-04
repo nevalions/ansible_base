@@ -60,6 +60,37 @@ coredns_log_enabled: "{{ vault_coredns_log_enabled | default(false) | bool }}"
 # (default: cluster.local). Override via vault_coredns_cluster_domain.
 coredns_cluster_domain: "{{ vault_coredns_cluster_domain | default('cluster.local') }}"
 
+# ── Forward policy ─────────────────────────────────────────────────────────────
+# Policy used by the CoreDNS `forward` plugin to select among upstream resolvers.
+#   "sequential" — always try the first upstream; only use the next on failure.
+#                  Provides deterministic failover (primary → secondary).
+#   "random"     — distribute queries randomly (kubeadm default).
+#   "round_robin" — rotate through upstreams in order.
+# Override via vault_coredns_forward_policy.
+coredns_forward_policy: "{{ vault_coredns_forward_policy | default('sequential') }}"
+
+# ── Forward health check ──────────────────────────────────────────────────────
+# Interval at which CoreDNS probes upstream resolvers. If a resolver fails the
+# health check, CoreDNS stops sending queries to it until it recovers.
+# Without this, a dead upstream causes ~50% random SERVFAIL for external queries.
+# Set to "" to disable health checking. Default: "5s".
+# Override via vault_coredns_forward_health_check.
+coredns_forward_health_check: "{{ vault_coredns_forward_health_check | default('5s') }}"
+
+# ── Hosts overrides (split-horizon) ──────────────────────────────────────────
+# Static host entries injected into CoreDNS via the `hosts` plugin.
+# Used for split-horizon DNS where certain hostnames must resolve to internal
+# (e.g. MetalLB) IPs when queried from inside the cluster.
+#
+# Format:
+#   vault_coredns_hosts_entries:
+#     - ip: "10.0.0.1"
+#       hostnames:
+#         - "mail.example.com"
+#
+# Override via vault_coredns_hosts_entries.
+coredns_hosts_entries: "{{ vault_coredns_hosts_entries | default([]) }}"
+
 # ── Stub zones ────────────────────────────────────────────────────────────────
 # Optional list of private DNS zones to forward to a specific resolver instead of
 # the global upstream. Useful for split-horizon DNS where internal hostnames

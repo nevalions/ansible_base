@@ -56,3 +56,88 @@
     mode: '0644'
     backup: true
   notify: Reload unbound
+
+# ── Unbound watchdog timer ──────────────────────────────────────────────────
+# Tests external resolution every {{ dns_watchdog_interval }}.
+# On failure: flush cache → retry → restart (escalating recovery).
+
+- name: Deploy watchdog script
+  ansible.builtin.template:
+    src: unbound-watchdog.sh.j2
+    dest: /usr/local/bin/unbound-watchdog.sh
+    owner: root
+    group: root
+    mode: '0755'
+  when:
+    - dns_operation == "install"
+    - dns_watchdog_enabled | bool
+
+- name: Deploy watchdog systemd service
+  ansible.builtin.template:
+    src: unbound-watchdog.service.j2
+    dest: /etc/systemd/system/unbound-watchdog.service
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - dns_operation == "install"
+    - dns_watchdog_enabled | bool
+
+- name: Deploy watchdog systemd timer
+  ansible.builtin.template:
+    src: unbound-watchdog.timer.j2
+    dest: /etc/systemd/system/unbound-watchdog.timer
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - dns_operation == "install"
+    - dns_watchdog_enabled | bool
+
+- name: Enable and start watchdog timer
+  ansible.builtin.systemd_service:
+    name: unbound-watchdog.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - dns_operation == "install"
+    - dns_watchdog_enabled | bool
+    - not ansible_check_mode
+
+# ── DNSSEC root key refresh timer ───────────────────────────────────────────
+# Daily refresh of the root trust anchor via unbound-anchor.
+# Prevents stale root.key between Ansible deploys.
+
+- name: Deploy anchor refresh systemd service
+  ansible.builtin.template:
+    src: unbound-anchor-refresh.service.j2
+    dest: /etc/systemd/system/unbound-anchor-refresh.service
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - dns_operation == "install"
+    - dns_anchor_refresh_enabled | bool
+
+- name: Deploy anchor refresh systemd timer
+  ansible.builtin.template:
+    src: unbound-anchor-refresh.timer.j2
+    dest: /etc/systemd/system/unbound-anchor-refresh.timer
+    owner: root
+    group: root
+    mode: '0644'
+  when:
+    - dns_operation == "install"
+    - dns_anchor_refresh_enabled | bool
+
+- name: Enable and start anchor refresh timer
+  ansible.builtin.systemd_service:
+    name: unbound-anchor-refresh.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when:
+    - dns_operation == "install"
+    - dns_anchor_refresh_enabled | bool
+    - not ansible_check_mode

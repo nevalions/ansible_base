@@ -1,0 +1,11 @@
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+[Unit]
+Description=Refresh Unbound DNSSEC root trust anchor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/unbound-anchor -a /var/lib/unbound/root.key
+# rc=0: anchor up to date; rc=1: anchor updated — both are success.
+SuccessExitStatus=1

@@ -1,0 +1,58 @@
+#!/bin/bash
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+#
+# Unbound forwarding watchdog.
+# Tests whether Unbound can resolve an external domain. If resolution fails:
+#   1. Flush the entire cache via unbound-control
+#   2. Wait and retry
+#   3. If still failing, restart the Unbound service
+#
+# Designed to run as a systemd timer (unbound-watchdog.timer) every
+# {{ dns_watchdog_interval }}.
+
+set -euo pipefail
+
+TEST_DOMAIN="{{ dns_watchdog_test_domain }}"
+TIMEOUT=3
+TRIES=1
+
+log() {
+    logger -t unbound-watchdog -p daemon.warning "$*"
+}
+
+# ── Test resolution ──────────────────────────────────────────────────────────
+test_resolution() {
+    local result
+    result=$(dig @127.0.0.1 "${TEST_DOMAIN}" A +short +time=${TIMEOUT} +tries=${TRIES} 2>/dev/null)
+    # Must return at least one IPv4 address
+    echo "$result" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+}
+
+if test_resolution; then
+    exit 0
+fi
+
+# ── First failure: flush cache ───────────────────────────────────────────────
+log "resolution of ${TEST_DOMAIN} failed — flushing cache"
+unbound-control flush_zone . >/dev/null 2>&1 || true
+
+sleep 2
+
+if test_resolution; then
+    log "resolution restored after cache flush"
+    exit 0
+fi
+
+# ── Second failure: restart service ──────────────────────────────────────────
+log "resolution still failing after flush — restarting unbound"
+systemctl restart unbound
+
+sleep 3
+
+if test_resolution; then
+    log "resolution restored after restart"
+    exit 0
+fi
+
+log "CRITICAL: resolution of ${TEST_DOMAIN} still failing after restart"
+exit 1

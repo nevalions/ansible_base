@@ -1,0 +1,12 @@
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+[Unit]
+Description=Unbound DNS forwarding watchdog
+After=unbound.service
+Requires=unbound.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/unbound-watchdog.sh
+# The script exits non-zero when resolution fails even after restart.
+# Don't let systemd treat that as a unit failure that blocks the timer.
+SuccessExitStatus=1

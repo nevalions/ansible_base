@@ -64,6 +64,33 @@ name — creating a chicken-and-egg problem. Override the server to use
 | `vault_coredns_kubectl_insecure` | Skip TLS verification (needed when server is 127.0.0.1) | `true` when `kubectl_server` is set |
 | `vault_coredns_kubectl_validate` | Enable kubectl server-side schema validation | `false` |
 
+### Forward plugin
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `vault_coredns_forward_policy` | Upstream selection policy (`sequential`, `random`, `round_robin`) | `sequential` |
+| `vault_coredns_forward_health_check` | Interval for probing upstream health; `""` to disable | `5s` |
+
+`sequential` provides deterministic failover (primary → secondary). `health_check`
+detects dead upstreams and stops routing to them until recovery — without it, a dead
+upstream causes ~50% random SERVFAIL for external queries.
+
+### Split-horizon host overrides
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `vault_coredns_hosts_entries` | Static host entries for the CoreDNS `hosts` plugin | `[]` |
+
+Used when in-cluster clients must resolve certain hostnames to internal (e.g. MetalLB)
+IPs instead of external/public IPs. Format:
+
+```yaml
+vault_coredns_hosts_entries:
+  - ip: "[internal-lb-ip]"
+    hostnames:
+      - "[hostname-matching-tls-cert]"
+```
+
 ### Cluster configuration
 
 | Variable | Description | Default |
@@ -99,6 +126,22 @@ vault_coredns_upstream_resolvers:
   - "[primary-dns-server-ip]"
   - "[secondary-dns-server-ip]"
 vault_coredns_cache_ttl: 300
+```
+
+Optional forward plugin tuning:
+
+```yaml
+vault_coredns_forward_policy: "sequential"
+vault_coredns_forward_health_check: "5s"
+```
+
+Optional split-horizon host overrides (CoreDNS `hosts` plugin):
+
+```yaml
+vault_coredns_hosts_entries:
+  - ip: "[internal-lb-ip]"
+    hostnames:
+      - "[hostname-matching-tls-cert]"
 ```
 
 Optional stub zones for split-horizon DNS:
@@ -157,6 +200,9 @@ ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml \
     health { lameduck 5s }
     ready
 
+    # Optional split-horizon host overrides
+    # hosts { <ip> <hostname> ... fallthrough }
+
     kubernetes cluster.local in-addr.arpa ip6.arpa {
         pods insecure
         fallthrough in-addr.arpa ip6.arpa
@@ -169,6 +215,8 @@ ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml \
     forward . <upstream1> <upstream2> {
         max_concurrent 1000
         prefer_udp
+        policy sequential
+        health_check 5s
     }
 
     cache {

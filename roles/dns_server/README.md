@@ -24,6 +24,8 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - Custom resolv.conf with fallback to public DNS (8.8.8.8)
 - DNSSEC trust anchor management (`unbound-anchor` install + refresh on every run)
 - DNSSEC resilience: `harden-dnssec-stripped: no` prevents SERVFAIL on stripped-signature zones
+- Systemd watchdog timer: periodic external resolution health check with escalating recovery (flush → retry → restart)
+- DNSSEC root key refresh timer: daily `unbound-anchor` run prevents stale trust anchor between deploys
 
 ## Requirements
 
@@ -46,6 +48,14 @@ dns_upstream_dns:
   - "8.8.4.4"
 dns_cache_size: 256
 dns_do_ipv6: false
+
+# Watchdog timer (external resolution health check)
+dns_watchdog_enabled: true
+dns_watchdog_interval: "60s"
+dns_watchdog_test_domain: "google.com"
+
+# DNSSEC root key refresh timer
+dns_anchor_refresh_enabled: true
 ```
 
 ### Vault Variables (Required)
@@ -197,10 +207,43 @@ unbound-anchor -v -a /var/lib/unbound/root.key
 stat /var/lib/unbound/root.key
 ```
 
+### Watchdog Timer
+
+When `dns_watchdog_enabled: true` (the default), the role deploys a systemd timer
+that runs every `dns_watchdog_interval` (default: 60s). The watchdog tests whether
+Unbound can resolve `dns_watchdog_test_domain` (default: `google.com`). On failure
+it applies escalating recovery:
+
+1. Flush the Unbound cache (`unbound-control flush_zone .`)
+2. Retry resolution
+3. Restart the Unbound service if still failing
+
+```bash
+# Check watchdog timer status
+systemctl status unbound-watchdog.timer
+
+# View recent watchdog runs
+journalctl -u unbound-watchdog.service --no-pager -n 20
+
+# Disable watchdog (set dns_watchdog_enabled: false and re-run the role)
+```
+
 ### DNSSEC Trust Anchor
 
 The role installs `unbound-anchor` and runs it on every `dns_operation: install` play.
 The anchor file `/var/lib/unbound/root.key` is updated automatically.
+
+When `dns_anchor_refresh_enabled: true` (the default), a daily systemd timer runs
+`unbound-anchor` to refresh the root trust anchor. This prevents stale `root.key`
+between Ansible deploys.
+
+```bash
+# Check anchor refresh timer status
+systemctl status unbound-anchor-refresh.timer
+
+# Force manual anchor refresh
+sudo unbound-anchor -a /var/lib/unbound/root.key
+```
 
 **If external domains return SERVFAIL after a long outage:**
 ```bash
@@ -228,8 +271,9 @@ that correctly serve signatures.
 - ✅ systemd-resolved is disabled to prevent port 53 conflicts
 - ✅ Custom resolv.conf ensures DNS queries use Unbound
 - ✅ Fallback to public DNS (8.8.8.8) for upstream queries
-- ✅ DNSSEC root trust anchor kept fresh via `unbound-anchor` on every deploy
+- ✅ DNSSEC root trust anchor kept fresh via `unbound-anchor` on every deploy and daily timer
 - ✅ `val-clean-additional: yes` discards unsigned additional-section RRs
+- ✅ Watchdog timer detects and auto-recovers from resolution failures between deploys
 
 ### Firewall Behavior
 

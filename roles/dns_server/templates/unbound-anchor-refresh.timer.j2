@@ -1,0 +1,11 @@
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+[Unit]
+Description=Daily DNSSEC root trust anchor refresh
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
