@@ -41,6 +41,12 @@
     backup: yes
   notify: Restart unbound
 
+- name: Setup unbound-control keys (required for remote-control)
+  ansible.builtin.command: unbound-control-setup
+  args:
+    creates: /etc/unbound/unbound_server.key
+  when: dns_operation == "install"
+
 - name: Deploy DNS zone configuration
   ansible.builtin.template:
     src: zone.conf.j2

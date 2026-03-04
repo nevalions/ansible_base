@@ -18,7 +18,8 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - Supports both node hostname resolution and Kubernetes service DNS
 - All IPs encrypted in Ansible Vault (zero hardcoded values)
 - Configuration validation with `unbound-checkconf`
-- DNS resolution testing with `dig` (internal zone + external registry domain)
+- DNS resolution testing with `dig` (internal zone, external registry, CNAME-chase)
+- `unbound-control` enabled for live cache management (flush stale entries without restart)
 - Automatic systemd-resolved disable (prevents port 53 conflict)
 - Custom resolv.conf with fallback to public DNS (8.8.8.8)
 - DNSSEC trust anchor management (`unbound-anchor` install + refresh on every run)
@@ -181,6 +182,14 @@ dig @127.0.0.1 [node-name].[zone-name]
 # Test external registry resolution (must return at least one A record)
 dig @127.0.0.1 registry-1.docker.io A +short
 
+# Test CNAME-chase resolution (auth.docker.io -> cdn.cloudflare.net)
+# Must return at least one A record, not just a CNAME
+dig @127.0.0.1 auth.docker.io A +short
+
+# Flush stale cache entries without restarting Unbound
+sudo unbound-control flush auth.docker.io.cdn.cloudflare.net
+sudo unbound-control flush auth.docker.io
+
 # Check DNSSEC trust anchor status
 unbound-anchor -v -a /var/lib/unbound/root.key
 
@@ -255,6 +264,31 @@ sudo unbound-control reload
 
 # 3. Verify
 dig @127.0.0.1 registry-1.docker.io A +short
+```
+
+### CNAME-chase returns empty answer (ANSWER:0)
+
+**Symptoms:** `dig @127.0.0.1 auth.docker.io` returns only a CNAME with no A record.
+Kubernetes pods fail with `ImagePullBackOff` because containerd cannot authenticate
+with Docker Hub (`failed to fetch anonymous token: no such host`).
+
+**Cause:** Unbound's cache holds a stale referral for the CNAME target domain
+(e.g. `*.cdn.cloudflare.net`). The forwarder returns the cached NS referral instead
+of chasing the CNAME through upstream.
+
+**Fix:**
+```bash
+# Flush the stale CNAME target and source entries
+sudo unbound-control flush auth.docker.io.cdn.cloudflare.net
+sudo unbound-control flush auth.docker.io
+
+# Verify resolution recovers
+dig @127.0.0.1 auth.docker.io A +short  # should now return IPs
+```
+
+If `unbound-control` is not available (pre-remote-control config), restart the service:
+```bash
+sudo systemctl restart unbound
 ```
 
 ### Unbound service not starting after config change

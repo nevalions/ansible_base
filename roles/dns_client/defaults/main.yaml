@@ -100,6 +100,12 @@ dns_client_dnsmasq_primary_only_domains: >-
 # upstream. dnsmasq will round-robin across ALL configured upstreams for these,
 # automatically retrying on the other resolver if one is slow or returns SERVFAIL.
 # Override via vault_dns_client_ci_domains to customise or extend the list.
+#
+# NOTE: cdn.cloudflare.net is included because many Docker Hub domains
+# (auth.docker.io, production.cloudflare.docker.com, etc.) return CNAMEs to
+# *.cdn.cloudflare.net. Without this entry, the CNAME chase goes through the
+# generic upstream path — if one upstream has a stale cache for cloudflare.net
+# subdomains, 50% of image-pull auth requests fail with "no such host".
 dns_client_dnsmasq_ci_domains: >-
   {{
     vault_dns_client_ci_domains | default([
@@ -111,6 +117,7 @@ dns_client_dnsmasq_ci_domains: >-
       'docker.io',
       'docker.com',
       'quay.io',
-      'gcr.io'
+      'gcr.io',
+      'cdn.cloudflare.net'
     ])
   }}

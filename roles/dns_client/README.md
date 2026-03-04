@@ -31,7 +31,7 @@ Configure DNS client settings on Debian/Ubuntu systems by managing `/etc/resolv.
 | `vault_dns_client_node_local_enabled` | Enable node-local `dnsmasq` on Kubernetes nodes | Auto-enabled for k8s inventory groups |
 | `vault_dns_client_filter_aaaa` | Drop AAAA answers — eliminates AAAA-first timeouts when node has no IPv6 egress | `false` (set `true` for WG-client nodes) |
 | `vault_dns_client_primary_only_domains` | Domains routed exclusively to the primary upstream (secondary is rate-limited for these) | `pkg.dev`, `googleusercontent.com`, `amazonaws.com`, `registry.k8s.io` |
-| `vault_dns_client_ci_domains` | CI/CD and container registry domains routed across **all** upstreams with round-robin failover — never pinned to a single upstream | `githubusercontent.com`, `github.com`, `ghcr.io`, `docker.io`, etc. |
+| `vault_dns_client_ci_domains` | CI/CD and container registry domains routed across **all** upstreams with round-robin failover — never pinned to a single upstream. Includes `cdn.cloudflare.net` for Docker Hub CNAME-chase reliability | `githubusercontent.com`, `github.com`, `ghcr.io`, `docker.io`, `cdn.cloudflare.net`, etc. |
 
 ## Dependencies
 
@@ -245,6 +245,27 @@ If you see this on a fresh deploy, ensure `group_vars/workers_vas.yml` exists (c
 ```bash
 ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
 ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml
+```
+
+### ImagePullBackOff with "no such host" for auth.docker.io
+
+**Symptoms:** `kubectl describe pod` shows `failed to authorize: failed to fetch
+anonymous token: dial tcp: lookup auth.docker.io: no such host`. DNS resolution from
+the node returns only a CNAME with no A record.
+
+**Cause:** `auth.docker.io` returns a CNAME to `auth.docker.io.cdn.cloudflare.net`.
+If one of the Unbound upstreams has a stale cache for `*.cdn.cloudflare.net`, dnsmasq
+may route the CNAME chase to the broken upstream and return an incomplete answer.
+
+**Fix:** `cdn.cloudflare.net` is in `dns_client_dnsmasq_ci_domains` so dnsmasq
+round-robins the CNAME chase across all upstreams. Re-run the client playbook:
+```bash
+ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+```
+
+Also flush the stale cache on the affected Unbound server:
+```bash
+ssh [dns-server] sudo unbound-control flush auth.docker.io.cdn.cloudflare.net
 ```
 
 ### systemd-resolved keeps taking over:

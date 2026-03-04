@@ -135,6 +135,34 @@
     - not ansible_check_mode
     - external_dns_test is defined
 
+- name: Verify CNAME-chase resolution (auth.docker.io)
+  # auth.docker.io returns a CNAME to auth.docker.io.cdn.cloudflare.net which
+  # Unbound must chase through its forwarders. A stale cache or broken forwarding
+  # causes ANSWER:0 (CNAME only, no A record) — the root cause of ImagePullBackOff
+  # on k8s nodes when containerd cannot reach the Docker Hub auth endpoint.
+  ansible.builtin.command: >-
+    dig @127.0.0.1 auth.docker.io A +short +time=3 +tries=2
+  register: cname_chase_test
+  changed_when: false
+  failed_when: >-
+    cname_chase_test.rc != 0
+    or (cname_chase_test.stdout_lines | default([])
+        | select('match', '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+        | list | length == 0)
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
+
+- name: Display CNAME-chase test result
+  ansible.builtin.debug:
+    msg:
+      - "CNAME-chase DNS test (auth.docker.io): PASS"
+      - "Resolves to: {{ cname_chase_test.stdout_lines | default([]) }}"
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
+    - cname_chase_test is defined
+
 - name: Display DNS server management completion
   ansible.builtin.debug:
     msg:
