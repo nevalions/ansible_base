@@ -445,12 +445,18 @@ sudo ufw route allow out on wg99 to [vpn-network-cidr]
 ### vault_wg_peers Structure
 ```yaml
 vault_wg_peers:
-  - name: "server_name"           # Unique identifier
-    host_group: "inventory_group"  # Maps to inventory
+  - name: "server_name"           # Unique identifier; must match vault_wg_peer_private_keys key
+    host_group: "inventory_group"  # MUST exactly match the Ansible inventory group the host belongs to
     allowed_ips: "[vpn-ip.X]/32"  # Server's VPN IP
     endpoint: "IP:PORT"          # Public or internal IP with port
     client_listen_port: "PORT"     # UDP port for incoming connections
 ```
+
+> **Critical**: `host_group` must be the exact inventory group name that contains the target host.
+> `deploy_peers.yaml` matches clients by checking `inventory_hostname in groups[host_group]`.
+> A wrong `host_group` causes the client config task to be silently skipped — the node keeps
+> whatever private key is already on disk, producing a key mismatch and a broken WG tunnel
+> with no error message.
 
 ### Example: Adding New Peer
 1. Generate keys:
