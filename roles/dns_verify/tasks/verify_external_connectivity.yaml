@@ -88,7 +88,7 @@
     ext_conn_tests_passed: "{{ ext_dns_passed | int + ext_tcp_passed | int }}"
     ext_conn_tests_failed: "{{ ext_dns_failed | int + ext_tcp_failed | int }}"
 
-# ── Stage 4: Per-category breakdown ──────────────────────────────
+# ── Stage 4: Per-category breakdown and failed endpoint list ──────
 
 - name: Build per-category DNS summary
   ansible.builtin.set_fact:
@@ -112,6 +112,24 @@
       {%- endfor -%}
       {{ ns.lines | join(', ') }}
 
+- name: Build list of failed DNS endpoints
+  ansible.builtin.set_fact:
+    ext_failed_dns_list: >-
+      {%- set ns = namespace(items=[]) -%}
+      {%- for r in ext_dns_results | selectattr('rc', 'ne', 0) | list -%}
+        {%- set _ = ns.items.append(r.item.host ~ ' (' ~ r.item.category ~ ')') -%}
+      {%- endfor -%}
+      {{ ns.items }}
+
+- name: Build list of failed TCP endpoints
+  ansible.builtin.set_fact:
+    ext_failed_tcp_list: >-
+      {%- set ns = namespace(items=[]) -%}
+      {%- for r in ext_tcp_results | selectattr('failed') | list -%}
+        {%- set _ = ns.items.append(r.item.host ~ ':' ~ r.item.port ~ ' (' ~ r.item.category ~ ')') -%}
+      {%- endfor -%}
+      {{ ns.items }}
+
 - name: Display external connectivity summary
   ansible.builtin.debug:
     msg:
@@ -122,6 +140,16 @@
       - "Per-category DNS: {{ ext_category_dns }}"
       - "Per-category TCP: {{ ext_category_tcp }}"
       - "------------------------------------"
+
+- name: Display failed DNS endpoints
+  ansible.builtin.debug:
+    msg: "FAILED DNS endpoints: {{ ext_failed_dns_list }}"
+  when: ext_dns_failed | int > 0
+
+- name: Display failed TCP endpoints
+  ansible.builtin.debug:
+    msg: "FAILED TCP endpoints: {{ ext_failed_tcp_list }}"
+  when: ext_tcp_failed | int > 0
 
 # ── Stage 5: Update global counters ──────────────────────────────
 

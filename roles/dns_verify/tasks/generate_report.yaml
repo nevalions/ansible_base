@@ -30,46 +30,121 @@
       - "  Health Status: {{ dns_health_status }}"
       - "============================================="
 
-- name: Generate aggregated summary across all hosts
+- name: Display failed endpoints for this host
   ansible.builtin.debug:
     msg:
-      - "=== DNS Infrastructure Verification Report ==="
-      - "========================================="
-      - "Run Date: {{ ansible_facts['date_time']['date'] }} {{ ansible_facts['date_time']['time'] }}"
-      - "Total Hosts Checked: {{ ansible_play_hosts | length }}"
-      - "Overall Status: {{ '✅ HEALTHY' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else '❌ CRITICAL' }}"
-      - "========================================="
-  run_once: true
+      - "  !! Failed DNS endpoints: {{ ext_failed_dns_list }}"
+      - "  !! Failed TCP endpoints: {{ ext_failed_tcp_list }}"
+  when: (ext_conn_tests_failed | default(0) | int) > 0
 
-- name: Display overall cluster health
+# ── Cluster-wide aggregated report ───────────────────────────────
+# With serial: 1, each host runs in its own batch. run_once fires
+# every batch but only sees the current host. We must aggregate
+# across all hosts via hostvars using ansible_play_hosts_all.
+
+- name: Aggregate cluster totals across all hosts
+  ansible.builtin.set_fact:
+    cluster_tests_total: >-
+      {{ ansible_play_hosts_all
+         | map('extract', hostvars, 'dns_verify_tests_total')
+         | map('default', 0) | map('int') | sum }}
+    cluster_tests_passed: >-
+      {{ ansible_play_hosts_all
+         | map('extract', hostvars, 'dns_verify_passed')
+         | map('default', 0) | map('int') | sum }}
+    cluster_tests_failed: >-
+      {{ ansible_play_hosts_all
+         | map('extract', hostvars, 'dns_verify_failed')
+         | map('default', 0) | map('int') | sum }}
+    cluster_tests_warnings: >-
+      {{ ansible_play_hosts_all
+         | map('extract', hostvars, 'dns_verify_warnings')
+         | map('default', 0) | map('int') | sum }}
+    cluster_ext_conn_failed: >-
+      {{ ansible_play_hosts_all
+         | map('extract', hostvars, 'ext_conn_tests_failed')
+         | map('default', 0) | map('int') | sum }}
+
+- name: Determine cluster health status
+  ansible.builtin.set_fact:
+    cluster_health: >-
+      {{ 'CRITICAL' if cluster_tests_failed | int > 0
+         else 'DEGRADED' if cluster_tests_warnings | int > 0
+         else 'HEALTHY' }}
+
+- name: Build per-host status lines
+  ansible.builtin.set_fact:
+    cluster_host_lines: >-
+      {%- set ns = namespace(lines=[]) -%}
+      {%- for h in ansible_play_hosts_all -%}
+        {%- set hv = hostvars[h] -%}
+        {%- set status = 'CRITICAL' if (hv.dns_verify_failed | default(0) | int) > 0
+            else 'DEGRADED' if (hv.dns_verify_warnings | default(0) | int) > 0
+            else 'HEALTHY' -%}
+        {%- set _ = ns.lines.append(
+            (h | sanitize_security) ~ ': ' ~ status
+            ~ ' (tests: ' ~ (hv.dns_verify_passed | default(0)) ~ '/' ~ (hv.dns_verify_tests_total | default(0))
+            ~ ', failed: ' ~ (hv.dns_verify_failed | default(0))
+            ~ ', warnings: ' ~ (hv.dns_verify_warnings | default(0)) ~ ')'
+        ) -%}
+      {%- endfor -%}
+      {{ ns.lines }}
+
+- name: Build list of hosts with failed external endpoints
+  ansible.builtin.set_fact:
+    cluster_ext_failures: >-
+      {%- set ns = namespace(lines=[]) -%}
+      {%- for h in ansible_play_hosts_all -%}
+        {%- set hv = hostvars[h] -%}
+        {%- if (hv.ext_conn_tests_failed | default(0) | int) > 0 -%}
+          {%- set _ = ns.lines.append(
+              (h | sanitize_security)
+              ~ ' - DNS: ' ~ (hv.ext_failed_dns_list | default('none'))
+              ~ ' | TCP: ' ~ (hv.ext_failed_tcp_list | default('none'))
+          ) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ ns.lines }}
+
+# Only show the final cluster report on the very last host in the play
+- name: Generate cluster verification report
   ansible.builtin.debug:
     msg:
-      - "=== Overall Cluster Health ==="
+      - "========================================================"
+      - "=== DNS Infrastructure Verification Report ==="
+      - "========================================================"
+      - "Run Date: {{ ansible_facts['date_time']['date'] }} {{ ansible_facts['date_time']['time'] }}"
+      - "Total Hosts Checked: {{ ansible_play_hosts_all | length }}"
+      - ""
+      - "--- Per-Host Status ---"
+      - "{{ cluster_host_lines | join('\n') }}"
+      - ""
+      - "--- Cluster Totals ---"
+      - "Tests Total: {{ cluster_tests_total }}"
+      - "Tests Passed: {{ cluster_tests_passed }}"
+      - "Tests Failed: {{ cluster_tests_failed }}"
+      - "Warnings: {{ cluster_tests_warnings }}"
+      - ""
+      - "--- External Connectivity ---"
+      - "Endpoints Unreachable (cluster-wide): {{ cluster_ext_conn_failed }}"
+      - "{{ 'Affected Hosts:' if (cluster_ext_failures | length > 0) else 'All hosts reached all endpoints' }}"
+      - "{{ cluster_ext_failures | join('\n') if (cluster_ext_failures | length > 0) else '' }}"
+      - ""
+      - "--- Overall Cluster Health ---"
       - "WireGuard Cluster: {{ 'UP' if wg_interface_status.rc == 0 else 'DOWN' }}"
-      - "DNS Servers: {{ 'All healthy' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
-      - "DNS Clients: {{ 'All connected' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
-      - "DNS Resolution: {{ 'Working' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Failed' }}"
-      - "External Connectivity: {{ 'All reachable' if (hostvars[inventory_hostname].ext_conn_tests_failed | default(0) | int == 0) else (hostvars[inventory_hostname].ext_conn_tests_failed | default(0) | string + ' endpoint(s) unreachable') }}"
-      - "========================================"
-  run_once: true
+      - "DNS Servers: {{ 'All healthy' if cluster_tests_failed | int == 0 else 'Issues detected' }}"
+      - "DNS Clients: {{ 'All connected' if cluster_tests_failed | int == 0 else 'Issues detected' }}"
+      - "DNS Resolution: {{ 'Working' if cluster_tests_failed | int == 0 else 'Failed' }}"
+      - "External Connectivity: {{ 'All reachable' if (cluster_ext_conn_failed | int == 0) else (cluster_ext_conn_failed | string ~ ' endpoint(s) unreachable') }}"
+      - ""
+      - "Overall Status: {{ '✅ HEALTHY' if cluster_health | trim == 'HEALTHY' else '⚠️ DEGRADED' if cluster_health | trim == 'DEGRADED' else '❌ CRITICAL' }}"
+      - "========================================================"
+  when: inventory_hostname == ansible_play_hosts_all[-1]
 
 - name: Fail playbook if critical issues detected
   ansible.builtin.fail:
-    msg: "DNS Infrastructure Verification FAILED - {{ dns_verify_failed }} critical issue(s) detected"
+    msg: "DNS Infrastructure Verification FAILED - {{ cluster_tests_failed }} critical issue(s) detected across cluster"
   when:
     - verify_fail_immediately
-    - dns_verify_failed | int > 0
-    - inventory_hostname == ansible_play_hosts[0]
-  run_once: true
-
-- name: Display completion message
-  ansible.builtin.debug:
-    msg:
-      - "=== DNS Infrastructure Verification Complete ==="
-      - "Overall Status: {{ '✅ HEALTHY' if dns_health_status == 'HEALTHY' else '⚠️ DEGRADED' if dns_health_status == 'DEGRADED' else '❌ CRITICAL' }}"
-      - "Total Tests: {{ dns_verify_tests_total }}"
-      - "Passed: {{ dns_verify_passed }}"
-      - "Failed: {{ dns_verify_failed }}"
-      - "Warnings: {{ dns_verify_warnings }}"
-      - "=============================================="
-  run_once: true
+    - cluster_tests_failed | int > 0
+    - inventory_hostname == ansible_play_hosts_all[-1]
