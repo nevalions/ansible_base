@@ -1,0 +1,154 @@
+---
+- name: Display external connectivity tests start
+  ansible.builtin.debug:
+    msg:
+      - "=== External Connectivity Tests: {{ inventory_hostname }} ==="
+
+- name: Initialize external connectivity results
+  ansible.builtin.set_fact:
+    ext_dns_results: []
+    ext_tcp_results: []
+    ext_conn_tests_total: 0
+    ext_conn_tests_passed: 0
+    ext_conn_tests_failed: 0
+
+# ── Stage 1: DNS resolution of external endpoints ─────────────────
+
+- name: Test DNS resolution of external connectivity endpoints
+  block:
+    - name: Resolve external endpoint hostnames via primary DNS
+      ansible.builtin.command: "nslookup {{ item.host }} {{ vault_dns_server_primary }}"
+      register: ext_dns_resolve
+      changed_when: false
+      ignore_errors: true
+      loop: "{{ verify_external_connectivity_endpoints }}"
+      loop_control:
+        label: "{{ item.host }} ({{ item.category }})"
+
+    - name: Display external DNS resolution results
+      ansible.builtin.debug:
+        msg: "DNS {{ item.item.category | upper }}: {{ item.item.host }} - {{ 'RESOLVED' if item.rc == 0 else 'FAILED' }}"
+      loop: "{{ ext_dns_resolve.results | selectattr('rc', 'defined') | list }}"
+      loop_control:
+        label: "{{ item.item.host }}"
+      when: ext_dns_resolve.results is defined
+
+    - name: Store DNS resolution results
+      ansible.builtin.set_fact:
+        ext_dns_results: "{{ ext_dns_resolve.results | selectattr('rc', 'defined') | list }}"
+      when: ext_dns_resolve.results is defined
+  when: verify_external_connectivity_endpoints is defined
+
+# ── Stage 2: TCP connectivity to external endpoints ───────────────
+
+- name: Test TCP connectivity to external endpoints
+  block:
+    - name: Check TCP reachability of external endpoints
+      ansible.builtin.wait_for:
+        host: "{{ item.host }}"
+        port: "{{ item.port }}"
+        timeout: "{{ verify_tcp_connect_timeout }}"
+        state: started
+        active_connection_states:
+          - ESTABLISHED
+      register: ext_tcp_connect
+      ignore_errors: true
+      loop: "{{ verify_external_connectivity_endpoints }}"
+      loop_control:
+        label: "{{ item.host }}:{{ item.port }} ({{ item.category }})"
+
+    - name: Display TCP connectivity results
+      ansible.builtin.debug:
+        msg: "TCP {{ item.item.category | upper }}: {{ item.item.host }}:{{ item.item.port }} - {{ 'CONNECTED' if not item.failed else 'UNREACHABLE' }}"
+      loop: "{{ ext_tcp_connect.results }}"
+      loop_control:
+        label: "{{ item.item.host }}:{{ item.item.port }}"
+      when: ext_tcp_connect.results is defined
+
+    - name: Store TCP connectivity results
+      ansible.builtin.set_fact:
+        ext_tcp_results: "{{ ext_tcp_connect.results }}"
+      when: ext_tcp_connect.results is defined
+  when: verify_external_connectivity_endpoints is defined
+
+# ── Stage 3: Categorized summary ─────────────────────────────────
+
+- name: Calculate external connectivity totals
+  ansible.builtin.set_fact:
+    ext_dns_total: "{{ ext_dns_results | length }}"
+    ext_dns_passed: "{{ ext_dns_results | selectattr('rc', 'equalto', 0) | length }}"
+    ext_dns_failed: "{{ ext_dns_results | selectattr('rc', 'ne', 0) | length }}"
+    ext_tcp_total: "{{ ext_tcp_results | length }}"
+    ext_tcp_passed: "{{ ext_tcp_results | rejectattr('failed') | length }}"
+    ext_tcp_failed: "{{ ext_tcp_results | selectattr('failed') | length }}"
+
+- name: Calculate combined external connectivity totals
+  ansible.builtin.set_fact:
+    ext_conn_tests_total: "{{ ext_dns_total | int + ext_tcp_total | int }}"
+    ext_conn_tests_passed: "{{ ext_dns_passed | int + ext_tcp_passed | int }}"
+    ext_conn_tests_failed: "{{ ext_dns_failed | int + ext_tcp_failed | int }}"
+
+# ── Stage 4: Per-category breakdown ──────────────────────────────
+
+- name: Build per-category DNS summary
+  ansible.builtin.set_fact:
+    ext_category_dns: >-
+      {%- set ns = namespace(lines=[]) -%}
+      {%- for cat, items in ext_dns_results | groupby('item.category') -%}
+        {%- set total = items | length -%}
+        {%- set passed = items | selectattr('rc', 'equalto', 0) | list | length -%}
+        {%- set _ = ns.lines.append(cat ~ ': ' ~ passed ~ '/' ~ total) -%}
+      {%- endfor -%}
+      {{ ns.lines | join(', ') }}
+
+- name: Build per-category TCP summary
+  ansible.builtin.set_fact:
+    ext_category_tcp: >-
+      {%- set ns = namespace(lines=[]) -%}
+      {%- for cat, items in ext_tcp_results | groupby('item.category') -%}
+        {%- set total = items | length -%}
+        {%- set passed = items | rejectattr('failed') | list | length -%}
+        {%- set _ = ns.lines.append(cat ~ ': ' ~ passed ~ '/' ~ total) -%}
+      {%- endfor -%}
+      {{ ns.lines | join(', ') }}
+
+- name: Display external connectivity summary
+  ansible.builtin.debug:
+    msg:
+      - "--- External Connectivity Summary ---"
+      - "DNS Resolution: {{ ext_dns_passed }}/{{ ext_dns_total }} endpoints resolved"
+      - "TCP Reachability: {{ ext_tcp_passed }}/{{ ext_tcp_total }} endpoints reachable"
+      - "---"
+      - "Per-category DNS: {{ ext_category_dns }}"
+      - "Per-category TCP: {{ ext_category_tcp }}"
+      - "------------------------------------"
+
+# ── Stage 5: Update global counters ──────────────────────────────
+
+- name: Update global test counters with external connectivity
+  ansible.builtin.set_fact:
+    dns_verify_tests_total: "{{ dns_verify_tests_total | int + ext_conn_tests_total | int }}"
+    dns_verify_passed: "{{ dns_verify_passed | int + ext_conn_tests_passed | int }}"
+
+- name: Count external connectivity failures as critical
+  ansible.builtin.set_fact:
+    dns_verify_failed: "{{ dns_verify_failed | int + ext_conn_tests_failed | int }}"
+  when: verify_external_connectivity_critical | default(false)
+
+- name: Count external connectivity failures as warnings
+  ansible.builtin.set_fact:
+    dns_verify_warnings: "{{ dns_verify_warnings | int + ext_conn_tests_failed | int }}"
+  when: not (verify_external_connectivity_critical | default(false))
+
+# ── Stage 6: Assert if configured ────────────────────────────────
+
+- name: Assert external connectivity checks passed
+  ansible.builtin.assert:
+    that:
+      - ext_conn_tests_failed | int == 0
+    success_msg: "All external connectivity checks passed ({{ ext_conn_tests_passed }}/{{ ext_conn_tests_total }})"
+    fail_msg: "External connectivity failures detected: {{ ext_conn_tests_failed }}/{{ ext_conn_tests_total }} tests failed"
+  when:
+    - verify_fail_immediately
+    - verify_external_connectivity_critical | default(false)
+    - ext_conn_tests_failed | int > 0

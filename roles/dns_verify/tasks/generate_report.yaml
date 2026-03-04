@@ -14,11 +14,20 @@
       - "Host Type: {{ host_type }}"
       - "WireGuard: {{ 'UP' if wg_interface_status.rc == 0 else 'DOWN' if wg_interface_status is defined else 'N/A' }}"
       - "VPN IP: {{ host_vpn_ip | default('N/A') | sanitize_security }}"
-      - "Tests Total: {{ dns_verify_tests_total }}"
-      - "Tests Passed: {{ dns_verify_passed }}"
-      - "Tests Failed: {{ dns_verify_failed }}"
-      - "Warnings: {{ dns_verify_warnings }}"
-      - "Health Status: {{ dns_health_status }}"
+      - "--- Internal DNS ---"
+      - "  Resolution: {{ dns_internal_passed | default(0) }}/{{ dns_internal_test_count | default(0) }} passed"
+      - "--- External DNS ---"
+      - "  Primary: {{ dns_external_primary_passed | default(0) }}/{{ dns_external_primary_count | default(0) }} passed"
+      - "  Secondary: {{ dns_external_secondary_passed | default(0) }}/{{ dns_external_secondary_count | default(0) }} passed"
+      - "--- External Connectivity ---"
+      - "  DNS Resolution: {{ ext_dns_passed | default(0) }}/{{ ext_dns_total | default(0) }} endpoints resolved"
+      - "  TCP Reachability: {{ ext_tcp_passed | default(0) }}/{{ ext_tcp_total | default(0) }} endpoints reachable"
+      - "--- Totals ---"
+      - "  Tests Total: {{ dns_verify_tests_total }}"
+      - "  Tests Passed: {{ dns_verify_passed }}"
+      - "  Tests Failed: {{ dns_verify_failed }}"
+      - "  Warnings: {{ dns_verify_warnings }}"
+      - "  Health Status: {{ dns_health_status }}"
       - "============================================="
 
 - name: Generate aggregated summary across all hosts
@@ -40,6 +49,7 @@
       - "DNS Servers: {{ 'All healthy' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
       - "DNS Clients: {{ 'All connected' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Issues detected' }}"
       - "DNS Resolution: {{ 'Working' if hostvars[inventory_hostname].dns_verify_failed | int == 0 else 'Failed' }}"
+      - "External Connectivity: {{ 'All reachable' if (hostvars[inventory_hostname].ext_conn_tests_failed | default(0) | int == 0) else (hostvars[inventory_hostname].ext_conn_tests_failed | default(0) | string + ' endpoint(s) unreachable') }}"
       - "========================================"
   run_once: true
 

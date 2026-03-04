@@ -20,5 +20,8 @@
 - name: Import DNS resolution tests
   ansible.builtin.include_tasks: verify_dns_resolution.yaml
 
+- name: Import external connectivity tests
+  ansible.builtin.include_tasks: verify_external_connectivity.yaml
+
 - name: Generate verification report
   ansible.builtin.include_tasks: generate_report.yaml

@@ -14,10 +14,54 @@ verify_dns_retry: 2
 # Defaults to vault_dns_records + vault_dns_zone when empty or undefined.
 verify_internal_test_records: []
 
-# DNS test targets - external
+# DNS test targets - external (DNS resolution only)
 verify_external_test_hosts:
   - "google.com"
   - "example.com"
+
+# External connectivity endpoints - DNS resolution + TCP reachability
+# These verify that critical external services are actually reachable,
+# not just that DNS resolves. Each entry has a host, port, and category.
+verify_external_connectivity_endpoints:
+  # General internet
+  - host: "google.com"
+    port: 443
+    category: "general"
+  - host: "cloudflare.com"
+    port: 443
+    category: "general"
+  # Git services
+  - host: "github.com"
+    port: 443
+    category: "git"
+  - host: "gitlab.com"
+    port: 443
+    category: "git"
+  # Container registries
+  - host: "registry-1.docker.io"
+    port: 443
+    category: "container_registry"
+  - host: "ghcr.io"
+    port: 443
+    category: "container_registry"
+  # Package repositories
+  - host: "deb.debian.org"
+    port: 443
+    category: "package_repo"
+  - host: "archive.ubuntu.com"
+    port: 80
+    category: "package_repo"
+  # DNS providers (alternative resolvers)
+  - host: "dns.google"
+    port: 443
+    category: "dns_provider"
+
+# Timeout for TCP connectivity checks (seconds)
+verify_tcp_connect_timeout: 5
+
+# Whether external connectivity failures are critical or warnings
+# Set to false to treat external connectivity issues as warnings only
+verify_external_connectivity_critical: false
 
 # Health thresholds
 verify_max_ping_loss: 0

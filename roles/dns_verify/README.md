@@ -71,6 +71,33 @@ Tests from DNS clients:
 - External DNS resolution failures trigger immediate failure
 - Warnings for secondary DNS server issues
 
+### External Connectivity Tests (`verify_external_connectivity.yaml`)
+
+Verifies that critical external services are reachable end-to-end (DNS resolution + TCP connectivity). Runs on all hosts.
+
+**Stage 1 - DNS Resolution:** Resolves each endpoint hostname via the primary DNS server.
+
+**Stage 2 - TCP Reachability:** Opens a TCP connection to each endpoint on its configured port to verify actual network path.
+
+**Default endpoints tested by category:**
+
+| Category | Host | Port | Purpose |
+|----------|------|------|---------|
+| General | `google.com` | 443 | General internet connectivity |
+| General | `cloudflare.com` | 443 | General internet connectivity |
+| Git | `github.com` | 443 | Git repository access |
+| Git | `gitlab.com` | 443 | Git repository access |
+| Container Registry | `registry-1.docker.io` | 443 | Docker Hub image pulls |
+| Container Registry | `ghcr.io` | 443 | GitHub Container Registry |
+| Package Repo | `deb.debian.org` | 443 | Debian package repository |
+| Package Repo | `archive.ubuntu.com` | 80 | Ubuntu package repository |
+| DNS Provider | `dns.google` | 443 | Alternative DNS resolver |
+
+**Failure behavior:**
+- By default, external connectivity failures are counted as **warnings** (not critical)
+- Set `verify_external_connectivity_critical: true` to treat them as critical failures
+- Per-category breakdown is included in the report
+
 ### Verification Report (`generate_report.yaml`)
 
 Generates comprehensive health report:
@@ -111,6 +138,9 @@ Generates comprehensive health report:
 | `verify_dns_retry` | DNS query retry attempts | `2` |
 | `verify_internal_test_records` | Internal DNS test targets (defaults from `vault_dns_records`/`vault_dns_zone`) | See defaults |
 | `verify_external_test_hosts` | External DNS test targets | See defaults |
+| `verify_external_connectivity_endpoints` | External endpoints for DNS + TCP checks (host, port, category) | See defaults |
+| `verify_tcp_connect_timeout` | TCP connectivity check timeout in seconds | `5` |
+| `verify_external_connectivity_critical` | Treat external connectivity failures as critical | `false` |
 | `verify_fail_immediately` | Fail on critical errors | `true` |
 
 ## Dependencies
@@ -217,6 +247,33 @@ ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit dns_servers
 3. Verify firewall allows DNS queries:
    ```bash
    ufw status | grep 53
+   ```
+
+### External connectivity checks fail:
+
+1. Test DNS resolution of external endpoint:
+   ```bash
+   nslookup github.com [primary-dns-server-vpn-ip]
+   nslookup registry-1.docker.io [primary-dns-server-vpn-ip]
+   ```
+
+2. Test TCP connectivity manually:
+   ```bash
+   # Check if port is reachable
+   timeout 5 bash -c 'echo > /dev/tcp/github.com/443' && echo "OK" || echo "FAILED"
+   timeout 5 bash -c 'echo > /dev/tcp/registry-1.docker.io/443' && echo "OK" || echo "FAILED"
+   ```
+
+3. Check firewall/NAT for outbound HTTPS:
+   ```bash
+   ufw status | grep 443
+   iptables -L OUTPUT -n | grep 443
+   ```
+
+4. Verify WireGuard is routing external traffic:
+   ```bash
+   ip route show
+   curl -sI https://github.com
    ```
 
 ## Security Considerations
