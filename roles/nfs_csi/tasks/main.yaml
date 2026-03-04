@@ -132,7 +132,7 @@
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: nfs_csi_uninstall
-      with_items: "{{ nfs_csi_existing_releases }}"
+      loop: "{{ nfs_csi_existing_releases }}"
       when:
         - nfs_csi_existing_releases | length > 0
         - item.name != nfs_csi_release_name

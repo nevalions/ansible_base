@@ -23,7 +23,7 @@
       ansible.builtin.apt:
         name: nfs-common
         state: present
-        update_cache: yes
+        update_cache: true
 
     - name: Verify nfs-common is installed after
       ansible.builtin.shell: dpkg -l | grep nfs-common

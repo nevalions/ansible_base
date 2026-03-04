@@ -2,7 +2,7 @@
 - name: Test kuber_join variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Verify kuber_join_control_plane_host can be defined
       ansible.builtin.assert:

@@ -187,7 +187,7 @@
   notify: Restart keepalived
 
 - name: Ensure keepalived is enabled and started
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: keepalived
     state: started
     enabled: true

@@ -18,14 +18,14 @@
     - name: Cache reboot requirement status
       ansible.builtin.set_fact:
         reboot_required_status: "{{ reboot_required.stat.exists | default(false) }}"
-        cacheable: yes
+        cacheable: true
       when: ansible_os_family == "Debian"
 
     - name: Mark reboot requirement unsupported
       ansible.builtin.set_fact:
         reboot_required_status: false
         reboot_required_note: "Reboot check not supported for this OS family"
-        cacheable: yes
+        cacheable: true
       when: ansible_os_family != "Debian"
 
     - name: Display reboot status per host

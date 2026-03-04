@@ -2,7 +2,7 @@
 - name: Test kuber_init variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Verify kubeadm_pod_subnet variable exists
       ansible.builtin.assert:

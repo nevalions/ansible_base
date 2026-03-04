@@ -13,7 +13,7 @@
     - remove
   tasks:
     - name: Stop and disable HAProxy service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: haproxy
         state: stopped
         enabled: false
@@ -51,7 +51,7 @@
         port: "{{ haproxy_k8s_frontend_port }}"
         from: "{{ net }}"
         direction: in
-        delete: yes
+        delete: true
       loop: "{{ haproxy_k8s_allowed_networks }}"
       loop_control:
         loop_var: net

@@ -5,7 +5,7 @@
       - "=== DNS Server Verification: {{ inventory_hostname }} ==="
 
 - name: Check unbound service status
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: unbound
   register: unbound_status
   ignore_errors: true

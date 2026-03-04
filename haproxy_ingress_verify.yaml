@@ -28,7 +28,7 @@
 
   tasks:
     - name: Check HAProxy service status
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: haproxy
       register: haproxy_service
 

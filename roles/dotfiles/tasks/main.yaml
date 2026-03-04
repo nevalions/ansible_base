@@ -21,8 +21,8 @@
     repo: "{{ dotfiles_repo }}"
     dest: "{{ user_home }}/dotfiles"
     version: "{{ dotfiles_version }}"
-    force: yes
-    update: yes
+    force: true
+    update: true
   become: true
   become_user: "{{ ansible_user }}"
   when: install_dotfiles | default(false)

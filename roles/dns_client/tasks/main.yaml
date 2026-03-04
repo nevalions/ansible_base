@@ -94,7 +94,7 @@
   notify: Restart dnsmasq
 
 - name: Reload systemd daemon when dnsmasq override changes
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     daemon_reload: true
   when:
     - dns_operation == "install"
@@ -110,7 +110,7 @@
     - dns_client_node_local_effective | bool
 
 - name: Ensure dnsmasq is enabled and started
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: dnsmasq
     state: started
     enabled: true
@@ -132,7 +132,7 @@
   ansible.builtin.copy:
     src: /etc/resolv.conf
     dest: /etc/resolv.conf.original
-    remote_src: yes
+    remote_src: true
     mode: '0644'
   when:
     - dns_operation == "install"
@@ -140,7 +140,7 @@
   ignore_errors: true
 
 - name: Stop and disable systemd-resolved
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: systemd-resolved
     state: stopped
     enabled: false
@@ -162,7 +162,7 @@
     src: resolv.conf.j2
     dest: /etc/resolv.conf
     mode: '0644'
-    backup: yes
+    backup: true
   when: dns_operation == "install"
 
 - name: Test DNS resolution

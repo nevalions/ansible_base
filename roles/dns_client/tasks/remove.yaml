@@ -1,6 +1,6 @@
 ---
 - name: Stop and disable dnsmasq (best-effort)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: dnsmasq
     state: stopped
     enabled: false
@@ -20,7 +20,7 @@
   register: original_resolv_conf
 
 - name: Check for systemd-resolved status
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: systemd-resolved
   register: systemd_resolved_status
   failed_when: false
@@ -30,7 +30,7 @@
     src: /etc/resolv.conf.original
     dest: /etc/resolv.conf
     mode: '0644'
-    remote_src: yes
+    remote_src: true
   when:
     - original_resolv_conf.stat.exists | bool
     - ansible_facts['os_family'] == 'Debian'
@@ -44,7 +44,7 @@
     - ansible_facts['os_family'] == 'Debian'
 
 - name: Re-enable systemd-resolved
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: systemd-resolved
     enabled: true
     state: started

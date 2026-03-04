@@ -38,7 +38,7 @@
   community.general.ufw:
     rule: allow
     proto: tcp
-    port: "{{ ansible_ssh_port | default('22') }}"
+    port: "{{ ansible_port | default('22') }}"
     src: "{{ ansible_facts['default_ipv4']['address'] }}"
   when:
     - ansible_facts['os_family'] == 'Debian'

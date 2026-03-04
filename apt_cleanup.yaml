@@ -2,7 +2,7 @@
 - name: Clean up stale APT locks and processes
   hosts: all
   become: true
-  gather_facts: no
+  gather_facts: false
   serial: 1
   vars_files:
     - vault_secrets.yml
@@ -53,4 +53,4 @@
           - "APT lock files removed: {{ lock_removed.results | selectattr('changed') | list | length }}"
           - "APT processes killed: {{ apt_killed.results | default([]) | length }}"
           - "APT cleanup complete"
-      run_once: yes
+      run_once: true

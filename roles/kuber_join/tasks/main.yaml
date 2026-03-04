@@ -62,7 +62,7 @@
   changed_when: true
   delegate_to: "{{ kuber_join_delegate_host }}"
   run_once: true
-  check_mode: no
+  check_mode: false
 
 - name: Parse join command to extract token and CA cert hash
   ansible.builtin.set_fact:
@@ -186,7 +186,7 @@
   when: kuber_join_memberlist_listeners.stdout_lines | length > 0
 
 - name: Ensure kubelet service is enabled and started (required for kubeadm join)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     enabled: true
     state: started

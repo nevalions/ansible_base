@@ -1,13 +1,13 @@
 ---
 - name: Gather WG CIDR guard timer status
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "{{ wg_cidr_guard_timer_unit }}"
   register: wg_cidr_guard_timer_status
   failed_when: false
   changed_when: false
 
 - name: Gather WG CIDR guard service status
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "{{ wg_cidr_guard_service_unit }}"
   register: wg_cidr_guard_service_status
   failed_when: false

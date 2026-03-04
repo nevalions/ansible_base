@@ -27,19 +27,19 @@
   register: wg_cidr_guard_timer_deployed
 
 - name: Reload systemd daemon for WG CIDR guard units
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     daemon_reload: true
   when:
     - wg_cidr_guard_service_deployed.changed or wg_cidr_guard_timer_deployed.changed
 
 - name: Enable and start WG CIDR guard timer
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "{{ wg_cidr_guard_timer_unit }}"
     state: started
     enabled: true
 
 - name: Run WG CIDR guard once after deployment
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "{{ wg_cidr_guard_service_unit }}"
     state: started
   when: wg_cidr_guard_run_on_install | bool

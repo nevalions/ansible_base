@@ -69,7 +69,7 @@
       register: ans5_critical_changed
 
     - name: Restart kubelet to apply shutdown grace period changes
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: kubelet
         state: restarted
       when: ans5_grace_changed.changed or ans5_critical_changed.changed
@@ -118,12 +118,12 @@
       register: ans5_unit_changed
 
     - name: Reload systemd daemon if unit changed
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         daemon_reload: true
       when: ans5_unit_changed.changed
 
     - name: Enable containerd-shim-cleanup service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: containerd-shim-cleanup.service
         enabled: true
 

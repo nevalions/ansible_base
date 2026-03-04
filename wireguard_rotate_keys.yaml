@@ -27,4 +27,4 @@
           - "WireGuard keys rotated successfully"
           - "Server keys regenerated"
           - "{{ vault_wg_peers | length }} peer keys regenerated"
-      run_once: yes
+      run_once: true

@@ -30,7 +30,7 @@
   tasks:
     # Phase 1: Remove Keepalived (VIP will be released)
     - name: Stop keepalived service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: keepalived
         state: stopped
       failed_when: false
@@ -38,7 +38,7 @@
         - keepalived
 
     - name: Disable keepalived service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: keepalived
         enabled: false
       failed_when: false
@@ -74,7 +74,7 @@
       when: not (keep_frr | bool)
       block:
         - name: Stop FRR service
-          ansible.builtin.systemd:
+          ansible.builtin.systemd_service:
             name: frr
             state: stopped
           failed_when: false
@@ -82,7 +82,7 @@
             - frr
 
         - name: Disable FRR service
-          ansible.builtin.systemd:
+          ansible.builtin.systemd_service:
             name: frr
             enabled: false
           failed_when: false

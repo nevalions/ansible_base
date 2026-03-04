@@ -1,6 +1,6 @@
 ---
 - name: Stop and remove Unbound
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: unbound
     state: stopped
     enabled: false
@@ -10,7 +10,7 @@
   ansible.builtin.apt:
     name: unbound
     state: absent
-    purge: yes
+    purge: true
 
 - name: Remove Unbound configuration directory
   ansible.builtin.file:
@@ -22,7 +22,7 @@
     rule: allow
     proto: udp
     port: "53"
-    delete: yes
+    delete: true
   failed_when: false
   loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
   when: ansible_facts['os_family'] == 'Debian'
@@ -32,7 +32,7 @@
     rule: allow
     proto: tcp
     port: "53"
-    delete: yes
+    delete: true
   failed_when: false
   loop: "{{ vault_dns_allowed_networks | default(['0.0.0.0/0']) }}"
   when: ansible_facts['os_family'] == 'Debian'

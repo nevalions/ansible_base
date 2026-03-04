@@ -371,7 +371,7 @@
   when: not ansible_check_mode
 
 - name: Ensure keepalived is enabled and started
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: keepalived
     state: started
     enabled: true

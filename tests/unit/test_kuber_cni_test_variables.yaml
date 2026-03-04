@@ -2,7 +2,7 @@
 - name: Test kuber_cni_test variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Verify cni_test_namespace is defined
       ansible.builtin.assert:

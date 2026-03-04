@@ -217,7 +217,7 @@
         wg_predown_rules: "{{ wg_worker_predown_rules }}"
 
     - name: Check if dnsmasq service exists
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: dnsmasq
       register: dnsmasq_service_status
       failed_when: false
@@ -299,7 +299,7 @@
         - not ansible_check_mode
 
     - name: Restart dnsmasq after WireGuard config change
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: dnsmasq
         state: restarted
       when:
@@ -334,7 +334,7 @@
         is_bgp_router: "{{ inventory_hostname in (groups.bgp_routers | default([])) }}"
 
     - name: Check if keepalived service exists
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: keepalived
       register: keepalived_service_status
       failed_when: false
@@ -355,7 +355,7 @@
         - not ansible_check_mode
 
     - name: Check if FRR service exists
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: frr
       register: frr_service_status
       failed_when: false
@@ -372,7 +372,7 @@
         - not ansible_check_mode
 
     - name: Restart Keepalived on control planes after WireGuard config change
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: keepalived
         state: restarted
       when:
@@ -399,7 +399,7 @@
         - not ansible_check_mode
 
     - name: Restart FRR on BGP routers after WireGuard config change
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: frr
         state: restarted
       when:
@@ -418,7 +418,7 @@
         - not ansible_check_mode
 
     - name: Restart Keepalived on BGP routers after WireGuard config change
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: keepalived
         state: restarted
       when:

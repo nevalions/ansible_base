@@ -13,7 +13,7 @@
   when: postfix_relay_operation == 'remove'
   block:
     - name: Stop and disable Postfix
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: postfix
         state: stopped
         enabled: false
@@ -149,7 +149,7 @@
     # --- Service ---
 
     - name: Ensure Postfix is enabled and started
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: postfix
         state: started
         enabled: true

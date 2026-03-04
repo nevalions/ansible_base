@@ -2,7 +2,7 @@
 - name: Test kuber installation pre-flight validation variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   vars_files:
     - ../../vault_secrets.example.yml
   tasks:

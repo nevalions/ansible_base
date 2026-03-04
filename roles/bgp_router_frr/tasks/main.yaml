@@ -43,7 +43,7 @@
       failed_when: false
 
     - name: Stop and disable FRR service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: frr
         state: stopped
         enabled: false
@@ -141,7 +141,7 @@
   register: bird_service_file
 
 - name: Stop and disable bird service (conflicts with FRR on port 179)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: bird
     state: stopped
     enabled: false
@@ -289,7 +289,7 @@
   notify: Restart frr
 
 - name: Ensure FRR service is enabled and running
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: frr
     enabled: true
     state: started
@@ -317,7 +317,7 @@
   failed_when: false
 
 - name: Restart FRR once if BGP neighbors are missing
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: frr
     state: restarted
   when:

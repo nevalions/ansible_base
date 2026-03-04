@@ -2,7 +2,7 @@
 - name: Test kuber_verify variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Verify verify_test_namespace variable exists
       ansible.builtin.assert:

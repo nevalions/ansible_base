@@ -61,7 +61,7 @@
   when: preflight_docker.rc == 0 and not k8s_preflight_skip_docker_check
 
 - name: Check if Docker daemon is running
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: docker
   register: preflight_docker_service
   failed_when: false
@@ -396,17 +396,17 @@
     mode: "0644"
 
 - name: Reload systemd daemon
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     daemon_reload: true
 
 - name: Stop kubelet service
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     state: stopped
   ignore_errors: true
 
 - name: Enable kubelet service
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     enabled: true
 
@@ -548,7 +548,7 @@
   notify: Restart containerd
 
 - name: Restart containerd
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
     state: restarted
     enabled: true
@@ -575,7 +575,7 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Enable containerd-shim-cleanup service
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd-shim-cleanup.service
     enabled: true
     daemon_reload: false
@@ -598,7 +598,7 @@
   when: kuber_ufw_bin.stat.exists
 
 - name: Stop and disable UFW service (best-effort)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: ufw
     state: stopped
     enabled: false
@@ -686,7 +686,7 @@
   when: br_netfilter_module.stdout is defined
 
 - name: Verify containerd is running
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
   register: containerd_running
   failed_when: false

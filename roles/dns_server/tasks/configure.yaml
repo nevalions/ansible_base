@@ -6,7 +6,7 @@
     mode: '0755'
 
 - name: Stop and disable systemd-resolved
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: systemd-resolved
     state: stopped
     enabled: false
@@ -38,7 +38,7 @@
     owner: root
     group: root
     mode: '0644'
-    backup: yes
+    backup: true
   notify: Restart unbound
 
 - name: Setup unbound-control keys (required for remote-control)
@@ -54,5 +54,5 @@
     owner: root
     group: root
     mode: '0644'
-    backup: yes
+    backup: true
   notify: Reload unbound

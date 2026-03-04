@@ -15,7 +15,7 @@
   ansible.builtin.copy:
     src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_facts['date_time']['iso8601'] }}"
-    remote_src: yes
+    remote_src: true
     mode: '0600'
   when:
     - wg_config_exists.stat.exists
@@ -78,7 +78,7 @@
     src: server.conf.j2
     dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     mode: '0600'
-    backup: yes
+    backup: true
   register: wg_config_deployed
  
 - name: Check if WireGuard interface is already running
@@ -91,10 +91,10 @@
     - not ansible_check_mode
 
 - name: Enable WireGuard service on boot
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "wg-quick@{{ vault_wg_interface }}"
-    enabled: yes
-    daemon_reload: yes
+    enabled: true
+    daemon_reload: true
   when: wg_operation == "install"
 
 - name: Compute matching WireGuard server group for this host
@@ -185,7 +185,7 @@
 - name: Restart WireGuard service when interface address changed
   block:
     - name: Restart WireGuard service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: "wg-quick@{{ vault_wg_interface }}"
         state: restarted
       register: wg_service_action
@@ -221,7 +221,7 @@
 - name: Start WireGuard service (interface not running)
   block:
     - name: Start WireGuard service
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: "wg-quick@{{ vault_wg_interface }}"
         state: started
       register: wg_service_action

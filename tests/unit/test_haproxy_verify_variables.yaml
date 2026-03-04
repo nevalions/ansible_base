@@ -2,7 +2,7 @@
 - name: Test haproxy_verify variables
   hosts: localhost
   connection: local
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Verify verify_timeout_seconds is positive
       ansible.builtin.assert:
@@ -42,7 +42,7 @@
         success_msg: "haproxy_expected_port variable defined correctly"
         fail_msg: "haproxy_expected_port variable missing or invalid"
       vars:
-        haproxy_expected_port: "6443"
+        haproxy_expected_port: "{{ test_haproxy_port | default('6443') }}"
 
     - name: Verify haproxy_expected_user is defined
       ansible.builtin.assert:

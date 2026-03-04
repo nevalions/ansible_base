@@ -36,7 +36,7 @@
     - ansible.builtin.import_tasks: deploy_peers.yaml
 
     - name: Verify WireGuard service is running
-      ansible.builtin.systemd:
+      ansible.builtin.systemd_service:
         name: "wg-quick@{{ vault_wg_interface }}"
       register: wg_service_status
       until: wg_service_status.status.ActiveState == 'active'

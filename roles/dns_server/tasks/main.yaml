@@ -49,7 +49,7 @@
     - not ansible_check_mode
 
 - name: Verify Unbound service is running
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: unbound
   register: unbound_running
   failed_when: false

@@ -12,7 +12,7 @@
            }) ] }}
   loop: "{{ vault_wg_peers | default([]) }}"
   loop_control:
-    extended: yes
+    extended: true
   when: vault_wg_peers is defined and vault_wg_peers | length > 0
 
 - name: Update vault_wg_peers with assigned ports

@@ -4,7 +4,7 @@
   when: not (bgp_router_verify_enabled | bool)
 
 - name: Verify FRR service is active
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: frr
   register: frr_service
   changed_when: false

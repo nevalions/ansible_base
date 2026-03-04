@@ -22,7 +22,7 @@
       - kubeadm
       - kubectl
     state: absent
-  check_mode: yes
+  check_mode: true
   register: k8s_packages_installed
   changed_when: false
   failed_when: false
@@ -58,21 +58,21 @@
       - kubeadm
       - kubectl
     state: absent
-    purge: yes
-    autoremove: yes
+    purge: true
+    autoremove: true
   when: remove_kubernetes_packages | default(true)
   register: pkg_removal
   failed_when: false
 
 - name: Stop kubelet service
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     state: stopped
     enabled: false
   failed_when: false
 
 - name: Stop NFS server related services when present
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "{{ item }}"
     state: stopped
     enabled: false
@@ -84,7 +84,7 @@
   failed_when: false
 
 - name: Stop containerd service temporarily for cleanup
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
     state: stopped
   failed_when: false
@@ -196,7 +196,7 @@
   changed_when: false
 
 - name: Ensure containerd is running for CRI cleanup
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
     state: started
   failed_when: false
@@ -379,7 +379,7 @@
   failed_when: false
 
 - name: Reload systemd daemon
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     daemon_reload: true
 
 - name: Verify CNI directories are removed (before containerd starts)
@@ -431,14 +431,14 @@
   changed_when: false
 
 - name: Ensure kubelet stays stopped before CSI listener enforcement
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     state: stopped
     enabled: false
   failed_when: false
 
 - name: Stop containerd temporarily before CSI listener enforcement
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
     state: stopped
   failed_when: false
@@ -480,7 +480,7 @@
   when: kuber_reset_enforce_listener_cleanup | default(true)
 
 - name: Ensure kubelet stays stopped before final MetalLB cleanup
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
     state: stopped
     enabled: false
@@ -538,7 +538,7 @@
   loop: "{{ cni_interfaces_absent.results }}"
 
 - name: Start containerd service
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
     state: started
     enabled: true
@@ -604,13 +604,13 @@
     msg: "NOTE: Containerd may recreate empty /etc/cni/net.d directory on startup - this is expected behavior"
 
 - name: Verify kubelet is stopped
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: kubelet
   register: kubelet_status
   failed_when: false
 
 - name: Verify containerd is running
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: containerd
   register: containerd_running
   failed_when: false

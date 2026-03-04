@@ -31,7 +31,7 @@
   ansible.builtin.copy:
     src: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     dest: "/etc/wireguard/backups/{{ vault_wg_interface }}.conf.backup.{{ ansible_facts['date_time']['iso8601'] }}"
-    remote_src: yes
+    remote_src: true
     mode: '0600'
   when:
     - peer_wg_config_exists.stat.exists
@@ -43,12 +43,12 @@
     src: client.conf.j2
     dest: "/etc/wireguard/{{ vault_wg_interface }}.conf"
     mode: '0600'
-    backup: yes
+    backup: true
   register: peer_config_deployed
   when: operation == "install"
 
 - name: Stop WireGuard service before configuration change (peer)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "wg-quick@{{ vault_wg_interface }}"
     state: stopped
   when:
@@ -65,14 +65,14 @@
   when: operation == "remove"
 
 - name: Enable WireGuard service on boot (peer)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "wg-quick@{{ vault_wg_interface }}"
-    enabled: yes
-    daemon_reload: yes
+    enabled: true
+    daemon_reload: true
   when: operation == "install"
 
 - name: Start or restart WireGuard service (peer)
-  ansible.builtin.systemd:
+  ansible.builtin.systemd_service:
     name: "wg-quick@{{ vault_wg_interface }}"
     state: "{{ 'restarted' if peer_config_deployed.changed else 'started' }}"
   when: operation == "install"

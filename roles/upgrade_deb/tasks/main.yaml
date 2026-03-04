@@ -155,7 +155,7 @@
 - name: Cache reboot requirement status
   ansible.builtin.set_fact:
     reboot_required_status: "{{ reboot_required.stat.exists }}"
-    cacheable: yes
+    cacheable: true
 
 - name: Get current package count after upgrade
   ansible.builtin.shell: dpkg -l | grep -c '^ii'
@@ -165,7 +165,7 @@
 - name: Calculate packages upgraded
   ansible.builtin.set_fact:
     packages_upgraded_count: "{{ packages_after.stdout | int - packages_before.stdout | int }}"
-    cacheable: yes
+    cacheable: true
 
 - name: Display Debian upgrade completion
   ansible.builtin.debug:
