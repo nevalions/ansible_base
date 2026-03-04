@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-03-04
+
+### Added
+
+- **wireguard_manage.yaml** — cross-peer VIP duplicate guard:
+  - New assert task after per-peer intra-CIDR duplicate check.
+  - Validates that `vault_k8s_api_vip` appears in `allowed_ips` of **at most one** peer entry
+    across the entire `vault_wg_peers` list.
+  - Fails early (before any WireGuard config is deployed) with a message naming every offending
+    peer, preventing the class of failure where two peers share the VIP and WireGuard's kernel
+    resolves the ambiguity unpredictably — blackholing the VIP after a VRRP failover.
+
+- **wireguard_manage.yaml** — post-WG VIP reachability health check:
+  - After every WireGuard reconfiguration (`wg_config_deployed.changed`), pings `vault_k8s_api_vip`
+    3× with a 2-second deadline.
+  - Playbook fails on the current host if the VIP is unreachable, preventing silent progression
+    to the next `serial: 1` host.
+  - 5-second stabilisation wait before the ping to allow keepalived VRRP convergence.
+
+- **roles/dns_server/tasks/main.yaml** — `unbound-anchor` installation and trust anchor refresh:
+  - Installs `unbound-anchor` package after `unbound` (`failed_when: false` for distros that
+    bundle it in the main package).
+  - Runs `unbound-anchor -a /var/lib/unbound/root.key` after every install/reconfigure.
+    `rc=1` (anchor updated) is reported as changed; `rc=0` (already fresh) is a no-op.
+    Any other exit code is treated as a soft failure (binary not present).
+
+- **roles/dns_server/tasks/main.yaml** — external DNS health check:
+  - `dig @127.0.0.1 registry-1.docker.io A +short +time=3 +tries=2` runs after every DNS
+    deployment as a mandatory post-deployment gate.
+  - Fails the play if Unbound returns an empty answer or non-zero exit — catches stale trust
+    anchor state, broken upstream, or DNSSEC SERVFAIL before pods notice.
+
+- **roles/dns_server/templates/unbound.conf.j2** — DNSSEC resilience directives:
+  - `auto-trust-anchor-file: /var/lib/unbound/root.key` — explicit anchor path (was relying on
+    compiled-in default which varies by distro).
+  - `harden-dnssec-stripped: no` — prevents SERVFAIL when a CDN or transit node strips DNSSEC
+    signatures from a response (common with some `.io` TLD delegation paths).
+  - `val-permissive-mode: no` — retains validation when the anchor is healthy; only the
+    stripped-signature case degrades gracefully.
+  - `val-clean-additional: yes` — discards unsigned additional-section RRs to reduce cache
+    poisoning surface.
+
+### Fixed
+
+- **WireGuard VIP duplicate / VRRP failover outage** (root cause prevention):
+  - Previously: adding `[k8s-api-vip]/32` to both the MASTER and BACKUP control-plane peer
+    entries in `vault_secrets.yml` passed undetected. On WireGuard restart, the kernel resolved
+    the duplicate AllowedIPs to the BACKUP peer, blackholing the VIP and causing all workers to
+    lose kubelet connectivity (nodes NotReady).
+  - Fix: pre-flight assert in `wireguard_manage.yaml` catches this in vault before any interface
+    is touched. Post-flight VIP ping catches routing regressions immediately after apply.
+
+- **Unbound DNSSEC stale trust anchor / external resolution failure** (root cause prevention):
+  - Previously: `unbound-anchor` was not installed; the root trust anchor in
+    `/var/lib/unbound/root.key` could go stale over weeks. Stale anchor + default
+    `harden-dnssec-stripped: yes` caused Unbound to return SERVFAIL for DNSSEC-signed TLDs
+    (e.g. `.io`), making `registry-1.docker.io` unresolvable and triggering ImagePullBackOff
+    across nodes whose dnsmasq forwarded to the affected resolver.
+  - Fix: `unbound-anchor` is installed and run on every `dns_server` play; DNSSEC config in
+    `unbound.conf.j2` is explicit and resilient to stripped signatures.
+
 ## [1.10.0] - 2026-02-26
 
 ### Added

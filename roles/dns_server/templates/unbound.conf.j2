@@ -7,6 +7,17 @@ server:
     rrset-cache-size: {{ dns_cache_size }}m
     msg-cache-size: {{ dns_cache_size }}m
 
+    # DNSSEC trust anchor — refreshed by unbound-anchor in dns_server role.
+    # harden-dnssec-stripped: no  → don't SERVFAIL when a zone has no DNSSEC
+    #   signatures (e.g. CDN-served zones that strip DS records in transit).
+    # val-permissive-mode: no     → still validate when anchor is healthy.
+    # If root.key becomes stale, unbound falls back to iterative resolution
+    # rather than returning SERVFAIL for all DNSSEC-signed TLDs.
+    auto-trust-anchor-file: "/var/lib/unbound/root.key"
+    harden-dnssec-stripped: no
+    val-permissive-mode: no
+    val-clean-additional: yes
+
 {% set valid_upstreams = (dns_upstream_dns | default([])
   | reject('match', '^\[.*\]$')
   | select('match', '^(?:\d{1,3}\.){3}\d{1,3}$')

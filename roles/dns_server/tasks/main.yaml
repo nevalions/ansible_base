@@ -20,6 +20,14 @@
     name: unbound
     state: present
 
+- name: Install unbound-anchor package
+  # unbound-anchor is a separate package on Ubuntu 24.04 (1.19.x).
+  # On older distros it may be bundled in 'unbound' — ignore if unavailable.
+  ansible.builtin.apt:
+    name: unbound-anchor
+    state: present
+  failed_when: false
+
 - name: Import configuration tasks
   ansible.builtin.import_tasks: configure.yaml
 
@@ -28,6 +36,17 @@
 
 - name: Import firewall tasks
   ansible.builtin.import_tasks: firewall.yaml
+
+- name: Refresh DNSSEC root trust anchor
+  # rc=0: anchor already up to date; rc=1: anchor was updated (treated as changed).
+  # Any other rc means unbound-anchor is not installed — skip gracefully.
+  ansible.builtin.command: unbound-anchor -a /var/lib/unbound/root.key
+  register: unbound_anchor_result
+  changed_when: unbound_anchor_result.rc == 1
+  failed_when: unbound_anchor_result.rc not in [0, 1]
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
 
 - name: Verify Unbound service is running
   ansible.builtin.systemd:
@@ -90,6 +109,31 @@
     - dns_operation == "install"
     - not ansible_check_mode
     - dns_records | length > 0
+
+- name: Verify external DNS resolution (registry-1.docker.io)
+  # Catches the class of failure where Unbound resolves internal zones fine
+  # but returns SERVFAIL or empty for external DNSSEC-signed domains (e.g.
+  # after a stale root trust anchor or upstream disruption).
+  ansible.builtin.command: >-
+    dig @127.0.0.1 registry-1.docker.io A +short +time=3 +tries=2
+  register: external_dns_test
+  changed_when: false
+  failed_when: >-
+    external_dns_test.rc != 0
+    or (external_dns_test.stdout | default('') | trim | length == 0)
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
+
+- name: Display external DNS test result
+  ansible.builtin.debug:
+    msg:
+      - "External DNS test (registry-1.docker.io): PASS"
+      - "Resolves to: {{ external_dns_test.stdout_lines | default([]) }}"
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
+    - external_dns_test is defined
 
 - name: Display DNS server management completion
   ansible.builtin.debug:

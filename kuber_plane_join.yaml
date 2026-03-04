@@ -54,7 +54,7 @@
 # ----------------------------------------------------------------------------
 # WireGuard requires mesh update - all nodes need peer configs
 - name: "Play 1/4: Update WireGuard mesh for new control plane"
-  hosts: vas_plane1
+  hosts: bay_plane2
   become: true
   gather_facts: true
   serial: 1
@@ -90,7 +90,7 @@
 # Play 2: Verify WireGuard connectivity to new plane
 # ----------------------------------------------------------------------------
 - name: "Play 2/4: Verify WireGuard connectivity"
-  hosts: vas_plane1
+  hosts: bay_plane2
   become: true
   gather_facts: true
   vars_files:
@@ -173,7 +173,7 @@
 # Play 4: Join new node as Kubernetes control plane
 # ----------------------------------------------------------------------------
 - name: "Play 4/4: Join Kubernetes control plane"
-  hosts: vas_plane1
+  hosts: bay_plane2
   become: true
   gather_facts: true
   serial: 1

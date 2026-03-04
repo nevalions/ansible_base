@@ -512,6 +512,27 @@
     - { name: "net.bridge.bridge-nf-call-iptables", value: "1" }
     - { name: "net.bridge.bridge-nf-call-ip6tables", value: "1" }
 
+- name: Disable IPv6 on WireGuard and default network interfaces
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - { name: "net.ipv6.conf.{{ vault_wg_interface | default('wg99') }}.disable_ipv6", value: "1" }
+    - { name: "net.ipv6.conf.{{ ansible_default_ipv4.interface }}.disable_ipv6", value: "1" }
+  when: kuber_disable_ipv6 | bool
+
+- name: Prefer IPv4 over IPv6 in getaddrinfo
+  ansible.builtin.lineinfile:
+    path: /etc/gai.conf
+    create: true
+    mode: "0644"
+    regexp: '^\s*precedence\s+::ffff:0:0/96\s+'
+    line: "precedence ::ffff:0:0/96  100"
+  when: kuber_prefer_ipv4 | bool
+
 - name: Create containerd config directory
   ansible.builtin.file:
     path: /etc/containerd

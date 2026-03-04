@@ -18,9 +18,11 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - Supports both node hostname resolution and Kubernetes service DNS
 - All IPs encrypted in Ansible Vault (zero hardcoded values)
 - Configuration validation with `unbound-checkconf`
-- DNS resolution testing with `dig`
+- DNS resolution testing with `dig` (internal zone + external registry domain)
 - Automatic systemd-resolved disable (prevents port 53 conflict)
 - Custom resolv.conf with fallback to public DNS (8.8.8.8)
+- DNSSEC trust anchor management (`unbound-anchor` install + refresh on every run)
+- DNSSEC resilience: `harden-dnssec-stripped: no` prevents SERVFAIL on stripped-signature zones
 
 ## Requirements
 
@@ -173,12 +175,38 @@ systemctl status unbound
 # Validate configuration
 unbound-checkconf /etc/unbound/unbound.conf
 
-# Test DNS resolution
+# Test internal zone DNS resolution
 dig @127.0.0.1 [node-name].[zone-name]
 
-# Example:
-dig @127.0.0.1 [cluster-hostname]
+# Test external registry resolution (must return at least one A record)
+dig @127.0.0.1 registry-1.docker.io A +short
+
+# Check DNSSEC trust anchor status
+unbound-anchor -v -a /var/lib/unbound/root.key
+
+# Check trust anchor file age (should be < 30 days)
+stat /var/lib/unbound/root.key
 ```
+
+### DNSSEC Trust Anchor
+
+The role installs `unbound-anchor` and runs it on every `dns_operation: install` play.
+The anchor file `/var/lib/unbound/root.key` is updated automatically.
+
+**If external domains return SERVFAIL after a long outage:**
+```bash
+# Force anchor refresh
+sudo unbound-anchor -a /var/lib/unbound/root.key
+sudo systemctl restart unbound
+
+# Verify external resolution recovers
+dig @127.0.0.1 registry-1.docker.io A +short
+```
+
+The Unbound config uses `harden-dnssec-stripped: no` so resolution degrades gracefully
+(returns unsigned answers) rather than returning SERVFAIL when a CDN or transit node
+strips DNSSEC signatures in transit. Full DNSSEC validation is still performed for zones
+that correctly serve signatures.
 
 ## Security
 
@@ -191,6 +219,8 @@ dig @127.0.0.1 [cluster-hostname]
 - ✅ systemd-resolved is disabled to prevent port 53 conflicts
 - ✅ Custom resolv.conf ensures DNS queries use Unbound
 - ✅ Fallback to public DNS (8.8.8.8) for upstream queries
+- ✅ DNSSEC root trust anchor kept fresh via `unbound-anchor` on every deploy
+- ✅ `val-clean-additional: yes` discards unsigned additional-section RRs
 
 ### Firewall Behavior
 
@@ -200,6 +230,52 @@ dig @127.0.0.1 [cluster-hostname]
 - Existing UFW configurations are respected (no SSH rules added if UFW active)
 
 See `vault_secrets.example.yml` for template structure.
+
+## Troubleshooting
+
+### External registry domains return SERVFAIL or empty answer
+
+**Symptoms:** `dig @127.0.0.1 registry-1.docker.io` returns `SERVFAIL` or no answer.
+ImagePullBackOff on cluster nodes whose dnsmasq forwards to this resolver.
+
+**Common causes:**
+1. Stale DNSSEC root trust anchor (`/var/lib/unbound/root.key` not refreshed in >30 days)
+2. Upstream forwarder unreachable (WireGuard tunnel down during resolver restart)
+3. Unbound cache poisoned with a negative TTL entry from a transient failure
+
+**Fix:**
+```bash
+# 1. Force anchor refresh and restart
+sudo unbound-anchor -a /var/lib/unbound/root.key
+sudo systemctl restart unbound
+
+# 2. Flush cache if still broken after restart
+sudo unbound-control flush_zone .
+sudo unbound-control reload
+
+# 3. Verify
+dig @127.0.0.1 registry-1.docker.io A +short
+```
+
+### Unbound service not starting after config change
+
+```bash
+# Check config syntax
+sudo unbound-checkconf /etc/unbound/unbound.conf
+
+# Check journal
+sudo journalctl -xeu unbound --no-pager -n 40
+```
+
+### DNS resolution works but DNSSEC validation fails
+
+The role deploys `harden-dnssec-stripped: no` which prevents hard SERVFAIL on stripped
+signatures. If you see DNSSEC errors in logs, the anchor file may be stale:
+
+```bash
+sudo unbound-anchor -v -a /var/lib/unbound/root.key
+# rc=0: up to date | rc=1: updated | rc>1: error
+```
 
 ## License
 

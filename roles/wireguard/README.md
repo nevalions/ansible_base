@@ -179,6 +179,43 @@ This is set automatically in `wireguard_manage.yaml` via `wg_worker_postup_rules
 and `wg_worker_predown_rules` (passed to the role as `wg_postup_rules` /
 `wg_predown_rules`). The rules are rendered into wg99.conf by the templates.
 
+### VIP safety guards in wireguard_manage.yaml
+
+Two automatic checks prevent the class of outage where a misconfigured VIP in `vault_wg_peers`
+causes WireGuard to blackhole the Kubernetes API endpoint.
+
+**1. Cross-peer VIP duplicate assert (pre-flight)**
+
+Before any WireGuard config is written, the playbook asserts that `vault_k8s_api_vip` appears
+in `allowed_ips` of at most one peer entry:
+
+```
+TASK [Assert vault_k8s_api_vip is not duplicated across peer allowed_ips]
+failed: vault_k8s_api_vip [k8s-api-vip]/32 appears in allowed_ips of MORE THAN ONE peer entry.
+Remove it from all BACKUP plane peers — only the current VRRP MASTER peer should contain it.
+Offending peers: ['[master-peer-name]', '[backup-peer-name]']
+```
+
+The VIP `/32` must only be in the peer entry belonging to the **VRRP MASTER** control plane.
+The BACKUP plane peer's `allowed_ips` should contain only its own WG IP (`/32`).
+
+**Why this matters:** WireGuard's kernel resolves duplicate AllowedIPs non-deterministically.
+After a `wg syncconf` or service restart, the kernel may route the VIP via the BACKUP peer,
+blackholing API traffic even though keepalived correctly holds the VIP on the MASTER node.
+
+**2. Post-WG VIP reachability ping (post-flight)**
+
+After every WireGuard reconfiguration, the playbook pings `vault_k8s_api_vip` from the current
+host:
+
+```yaml
+# 5-second stabilization wait → ping -c 3 -W 2 [k8s-api-vip]
+```
+
+If the VIP is unreachable after the change, the playbook fails immediately — before `serial: 1`
+advances to the next host. This catches routing regressions (wrong AllowedIPs, keepalived not
+recovered) within the same playbook run.
+
 ### Legacy: Routed CIDRs for is_server peers (deprecated)
 
 The `vault_wg_routed_cidrs` + `is_server: true` mechanism is still supported
@@ -300,6 +337,40 @@ sudo cat /etc/wireguard/wg99.conf
    - Flannel default path in this repo does not require this setting.
 2. Ensure workers have DB WG route in `AllowedIPs` (for example `vault_db_wg_route_cidr`).
 3. Validate route on worker: `ip route get [db-wg-ip]` should use `wg99`.
+
+### Kubernetes API VIP unreachable after WireGuard reconfiguration
+
+**Symptoms:** Worker nodes go NotReady; `kubectl get nodes` shows `NotReady`; kubelet logs show
+connection refused or timeout to `[k8s-api-vip]:6443`.
+
+**Root cause:** `[k8s-api-vip]/32` present in `allowed_ips` of both the MASTER and BACKUP
+control-plane peer entries. WireGuard kernel routes VIP traffic via the wrong peer after restart.
+
+**Diagnosis:**
+```bash
+# On any node, check which peer owns the VIP route
+sudo wg show wg99 allowed-ips | grep [k8s-api-vip]
+# Should appear exactly once, under the VRRP MASTER peer's public key
+```
+
+**Fix:**
+1. Decrypt `vault_secrets.yml` and remove `[k8s-api-vip]/32` from every peer except the MASTER.
+2. Re-encrypt and re-run `wireguard_manage.yaml`.
+3. The pre-flight assert will catch duplicates before applying.
+
+**Prevention:** The cross-peer VIP duplicate assert in `wireguard_manage.yaml` fails the playbook
+before any interface is touched if this condition is detected in vault.
+
+### Stale WireGuard interface after failed reconfiguration
+
+**Symptoms:** `wg-quick: 'wg99' already exists` on service start after a previous run failed
+mid-way through PreDown.
+
+**Fix:**
+```bash
+sudo ip link delete wg99
+sudo systemctl start wg-quick@wg99
+```
 
 ### No Handshake with Peer
 **Symptoms:** `latest handshake` not updating, 0 B received

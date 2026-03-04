@@ -1,0 +1,166 @@
+---
+# ============================================================================
+# Fix IPv6-related image pull failures across all Kubernetes nodes
+# ============================================================================
+#
+# Problem: containerd resolves registry.k8s.io (and other registries) to an
+# IPv6 AAAA address, attempts to connect over IPv6 which has no route, and
+# fails with "network is unreachable" or hangs for 30-90s before falling back.
+#
+# Fix:
+#   1. Disable IPv6 per-interface (WireGuard + default NIC) via sysctl
+#   2. Set gai.conf IPv4 preference so getaddrinfo returns A before AAAA
+#   3. Restart containerd to pick up new network settings
+#   4. Verify image pull works from each node
+#   5. Bounce pods stuck in ImagePullBackOff
+#
+# Usage:
+#   ansible-playbook playbooks/k8s_fix_ipv6_image_pull.yaml
+#   ansible-playbook playbooks/k8s_fix_ipv6_image_pull.yaml -l bay_worker2
+#   ansible-playbook playbooks/k8s_fix_ipv6_image_pull.yaml --check
+#
+# ============================================================================
+
+- name: "Fix IPv6 image pull failures on all Kubernetes nodes"
+  hosts: "{{ k8s_fix_ipv6_hosts | default('kuber_small_all') }}"
+  become: true
+  gather_facts: true
+  serial: 3
+  vars_files:
+    - ../vault_secrets.yml
+  tags:
+    - network
+    - ipv6
+    - fix
+    - k8s
+
+  tasks:
+    - name: Check current IPv6 status on default interface
+      ansible.builtin.command: sysctl -n net.ipv6.conf.{{ ansible_default_ipv4.interface }}.disable_ipv6
+      register: ipv6_status_before
+      changed_when: false
+
+    - name: Display current IPv6 status
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: IPv6 on {{ ansible_default_ipv4.interface }}
+          is {{ 'disabled' if (ipv6_status_before.stdout | trim) == '1' else 'ENABLED (will fix)' }}
+
+    - name: Disable IPv6 on WireGuard and default network interfaces
+      ansible.posix.sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        sysctl_set: true
+        state: present
+        reload: true
+      loop:
+        - { name: "net.ipv6.conf.{{ vault_wg_interface | default('wg99') }}.disable_ipv6", value: "1" }
+        - { name: "net.ipv6.conf.{{ ansible_default_ipv4.interface }}.disable_ipv6", value: "1" }
+      register: ipv6_sysctl_result
+
+    - name: Prefer IPv4 over IPv6 in getaddrinfo
+      ansible.builtin.lineinfile:
+        path: /etc/gai.conf
+        create: true
+        mode: "0644"
+        regexp: '^\s*precedence\s+::ffff:0:0/96\s+'
+        line: "precedence ::ffff:0:0/96  100"
+      register: gai_result
+
+    - name: Restart containerd to apply network changes
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+      when:
+        - ipv6_sysctl_result.changed or gai_result.changed
+        - not ansible_check_mode
+
+    - name: Verify image pull works (registry.k8s.io/pause:3.10.1)
+      ansible.builtin.command: crictl pull registry.k8s.io/pause:3.10.1
+      register: pull_test
+      changed_when: false
+      failed_when: pull_test.rc != 0
+      when: not ansible_check_mode
+
+    - name: Display pull test result
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: image pull test PASSED"
+      when: not ansible_check_mode
+
+# ============================================================================
+# Play 2: Bounce pods stuck in ImagePullBackOff (runs once from a control plane)
+# ============================================================================
+- name: "Bounce pods stuck in ImagePullBackOff"
+  hosts: "{{ groups['planes_all'][0] | default('localhost') }}"
+  become: true
+  gather_facts: false
+  vars_files:
+    - ../vault_secrets.yml
+  tags:
+    - network
+    - ipv6
+    - fix
+    - k8s
+
+  tasks:
+    - name: Find pods in ImagePullBackOff or ErrImagePull
+      ansible.builtin.shell: |
+        kubectl get pods -A -o json | \
+          python3 -c "
+        import json,sys
+        data = json.load(sys.stdin)
+        for pod in data.get('items',[]):
+          ns = pod['metadata']['namespace']
+          name = pod['metadata']['name']
+          for cs in pod.get('status',{}).get('containerStatuses',[]):
+            w = cs.get('state',{}).get('waiting',{})
+            if w.get('reason','') in ('ImagePullBackOff','ErrImagePull'):
+              print(f'{ns}/{name}')
+              break
+        "
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: stuck_pods
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Display stuck pods
+      ansible.builtin.debug:
+        msg: "{{ stuck_pods.stdout_lines | default([]) | length }} pod(s) stuck: {{ stuck_pods.stdout_lines | default([]) }}"
+      when: not ansible_check_mode
+
+    - name: Delete stuck pods to trigger fresh pull
+      ansible.builtin.command: kubectl delete pod -n {{ item.split('/')[0] }} {{ item.split('/')[1] }}
+      loop: "{{ stuck_pods.stdout_lines | default([]) }}"
+      when:
+        - not ansible_check_mode
+        - stuck_pods.stdout_lines | default([]) | length > 0
+      changed_when: true
+
+    - name: Wait for replacement pods to start pulling
+      ansible.builtin.wait_for:
+        timeout: 10
+      when:
+        - not ansible_check_mode
+        - stuck_pods.stdout_lines | default([]) | length > 0
+
+    - name: Verify no pods remain in ImagePullBackOff
+      ansible.builtin.shell: |
+        kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded \
+          -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name} {range .status.containerStatuses[*]}{.state.waiting.reason}{end}{"\n"}{end}' \
+          | grep -E 'ImagePullBackOff|ErrImagePull' || true
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: remaining_stuck
+      changed_when: false
+      when: not ansible_check_mode
+
+    - name: Display final status
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'All image pull issues resolved'
+            if (remaining_stuck.stdout | default('') | trim | length == 0)
+            else 'Some pods still have image pull issues (may need more time): ' ~ remaining_stuck.stdout_lines | default([])
+          }}
+      when: not ansible_check_mode

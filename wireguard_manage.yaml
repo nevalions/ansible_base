@@ -135,6 +135,31 @@
         success_msg: "No duplicate CIDRs for peer {{ item.key }}"
       loop: "{{ wg_computed_peers_extra_cidrs | dict2items }}"
 
+    - name: Assert vault_k8s_api_vip is not duplicated across peer allowed_ips
+      # Prevents the bay_plane2 incident: VIP in 2+ peers causes WG kernel to
+      # resolve the route ambiguously, blackholing traffic to the active MASTER.
+      # Only the VRRP MASTER peer entry should carry the VIP in allowed_ips.
+      ansible.builtin.assert:
+        that:
+          - >-
+            (vault_wg_peers | default([])
+              | selectattr('allowed_ips', 'defined')
+              | selectattr('allowed_ips', 'search',
+                  vault_k8s_api_vip | regex_escape)
+              | list | length) <= 1
+        fail_msg: >-
+          vault_k8s_api_vip {{ vault_k8s_api_vip }}/32 appears in allowed_ips
+          of MORE THAN ONE peer entry. Remove it from all BACKUP plane peers —
+          only the current VRRP MASTER peer should contain it.
+          Offending peers: {{
+            vault_wg_peers | default([])
+            | selectattr('allowed_ips', 'defined')
+            | selectattr('allowed_ips', 'search', vault_k8s_api_vip | regex_escape)
+            | map(attribute='name') | list
+          }}
+        success_msg: >-
+          VIP {{ vault_k8s_api_vip }} appears in at most one peer entry (OK)
+
     - name: Set WireGuard routed CIDRs (legacy - empty; all routing is now explicit)
       ansible.builtin.set_fact:
         wg_routed_cidrs: []
@@ -420,3 +445,34 @@
         - has_keepalived | default(false)
         - wg_config_deployed.changed | default(false)
         - not ansible_check_mode
+
+    # Post-change health check: verify the k8s API VIP is still reachable after
+    # WireGuard reconfiguration on this host. Catches the class of failure where
+    # a bad AllowedIPs change (duplicate VIP, wrong peer) silently blackholes the
+    # VIP — which only manifests later as NotReady nodes / kubelet timeouts.
+    - name: Wait for WireGuard and keepalived to stabilize before VIP check
+      ansible.builtin.wait_for:
+        timeout: 5
+      when:
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Verify k8s API VIP is reachable after WireGuard reconfiguration
+      ansible.builtin.command: "ping -c 3 -W 2 {{ vault_k8s_api_vip }}"
+      register: vip_ping_post_wg
+      changed_when: false
+      failed_when: vip_ping_post_wg.rc != 0
+      when:
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+
+    - name: Display VIP reachability result
+      ansible.builtin.debug:
+        msg: >-
+          k8s API VIP {{ vault_k8s_api_vip }} is reachable from
+          {{ inventory_hostname }} after WireGuard reconfiguration
+      when:
+        - wg_config_deployed.changed | default(false)
+        - not ansible_check_mode
+        - vip_ping_post_wg is defined
+        - vip_ping_post_wg.rc | default(1) == 0

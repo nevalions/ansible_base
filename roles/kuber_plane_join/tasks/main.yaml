@@ -50,6 +50,17 @@
   ansible.builtin.set_fact:
     kuber_plane_join_delegate_host: "{{ kuber_plane_join_control_plane_ssh_host }}"
 
+- name: Ensure API DNS name resolves via /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s+{{ vault_k8s_api_dns | regex_escape }}$'
+    line: "{{ vault_k8s_api_vip }} {{ vault_k8s_api_dns }}"
+    state: present
+  when:
+    - vault_k8s_use_dns_endpoint | default(false)
+    - vault_k8s_api_dns is defined
+    - vault_k8s_api_vip is defined
+
 - name: Upload certificates to enable control plane join
   ansible.builtin.command: kubeadm init phase upload-certs --upload-certs
   environment:
@@ -107,6 +118,27 @@
     state: restarted
     enabled: true
 
+- name: Disable IPv6 on WireGuard and default network interfaces
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    state: present
+    reload: true
+  loop:
+    - { name: "net.ipv6.conf.{{ vault_wg_interface | default('wg99') }}.disable_ipv6", value: "1" }
+    - { name: "net.ipv6.conf.{{ ansible_default_ipv4.interface }}.disable_ipv6", value: "1" }
+  when: kuber_disable_ipv6 | default(true) | bool
+
+- name: Prefer IPv4 over IPv6 in getaddrinfo
+  ansible.builtin.lineinfile:
+    path: /etc/gai.conf
+    create: true
+    mode: "0644"
+    regexp: '^\s*precedence\s+::ffff:0:0/96\s+'
+    line: "precedence ::ffff:0:0/96  100"
+  when: kuber_prefer_ipv4 | default(true) | bool
+
 - name: Create kubelet systemd service file
   ansible.builtin.copy:
     content: |
@@ -152,29 +184,27 @@
   ansible.builtin.systemd:
     daemon_reload: true
 
-- name: Stop kubelet service
+- name: Stop kubelet service before join
   ansible.builtin.systemd:
     name: kubelet
     state: stopped
   ignore_errors: true
 
-- name: Enable kubelet service
+- name: Enable kubelet service (kubeadm join will start it)
   ansible.builtin.systemd:
     name: kubelet
     enabled: true
+
+- name: Pre-pull required Kubernetes images
+  ansible.builtin.command: kubeadm config images pull
+  register: images_pull
+  changed_when: "'Pulled' in images_pull.stdout"
 
 - name: Copy kubeadm control plane join config
   ansible.builtin.template:
     src: kube-plane-join.yaml.j2
     dest: /tmp/kube-plane-join.yaml
     mode: "0644"
-
-- name: Ensure kubelet service is enabled and started (required for kubeadm join)
-  ansible.builtin.systemd:
-    name: kubelet
-    enabled: true
-    state: started
-  when: not ansible_check_mode
 
 - name: Join as control plane node
   ansible.builtin.command: kubeadm join --config=/tmp/kube-plane-join.yaml

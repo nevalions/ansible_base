@@ -52,6 +52,16 @@ k8s_preflight_k8s_processes:
   - kube-scheduler
   - kube-proxy
 
+# IPv6 network configuration
+# Disable IPv6 on WireGuard and default network interfaces to prevent
+# containerd from attempting IPv6 image pulls on nodes without IPv6 egress,
+# which causes 30-90s timeouts or pull failures (AAAA-first resolution).
+# Does not disable IPv6 globally (loopback ::1 preserved).
+kuber_disable_ipv6: true
+# Prefer IPv4 over IPv6 at libc level (gai.conf precedence).
+# Ensures getaddrinfo() returns A records before AAAA.
+kuber_prefer_ipv4: true
+
 # Orphan containerd-shim GC
 # Oneshot service that kills shim processes not tracked by any containerd task.
 # Runs Before=kubelet.service to prevent ghost containers from holding ports.
