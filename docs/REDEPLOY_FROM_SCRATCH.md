@@ -23,7 +23,7 @@ See `docs/cluster_schema.local.txt` for the current network topology and IP assi
 ansible-vault view vault_secrets.yml --vault-password-file vault_password_client.sh | head -5
 
 # Confirm SSH reachable to all hosts
-ansible all -i hosts_bay.ini --vault-password-file vault_password_client.sh -m ping
+ansible all --vault-password-file vault_password_client.sh -m ping
 ```
 
 ---
@@ -195,6 +195,17 @@ Verify all nodes Ready:
 ```bash
 ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide"
 ```
+
+---
+
+## Phase 10.5 — Apply node labels (region + worker-class)
+
+```bash
+ansible-playbook kuber_node_labels.yaml --vault-password-file vault_password_client.sh
+```
+
+Applies `topology.kubernetes.io/region` (bay/vas) and `kubernetes.io/worker-class` (main/office/super)
+based on inventory group membership. Required for affinity-based pod scheduling.
 
 ---
 

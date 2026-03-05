@@ -16,7 +16,7 @@ This will:
 ### Run Ansible Playbooks
 ```bash
 # No password prompts - keys are in memory
-ansible-playbook -i hosts_bay.ini kuber.yaml
+ansible-playbook kuber.yaml
 ansible-playbook -i hosts_haproxy.ini haproxy.yaml
 ansible-playbook -i hosts_restream.ini restream.yaml
 ```
@@ -59,8 +59,8 @@ eval "$(ssh-agent -k)"
 
  ### Test Bay Cluster ([your-username] user)
  ```bash
- ansible -i hosts_bay.ini planes -m ping
- ansible -i hosts_bay.ini workers_all -m ping
+ ansible planes -m ping
+ ansible workers_all -m ping
  ```
 
  ### Test HAProxy Servers ([proxy-username] user)
@@ -92,7 +92,7 @@ cd ~/ansible
 ./ssh-agent-setup.sh
 
 # 2. Run playbooks (multiple times, no passwords)
-ansible-playbook -i hosts_bay.ini kuber.yaml
+ansible-playbook kuber.yaml
 ansible-playbook -i hosts_bay.yaml kuber_worker_join.yaml
 ansible-playbook -i hosts_haproxy.ini haproxy.yaml
 

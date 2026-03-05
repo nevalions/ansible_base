@@ -90,13 +90,13 @@ roles/nfs_server/
 
 ```bash
 # Add new export
-ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
+ansible-playbook nfs_server_manage.yaml \
   -e nfs_operation=install \
   -e add_nfs_server_exports_path=/export/new_share \
   -e add_nfs_server_exports="[client-network]"
 
 # Remove export
-ansible-playbook -i hosts_bay.ini nfs_server_manage.yaml \
+ansible-playbook nfs_server_manage.yaml \
   -e nfs_operation=remove \
   -e remove_nfs_server_exports_path=/export/old_share \
   -e remove_nfs_server_exports="[client-network]"

@@ -83,7 +83,7 @@ This will prompt for your SSH key passphrases and cache them in memory.
 
 ### 6. Run Playbooks
 ```bash
-ansible-playbook -i hosts_bay.ini upgrade_deb.yaml
+ansible-playbook upgrade_deb.yaml
 ansible-playbook -i hosts_bay.yaml kuber.yaml
 ```
 

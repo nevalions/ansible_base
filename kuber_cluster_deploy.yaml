@@ -4,36 +4,39 @@
 # This playbook deploys the complete Kubernetes cluster stack:
 # Phase 1: Infrastructure (DNS, WireGuard)
 # Phase 2: Kubernetes prerequisites (packages, Keepalived)
-# Phase 3: Kubernetes cluster (control plane, workers)
+# Phase 3: Kubernetes cluster (control plane, workers, node labels)
 # Phase 4: LoadBalancer (Calico BGP, BGP router, MetalLB)
 #
-# Usage:
+# Usage (inventory is set in ansible.cfg):
 #   # Full deployment (all phases)
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml
+#   ansible-playbook kuber_cluster_deploy.yaml
 #
 #   # Skip infrastructure (DNS/WireGuard already deployed)
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_infrastructure=true
 #
 #   # Skip MetalLB/BGP (no LoadBalancer needed)
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_metallb=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_metallb=true
 #
 #   # Skip Helm installation
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_helm=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_helm=true
 #
 #   # Skip Traefik ingress controller
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_traefik=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_traefik=true
 #
 #   # Skip cert-manager and ClusterIssuer
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_cert_manager=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_cert_manager=true
+#
+#   # Skip node labels (region/worker-class)
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_node_labels=true
 #
 #   # Kubernetes only (skip infra and metallb)
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
+#   ansible-playbook kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
 #
 #   # Run specific phase only
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase1
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase2
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase3
-#   ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase4
+#   ansible-playbook kuber_cluster_deploy.yaml --tags phase1
+#   ansible-playbook kuber_cluster_deploy.yaml --tags phase2
+#   ansible-playbook kuber_cluster_deploy.yaml --tags phase3
+#   ansible-playbook kuber_cluster_deploy.yaml --tags phase4
 
 ###############################################################################
 # PHASE 1: Infrastructure Setup
@@ -128,16 +131,26 @@
     - join
     - workers
 
-# Step 3.3: Verify cluster health
-- name: "Phase 3.3: Verify Kubernetes cluster health"
+# Step 3.3: Apply node labels (region + worker-class)
+- name: "Phase 3.3: Apply Kubernetes node labels"
+  import_playbook: kuber_node_labels.yaml
+  when: not (skip_node_labels | default(false) | bool)
+  tags:
+    - phase3
+    - kubernetes
+    - labels
+    - node_labels
+
+# Step 3.4: Verify cluster health
+- name: "Phase 3.4: Verify Kubernetes cluster health"
   import_playbook: kuber_verify.yaml
   tags:
     - phase3
     - kubernetes
     - verify
 
-# Step 3.4: Patch CoreDNS ConfigMap (explicit upstreams + tuned cache TTL)
-- name: "Phase 3.4: Patch CoreDNS ConfigMap"
+# Step 3.5: Patch CoreDNS ConfigMap (explicit upstreams + tuned cache TTL)
+- name: "Phase 3.5: Patch CoreDNS ConfigMap"
   import_playbook: kuber_coredns_install.yaml
   when: not (skip_coredns | default(false) | bool)
   tags:
@@ -146,8 +159,8 @@
     - coredns
     - dns
 
-# Step 3.5: Install Helm (cluster client tooling)
-- name: "Phase 3.5: Install Helm"
+# Step 3.6: Install Helm (cluster client tooling)
+- name: "Phase 3.6: Install Helm"
   import_playbook: kuber_helm_install.yaml
   when: not (skip_helm | default(false) | bool)
   tags:
@@ -156,8 +169,8 @@
     - helm
     - addon
 
-# Step 3.6: Verify Helm
-- name: "Phase 3.6: Verify Helm"
+# Step 3.7: Verify Helm
+- name: "Phase 3.7: Verify Helm"
   import_playbook: kuber_helm_verify.yaml
   when: not (skip_helm | default(false) | bool)
   tags:

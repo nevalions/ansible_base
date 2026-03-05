@@ -85,23 +85,23 @@ logging.
 
 ```bash
 # Configure HAProxy for Kubernetes API
-ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --tags haproxy
+ansible-playbook haproxy_k8s.yaml --tags haproxy
 
 # Full deployment sequence:
 # 1. Install Kubernetes packages
-ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
+ansible-playbook kuber.yaml --tags kubernetes
 
 # 2. Configure HAProxy
-ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml
+ansible-playbook haproxy_k8s.yaml
 
 # 3. Initialize control plane
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
+ansible-playbook kuber_plane_init.yaml
 
 # 4. Join workers
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+ansible-playbook kuber_worker_join.yaml
 
 # 5. Verify cluster
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml
+ansible-playbook kuber_verify.yaml
 ```
 
 ## Architecture

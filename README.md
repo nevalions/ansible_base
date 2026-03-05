@@ -45,6 +45,7 @@ Notes:
 - Kubernetes cluster deploy/reset: `kuber_cluster_deploy.yaml`, `kuber_cluster_reset.yaml`
 - Flannel CNI operations (default): `kuber_flannel_install.yaml`, `kuber_flannel_remove.yaml`
 - Calico CNI operations (Legacy Calico Path - optional): `calico_bgp_manage.yaml`, `calico_cni_remove.yaml`
+- Node labels (region + worker-class): `kuber_node_labels.yaml`
 - Standalone NFD management: `nfd/kuber_nfd_install.yaml`, `nfd/kuber_nfd_verify.yaml`, `nfd/kuber_nfd_remove.yaml`
 - WireGuard management: `wireguard_manage.yaml`
 - BGP HA for MetalLB (FRR + Keepalived): `bgp_ha_deploy.yaml`, `bgp_ha_verify.yaml`, `bgp_ha_test.yaml`, `bgp_ha_remove.yaml`
@@ -59,13 +60,13 @@ Notes:
 
 ```bash
 # Deploy or update PostgreSQL 17 container
-ansible-playbook -i hosts_bay.ini postgres_docker_manage.yaml
+ansible-playbook postgres_docker_manage.yaml
 
 # Verify DB connectivity from a Kubernetes test pod
-ansible-playbook -i hosts_bay.ini postgres_docker_verify.yaml
+ansible-playbook postgres_docker_verify.yaml
 
 # Remove PostgreSQL container (keeps volume data by default)
-ansible-playbook -i hosts_bay.ini postgres_docker_remove.yaml
+ansible-playbook postgres_docker_remove.yaml
 ```
 
 Notes:

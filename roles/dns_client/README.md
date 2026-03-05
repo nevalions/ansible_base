@@ -75,16 +75,16 @@ None
 
 ```bash
 # Install on all dns_clients
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+ansible-playbook dns_client_manage.yaml --tags dns
 
 # VAS workers only (targeted re-apply without touching bay-* nodes)
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
+ansible-playbook dns_client_manage.yaml --tags vas_dns
 
 # Install on specific hosts
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --limit wireguard_clients
+ansible-playbook dns_client_manage.yaml --limit wireguard_clients
 
 # Remove DNS client configuration (restore systemd-resolved)
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml -e dns_operation=remove --tags dns
+ansible-playbook dns_client_manage.yaml -e dns_operation=remove --tags dns
 ```
 
 ### Using the role directly:
@@ -243,8 +243,8 @@ If you see this on a fresh deploy, ensure `group_vars/workers_vas.yml` exists (c
 `workers_vas.example.yml`) with `vault_dns_client_filter_aaaa: true`, and re-run:
 
 ```bash
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags vas_dns
-ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml
+ansible-playbook dns_client_manage.yaml --tags vas_dns
+ansible-playbook kuber_coredns_install.yaml
 ```
 
 ### ImagePullBackOff with "no such host" for auth.docker.io
@@ -260,7 +260,7 @@ may route the CNAME chase to the broken upstream and return an incomplete answer
 **Fix:** `cdn.cloudflare.net` is in `dns_client_dnsmasq_ci_domains` so dnsmasq
 round-robins the CNAME chase across all upstreams. Re-run the client playbook:
 ```bash
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+ansible-playbook dns_client_manage.yaml --tags dns
 ```
 
 Also flush the stale cache on the affected Unbound server:
@@ -280,7 +280,7 @@ systemctl disable systemd-resolved
 rm /etc/resolv.conf
 
 # Run this playbook again to deploy custom configuration
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+ansible-playbook dns_client_manage.yaml --tags dns
 ```
 
 ## Security Considerations

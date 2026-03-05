@@ -50,5 +50,5 @@ set `vault_bgp_router_router_id` per-host and ensures consistency across HA rout
 Example playbook: `bgp_router_manage.yaml`
 
 ```bash
-ansible-playbook -i hosts_bay.ini bgp_router_manage.yaml --tags bgp
+ansible-playbook bgp_router_manage.yaml --tags bgp
 ```

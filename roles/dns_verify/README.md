@@ -155,16 +155,16 @@ Generates comprehensive health report:
 
 ```bash
 # Verify DNS infrastructure (check mode)
-ansible-playbook -i hosts_bay.ini dns_verify.yaml --check
+ansible-playbook dns_verify.yaml --check
 
 # Verify DNS infrastructure (run actual tests)
-ansible-playbook -i hosts_bay.ini dns_verify.yaml
+ansible-playbook dns_verify.yaml
 
 # Verify specific hosts
-ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit wireguard_clients
+ansible-playbook dns_verify.yaml --limit wireguard_clients
 
 # Verify only DNS servers
-ansible-playbook -i hosts_bay.ini dns_verify.yaml --limit dns_servers
+ansible-playbook dns_verify.yaml --limit dns_servers
 ```
 
 ### Using the role directly:

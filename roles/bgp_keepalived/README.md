@@ -100,7 +100,7 @@ Keepalived uses this script to track BGP health:
 Deploy with `bgp_ha_deploy.yaml` playbook:
 
 ```bash
-ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml --tags bgp_ha
+ansible-playbook bgp_ha_deploy.yaml --tags bgp_ha
 ```
 
 ## Dependencies

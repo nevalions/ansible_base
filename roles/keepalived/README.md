@@ -49,14 +49,14 @@ vault_k8s_control_planes:
 
 ```bash
 # Deploy Keepalived on HAProxy host
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+ansible-playbook keepalived_manage.yaml
 
 # With tags
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags keepalived
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags verify
+ansible-playbook keepalived_manage.yaml --tags keepalived
+ansible-playbook keepalived_manage.yaml --tags verify
 
 # Limit to specific host
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --limit [haproxy-hostname]
+ansible-playbook keepalived_manage.yaml --limit [haproxy-hostname]
 ```
 
 ## Architecture
@@ -121,8 +121,8 @@ HAProxy backend :[haproxy-backend-port] → localhost:[k8s-api-port]
    ```
 4. Re-run playbooks:
    ```bash
-   ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
-   ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml
+   ansible-playbook keepalived_manage.yaml
+   ansible-playbook haproxy_k8s.yaml
    ```
 
 ## Health Checks
@@ -221,12 +221,12 @@ sudo iptables -t filter -L INPUT -n -v | grep [k8s-api-port]
 
 This role works with `haproxy_k8s` for complete VIP architecture:
 
-1. Deploy HAProxy: `ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml`
-2. Deploy Keepalived: `ansible-playbook -i hosts_bay.ini keepalived_manage.yaml`
+1. Deploy HAProxy: `ansible-playbook haproxy_k8s.yaml`
+2. Deploy Keepalived: `ansible-playbook keepalived_manage.yaml`
 3. Verify setup:
    ```bash
    # Check VIP assignment
-   ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags verify
+   ansible-playbook keepalived_manage.yaml --tags verify
    
    # Test VIP connectivity
    nc -zv [vip-address] [k8s-api-port]

@@ -98,16 +98,16 @@ Install NFS CSI driver for Kubernetes with dynamic PV provisioning using an exis
 
 ```bash
 # Install NFS CSI driver and StorageClass
-ansible-playbook -i hosts_bay.ini kuber_nfs_csi_install.yaml
+ansible-playbook kuber_nfs_csi_install.yaml
 
 # Verify installation
-ansible-playbook -i hosts_bay.ini kuber_nfs_csi_verify.yaml
+ansible-playbook kuber_nfs_csi_verify.yaml
 
 # Remove NFS CSI driver
-ansible-playbook -i hosts_bay.ini kuber_nfs_csi_remove.yaml
+ansible-playbook kuber_nfs_csi_remove.yaml
 
 # Use tags
-ansible-playbook -i hosts_bay.ini kuber_nfs_csi_install.yaml --tags nfs,csi
+ansible-playbook kuber_nfs_csi_install.yaml --tags nfs,csi
 ```
 
 ### Using the role directly:

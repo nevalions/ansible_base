@@ -19,9 +19,9 @@ Installs, verifies, or removes Kubernetes Node Feature Discovery (NFD) using ups
 Use the standalone playbooks in `nfd/`:
 
 ```bash
-ansible-playbook -i hosts_bay.ini nfd/kuber_nfd_install.yaml
-ansible-playbook -i hosts_bay.ini nfd/kuber_nfd_verify.yaml
-ansible-playbook -i hosts_bay.ini nfd/kuber_nfd_remove.yaml
+ansible-playbook nfd/kuber_nfd_install.yaml
+ansible-playbook nfd/kuber_nfd_verify.yaml
+ansible-playbook nfd/kuber_nfd_remove.yaml
 ```
 
 The playbooks set `become: false` and export `KUBECONFIG` to avoid `kubectl` defaulting to

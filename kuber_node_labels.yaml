@@ -1,0 +1,41 @@
+---
+# Apply region and worker-class labels to all Kubernetes nodes
+#
+# Labels applied:
+#   topology.kubernetes.io/region       – bay | vas
+#   topology.kubernetes.io/zone         – bay | vas
+#   kubernetes.io/worker-class            – main | office | super  (workers only)
+#
+# Usage (inventory is set in ansible.cfg):
+#   # Label all cluster nodes
+#   ansible-playbook kuber_node_labels.yaml
+#
+#   # Label bay nodes only
+#   ansible-playbook kuber_node_labels.yaml --limit bay_kuber_cluster
+#
+#   # Label vas nodes only
+#   ansible-playbook kuber_node_labels.yaml --limit vas_kuber_cluster
+#
+#   # Label a single node
+#   ansible-playbook kuber_node_labels.yaml --limit bay_worker_office1
+#
+#   # Skip worker-class labels (region/zone only)
+#   ansible-playbook kuber_node_labels.yaml -e kuber_node_labels_apply_worker_class=false
+#
+#   # Dry-run
+#   ansible-playbook kuber_node_labels.yaml --check
+
+- name: Apply Kubernetes node labels
+  hosts: kuber_small_all
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - kubernetes
+    - k8s
+    - labels
+    - node_labels
+  roles:
+    - kuber_node_labels

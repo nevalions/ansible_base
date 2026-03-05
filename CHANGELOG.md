@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-03-05
+
+### Added
+
+- **kuber_node_labels Role** (new):
+  - Applies topology and worker-class labels to Kubernetes nodes for affinity scheduling
+  - `topology.kubernetes.io/region` — bay / vas (derived from inventory groups)
+  - `topology.kubernetes.io/zone` — bay / vas (same as region)
+  - `kubernetes.io/worker-class` — main / office / super (workers only)
+  - Label values resolved from inventory group membership, overridable per-host
+  - Uses kubectl delegate pattern (delegates to `planes_all[0]`)
+  - Fully idempotent (`--overwrite`), safe to re-run
+  - Feature flags: `kuber_node_labels_apply_region`, `kuber_node_labels_apply_worker_class`
+
+- **kuber_node_labels.yaml** (new playbook):
+  - Standalone playbook targeting `kuber_small_all`
+  - Integrated into `kuber_cluster_deploy.yaml` Phase 3 (Step 3.3)
+  - Skip with `-e skip_node_labels=true`
+  - Supports `--limit` for targeting specific nodes or regions
+
+### Changed
+
+- **kuber_cluster_deploy.yaml**:
+  - Phase 3 now includes Step 3.3 (node labels) between worker join and cluster verify
+  - Previous Steps 3.3–3.6 renumbered to 3.4–3.7
+  - Added `-e skip_node_labels=true` skip option
+
+- **Documentation** (all `.md` files):
+  - Removed hardcoded `-i hosts_bay.ini` from all command examples across 29 files
+    (inventory is configured in `ansible.cfg`, the flag was redundant)
+  - Updated KUBERNETES_DEPLOYMENT_ORDER.md: added Step 3.4 (node labels), updated
+    summary table, dependency graph, and rebuild sequences
+  - Updated KUBERNETES_QUICKREF.md: added playbook, role, and setup commands
+  - Updated KUBERNETES_SETUP.md: added role structure, setup workflow, inventory group note
+  - Updated README.md: added to common workflows
+  - Updated docs/REDEPLOY_FROM_SCRATCH.md: added node labels phase
+
 ## [1.12.0] - 2026-03-04
 
 ### Added

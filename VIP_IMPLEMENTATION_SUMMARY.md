@@ -206,7 +206,7 @@ kubeadm_control_plane_endpoint: "{{ vault_k8s_api_vip | default('[vip-address]')
 
 ### Step 1: Deploy Keepalived
 ```bash
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml --tags keepalived
+ansible-playbook keepalived_manage.yaml --tags keepalived
 ```
 
 **Expected Output:**
@@ -226,7 +226,7 @@ ssh [ansible-user]@[haproxy-spb-public-ip] "nc -zv [vip-address] [k8s-api-port]"
 
 ### Step 3: Deploy HAProxy on Control Plane
 ```bash
-ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit [control-plane-hostname]
+ansible-playbook haproxy_k8s.yaml --limit [control-plane-hostname]
 ```
 
 **Expected Output:**
@@ -237,7 +237,7 @@ ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml --limit [control-plane-hostna
 
 ### Step 4: Initialize Control Plane
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+ansible-playbook kuber_plane_init.yaml --tags init
 ```
 
 **Expected Output:**
@@ -247,7 +247,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
 ### Step 5: Join Worker to VIP
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname] --tags join
+ansible-playbook kuber_worker_join.yaml --limit [worker-hostname] --tags join
 ```
 
 **Expected Output:**
@@ -299,10 +299,10 @@ vault_k8s_control_planes:
 ### Step 4: Re-Deploy Configuration
 ```bash
 # Update HAProxy on all planes
-ansible-playbook -i hosts_bay.ini haproxy_k8s.yaml
+ansible-playbook haproxy_k8s.yaml
 
 # Update Keepalived
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+ansible-playbook keepalived_manage.yaml
 ```
 
 ### Step 5: Verify Multi-Plane
@@ -339,7 +339,7 @@ ssh [ansible-user]@[haproxy-spb-public-ip] "journalctl -u keepalived -n 50"
 
 #### Test 1: VIP Assignment
 ```bash
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+ansible-playbook keepalived_manage.yaml
 ssh [ansible-user]@[haproxy-spb-public-ip] "ip addr show wg99 | grep [vip-address]"
 ```
 

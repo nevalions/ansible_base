@@ -18,45 +18,45 @@ This role completely cleans a Kubernetes node (worker or control plane) to prepa
 ### Reset worker nodes (preserves container images)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
+ansible-playbook kuber_worker_reset.yaml
 ```
 
 ### Reset control plane nodes (preserves container images)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
+ansible-playbook kuber_plane_reset.yaml
 ```
 
 ### Soft reset control plane (preserve packages)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_soft_reset.yaml
+ansible-playbook kuber_plane_soft_reset.yaml
 ```
 
 ### Remove container images as well
 
 ```bash
 # Worker nodes
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml -e "remove_container_images=true"
+ansible-playbook kuber_worker_reset.yaml -e "remove_container_images=true"
 
 # Control plane nodes
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml -e "remove_container_images=true"
+ansible-playbook kuber_plane_reset.yaml -e "remove_container_images=true"
 ```
 
 ### Target specific worker groups
 
 ```bash
 # Main workers
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_main
+ansible-playbook kuber_worker_reset.yaml --limit workers_main
 
 # Office workers  
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_office
+ansible-playbook kuber_worker_reset.yaml --limit workers_office
 
 # Super worker
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_super
+ansible-playbook kuber_worker_reset.yaml --limit workers_super
 
 # Specific masters
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --limit master1
+ansible-playbook kuber_plane_reset.yaml --limit master1
 ```
 
 ## Variables
@@ -157,13 +157,13 @@ In production environments, orphaned mounts are safe to ignore and do not requir
 
 ```bash
 # 1. Reset control plane
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
+ansible-playbook kuber_plane_reset.yaml
 
 # 2. Initialize new control plane (on master node)
 # kubeadm init --config=kubeadm-config.yaml
 
 # 3. Reset workers
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
+ansible-playbook kuber_worker_reset.yaml
 
 # 4. Get fresh join command from control plane
 # On control plane:

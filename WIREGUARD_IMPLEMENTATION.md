@@ -40,7 +40,7 @@ ansible --version
 ansible-vault view vault_secrets.yml | head -5
 
 # Check SSH access to inventory hosts
-ansible -i hosts_bay.ini all -m ping
+ansible all -m ping
 ```
 
 ---
@@ -170,13 +170,13 @@ Your `hosts_bay.ini` already includes:
 
 ```bash
 # Test connectivity to WireGuard servers
-ansible -i hosts_bay.ini wireguard_servers -m ping
+ansible wireguard_servers -m ping
 
 # Test connectivity to WireGuard clients
-ansible -i hosts_bay.ini wireguard_clients -m ping
+ansible wireguard_clients -m ping
 
 # Test connectivity to all hosts
-ansible -i hosts_bay.ini all -m ping
+ansible all -m ping
 ```
 
  Expected output:
@@ -260,7 +260,7 @@ ansible -i hosts_bay.ini all -m ping
 ### 4.1 Check Playbook Syntax
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --syntax-check
+ansible-playbook wireguard_manage.yaml --syntax-check
 ```
 
 Expected output:
@@ -271,7 +271,7 @@ playbook: wireguard_manage.yaml
 ### 4.2 Run Check Mode (Dry Run)
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --check -v
+ansible-playbook wireguard_manage.yaml --check -v
 ```
 
 This shows what would happen without making changes.
@@ -300,7 +300,7 @@ This shows what would happen without making changes.
 
 ```bash
 # First deployment - generates keys
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard -v
+ansible-playbook wireguard_manage.yaml --tags wireguard -v
 ```
 
 ### 5.2 What Happens During Deployment
@@ -348,10 +348,10 @@ If deployment fails:
 
 ```bash
 # Check Ansible verbose output
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard -vvv
+ansible-playbook wireguard_manage.yaml --tags wireguard -vvv
 
 # Check specific task failure
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard --step
+ansible-playbook wireguard_manage.yaml --tags wireguard --step
 ```
 
 ---
@@ -361,7 +361,7 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard --step
 ### 6.1 Check WireGuard Status on Servers
 
 ```bash
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show wg99"
+ansible wireguard_servers -m shell -a "wg show wg99"
 ```
 
 Expected output:
@@ -389,7 +389,7 @@ Expected output:
 ### 6.2 Check WireGuard Status on Clients
 
 ```bash
-ansible -i hosts_bay.ini wireguard_clients -m shell -a "wg show wg99"
+ansible wireguard_clients -m shell -a "wg show wg99"
 ```
 
 Expected output:
@@ -410,7 +410,7 @@ Expected output:
 ### 6.3 Check Interface Status
 
 ```bash
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "ip addr show wg99"
+ansible wireguard_servers -m shell -a "ip addr show wg99"
 ```
 
 Expected output:
@@ -425,13 +425,13 @@ Expected output:
 
  ```bash
  # From server to client
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "ping -c 3 [peer-2-vpn-ip]"
+ ansible [server-1-ip] -m shell -a "ping -c 3 [peer-2-vpn-ip]"
 
  # From client to server
- ansible -i hosts_bay.ini [peer-2-internal-ip] -m shell -a "ping -c 3 [vpn-server-ip]"
+ ansible [peer-2-internal-ip] -m shell -a "ping -c 3 [vpn-server-ip]"
 
  # From client to client
- ansible -i hosts_bay.ini [peer-2-internal-ip] -m shell -a "ping -c 3 [peer-3-vpn-ip]"
+ ansible [peer-2-internal-ip] -m shell -a "ping -c 3 [peer-3-vpn-ip]"
  ```
 
  Expected output:
@@ -449,13 +449,13 @@ Expected output:
 
  ```bash
  # Check WireGuard server port
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "ufw status | grep [server-port]"  # if UFW is in use
+ ansible wireguard_servers -m shell -a "ufw status | grep [server-port]"  # if UFW is in use
 
  # Check NAT port
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "ufw status | grep [unique-port]"
+ ansible wireguard_servers -m shell -a "ufw status | grep [unique-port]"
 
  # Check client port on clients
- ansible -i hosts_bay.ini wireguard_clients -m shell -a "ufw status | grep [client-port]"
+ ansible wireguard_clients -m shell -a "ufw status | grep [client-port]"
  ```
 
  Expected output:
@@ -467,8 +467,8 @@ Expected output:
 ### 6.6 Verify Service Status
 
 ```bash
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl status wg-quick@wg99"
-ansible -i hosts_bay.ini wireguard_clients -m shell -a "systemctl status wg-quick@wg99"
+ansible wireguard_servers -m shell -a "systemctl status wg-quick@wg99"
+ansible wireguard_clients -m shell -a "systemctl status wg-quick@wg99"
 ```
 
  Expected output:
@@ -522,7 +522,7 @@ ansible-vault view vault_secrets.yml | grep -A 5 vault_wg_peer_public_keys
 After saving keys to vault, re-run to verify:
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard --check
+ansible-playbook wireguard_manage.yaml --tags wireguard --check
 ```
 
 The playbook should now report "no changes" since keys are already present.
@@ -552,20 +552,20 @@ Update DNS variable:
 ### 8.3 Redeploy WireGuard Clients
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit wireguard_clients --tags wireguard
+ansible-playbook wireguard_manage.yaml --limit wireguard_clients --tags wireguard
 ```
 
 ### 8.4 Verify DNS Configuration
 
  ```bash
  # Check DNS setting on client
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "cat /etc/resolv.conf"
+ ansible [client-1-ip] -m shell -a "cat /etc/resolv.conf"
 
  # Test DNS query
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "nslookup [dns-zone] [vpn-dns-server-ip]"
+ ansible [client-1-ip] -m shell -a "nslookup [dns-zone] [vpn-dns-server-ip]"
 
  # Test VPN DNS resolution
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "ping -c 3 [server-hostname].[dns-zone]"
+ ansible [client-1-ip] -m shell -a "ping -c 3 [server-hostname].[dns-zone]"
  ```
 
 ---
@@ -575,7 +575,7 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit wireguard_client
 ### 9.1 Check Peer Handshakes
 
 ```bash
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show wg99 peers"
+ansible wireguard_servers -m shell -a "wg show wg99 peers"
 ```
 
  Expected output:
@@ -588,10 +588,10 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show wg99 peers"
 
 ```bash
 # Real-time traffic monitoring
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "watch -n 1 'wg show wg99 transfer'"
+ansible wireguard_servers -m shell -a "watch -n 1 'wg show wg99 transfer'"
 
 # Check specific peer transfer stats
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show wg99 transfer"
+ansible wireguard_servers -m shell -a "wg show wg99 transfer"
 ```
 
  Expected output:
@@ -604,13 +604,13 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show wg99 transfer"
 
 ```bash
 # Check WireGuard service logs
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "journalctl -u wg-quick@wg99 -n 50"
+ansible wireguard_servers -m shell -a "journalctl -u wg-quick@wg99 -n 50"
 
 # Follow logs in real-time
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "journalctl -u wg-quick@wg99 -f"
+ansible wireguard_servers -m shell -a "journalctl -u wg-quick@wg99 -f"
 
 # Check UFW logs (only if UFW is enabled)
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "grep wg99 /var/log/ufw.log | tail -20"
+ansible wireguard_servers -m shell -a "grep wg99 /var/log/ufw.log | tail -20"
 
 ## Kubernetes Note: Avoid UFW on K8s Nodes
 
@@ -623,10 +623,10 @@ When using Kubernetes over WireGuard (Flannel default; Legacy Calico Path (optio
 
 ```bash
 # List backup files
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "ls -lt /etc/wireguard/backups/ | head -5"
+ansible wireguard_servers -m shell -a "ls -lt /etc/wireguard/backups/ | head -5"
 
 # Check backup file content
-ansible -i hosts_bay.ini wireguard_servers -m shell -a "cat /etc/wireguard/backups/wg99.conf.backup.YYYY-MM-DDTHH:MM:SS"
+ansible wireguard_servers -m shell -a "cat /etc/wireguard/backups/wg99.conf.backup.YYYY-MM-DDTHH:MM:SS"
 ```
 
 ---
@@ -646,7 +646,7 @@ ansible -i hosts_bay.ini wireguard_servers -m shell -a "cat /etc/wireguard/backu
 **Verification:**
 ```bash
 # Re-render and inspect diff for server config
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit wireguard_servers --tags wireguard --diff
+ansible-playbook wireguard_manage.yaml --limit wireguard_servers --tags wireguard --diff
 
 # After deploy, inspect AllowedIPs on the server
 sudo grep -n "^AllowedIPs" /etc/wireguard/[interface-name].conf
@@ -670,7 +670,7 @@ sudo grep -n "^AllowedIPs" /etc/wireguard/[interface-name].conf
 ip route get [db-wg-ip]
 
 # 3) Re-apply WireGuard after vault updates
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard
+ansible-playbook wireguard_manage.yaml --tags wireguard
 ```
 
 #### Issue: Peers not connecting
@@ -681,106 +681,106 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard
  nc -zuv [client-1-ip] [unique-port-1]
 
  # Check UFW status
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "ufw status verbose"
+ ansible [client-1-ip] -m shell -a "ufw status verbose"
 
  # Check WireGuard logs
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "journalctl -u wg-quick@[interface-name] -n 50"
+ ansible [server-1-ip] -m shell -a "journalctl -u wg-quick@[interface-name] -n 50"
 
  # Check if WireGuard process is running
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "ps aux | grep wg"
+ ansible [server-1-ip] -m shell -a "ps aux | grep wg"
  ```
 
 #### Issue: No handshake
 
  ```bash
  # Check peer endpoint is correct
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "wg show [interface-name] dump"
+ ansible [server-1-ip] -m shell -a "wg show [interface-name] dump"
 
  # Verify NAT forwarding
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "netstat -ulnp | grep [unique-port-1]"
+ ansible [client-1-ip] -m shell -a "netstat -ulnp | grep [unique-port-1]"
 
  # Check if firewall is blocking
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "iptables -L -n -v | grep [unique-port-1]"
+ ansible [client-1-ip] -m shell -a "iptables -L -n -v | grep [unique-port-1]"
 
  # Test direct connection
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "tcpdump -i any -n port [unique-port-1]"
+ ansible [client-1-ip] -m shell -a "tcpdump -i any -n port [unique-port-1]"
  ```
 
 #### Issue: DNS not resolving
 
  ```bash
  # Check DNS setting
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "cat /etc/resolv.conf"
+ ansible [client-1-ip] -m shell -a "cat /etc/resolv.conf"
 
  # Test DNS query
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "nslookup [dns-zone] [vpn-dns-server-ip]"
+ ansible [client-1-ip] -m shell -a "nslookup [dns-zone] [vpn-dns-server-ip]"
 
  # Check DNS server is reachable
- ansible -i hosts_bay.ini [client-1-ip] -m shell -a "ping -c 3 [vpn-dns-server-ip]"
+ ansible [client-1-ip] -m shell -a "ping -c 3 [vpn-dns-server-ip]"
 
  # Check DNS server logs
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "journalctl -u unbound -n 50"
+ ansible [server-1-ip] -m shell -a "journalctl -u unbound -n 50"
  ```
 
 #### Issue: WireGuard service fails to start
 
  ```bash
  # Check service status
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "systemctl status wg-quick@[interface-name]"
+ ansible [server-1-ip] -m shell -a "systemctl status wg-quick@[interface-name]"
 
  # Check service logs
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "journalctl -xe"
+ ansible [server-1-ip] -m shell -a "journalctl -xe"
 
  # Check config syntax
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "wg-quick up [interface-name]"
+ ansible [server-1-ip] -m shell -a "wg-quick up [interface-name]"
 
  # Check config file
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "cat /etc/wireguard/[interface-name].conf"
+ ansible [server-1-ip] -m shell -a "cat /etc/wireguard/[interface-name].conf"
  ```
 
 ### 10.2 Rollback to Backup
 
  ```bash
  # Find latest backup
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "ls -lt /etc/wireguard/backups/ | head -1"
+ ansible [server-1-ip] -m shell -a "ls -lt /etc/wireguard/backups/ | head -1"
 
  # Restore backup
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "cp /etc/wireguard/backups/[interface-name].conf.backup.[timestamp] /etc/wireguard/[interface-name].conf"
+ ansible [server-1-ip] -m shell -a "cp /etc/wireguard/backups/[interface-name].conf.backup.[timestamp] /etc/wireguard/[interface-name].conf"
 
  # Restart WireGuard
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "systemctl restart wg-quick@[interface-name]"
+ ansible [server-1-ip] -m shell -a "systemctl restart wg-quick@[interface-name]"
 
  # Verify status
- ansible -i hosts_bay.ini [server-1-ip] -m shell -a "wg show [interface-name]"
+ ansible [server-1-ip] -m shell -a "wg show [interface-name]"
  ```
 
 ### 10.3 Re-deploy Specific Host
 
  ```bash
  # Re-deploy to specific server
- ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit [server-1-ip] --tags wireguard
+ ansible-playbook wireguard_manage.yaml --limit [server-1-ip] --tags wireguard
 
  # Re-deploy to specific client
- ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit [client-1-ip] --tags wireguard
+ ansible-playbook wireguard_manage.yaml --limit [client-1-ip] --tags wireguard
 
  # Re-deploy to specific group
- ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --limit [clients-group-all] --tags wireguard
+ ansible-playbook wireguard_manage.yaml --limit [clients-group-all] --tags wireguard
  ```
 
 ### 10.4 Reset WireGuard Configuration
 
  ```bash
  # Stop WireGuard
- ansible -i hosts_bay.ini all -m shell -a "systemctl stop wg-quick@[interface-name]"
+ ansible all -m shell -a "systemctl stop wg-quick@[interface-name]"
 
  # Remove config
- ansible -i hosts_bay.ini all -m shell -a "rm /etc/wireguard/[interface-name].conf"
+ ansible all -m shell -a "rm /etc/wireguard/[interface-name].conf"
 
  # Remove interface
- ansible -i hosts_bay.ini all -m shell -a "ip link del [interface-name]"
+ ansible all -m shell -a "ip link del [interface-name]"
 
  # Restart service (if needed)
- ansible -i hosts_bay.ini all -m shell -a "systemctl restart wg-quick@[interface-name]"
+ ansible all -m shell -a "systemctl restart wg-quick@[interface-name]"
  ```
 
 ---
@@ -791,7 +791,7 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard
 
 ```bash
 # Rotate all keys (server + peers)
-ansible-playbook -i hosts_bay.ini wireguard_rotate_keys.yaml --tags wireguard,rotate
+ansible-playbook wireguard_rotate_keys.yaml --tags wireguard,rotate
 ```
 
 ### 11.2 What Happens During Key Rotation
@@ -813,13 +813,13 @@ After rotation, copy new keys to `vault_secrets.yml` (see Step 7).
 
  ```bash
  # Check new keys are in use
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name]"
+ ansible wireguard_servers -m shell -a "wg show [interface-name]"
 
  # Verify all peers reconnected
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name] peers"
+ ansible wireguard_servers -m shell -a "wg show [interface-name] peers"
 
  # Test connectivity
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "ping -c 3 [peer-2-vpn-ip]"
+ ansible wireguard_servers -m shell -a "ping -c 3 [peer-2-vpn-ip]"
  ```
 
 ---
@@ -868,40 +868,40 @@ After rotation, copy new keys to `vault_secrets.yml` (see Step 7).
 
  ```bash
  # Show all WireGuard interfaces
- ansible -i hosts_bay.ini all -m shell -a "wg show"
+ ansible all -m shell -a "wg show"
 
  # Show detailed peer information
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name] dump"
+ ansible wireguard_servers -m shell -a "wg show [interface-name] dump"
 
  # Show latest handshakes
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name] latest-handshakes"
+ ansible wireguard_servers -m shell -a "wg show [interface-name] latest-handshakes"
 
  # Show transfer statistics
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name] transfer"
+ ansible wireguard_servers -m shell -a "wg show [interface-name] transfer"
 
  # Show persistent keepalive
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "wg show [interface-name] persistent-keepalive"
+ ansible wireguard_servers -m shell -a "wg show [interface-name] persistent-keepalive"
 
  # Restart WireGuard service
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl restart wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl restart wg-quick@[interface-name]"
 
  # Stop WireGuard service
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl stop wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl stop wg-quick@[interface-name]"
 
  # Start WireGuard service
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl start wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl start wg-quick@[interface-name]"
 
  # Enable WireGuard service on boot
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl enable wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl enable wg-quick@[interface-name]"
 
  # Check WireGuard config file
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "cat /etc/wireguard/[interface-name].conf"
+ ansible wireguard_servers -m shell -a "cat /etc/wireguard/[interface-name].conf"
 
  # Check WireGuard service status
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl is-active wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl is-active wg-quick@[interface-name]"
 
  # Check WireGuard service enabled status
- ansible -i hosts_bay.ini wireguard_servers -m shell -a "systemctl is-enabled wg-quick@[interface-name]"
+ ansible wireguard_servers -m shell -a "systemctl is-enabled wg-quick@[interface-name]"
  ```
 
 ### Network Topology Diagram

@@ -81,7 +81,7 @@ This role supports Ansible check mode (`--check`):
 
 ```bash
 # Preview what would happen
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname] --check
+ansible-playbook kuber_worker_join.yaml --limit [worker-hostname] --check
 ```
 
 ## Usage
@@ -90,10 +90,10 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostnam
 
 ```bash
 # Join single worker
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_join.yaml --limit [worker-hostname]
 
 # Join all workers
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+ansible-playbook kuber_worker_join.yaml
 ```
 
 ### Rejoin Worker (minimal cleanup)
@@ -101,7 +101,7 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
 For rejoining a worker without full reset (preserves packages, containerd, CNI):
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_rejoin.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_rejoin.yaml --limit [worker-hostname]
 ```
 
 ### Direct role usage
@@ -155,16 +155,16 @@ Run `kuber_verify.yaml` for full cluster health check.
 **Node already joined error:**
 ```bash
 # Option 1: Full reset (removes packages, config, CNI)
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_reset.yaml --limit [worker-hostname]
 
 # Option 2: Soft reset (keeps packages, removes config)
-ansible-playbook -i hosts_bay.ini kuber_worker_soft_reset.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_soft_reset.yaml --limit [worker-hostname]
 
 # Option 3: Rejoin only (minimal - keeps packages, containerd, CNI)
-ansible-playbook -i hosts_bay.ini kuber_worker_rejoin.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_rejoin.yaml --limit [worker-hostname]
 
 # Then re-join (if using reset options 1 or 2)
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit [worker-hostname]
+ansible-playbook kuber_worker_join.yaml --limit [worker-hostname]
 ```
 
 **VIP not found error:**

@@ -38,6 +38,6 @@ The timer runs every `wg_cidr_guard_check_interval` and also after boot delay
 ## Example
 
 ```bash
-ansible-playbook -i hosts_bay.ini wg_cidr_guard_manage.yaml
-ansible-playbook -i hosts_bay.ini wg_cidr_guard_verify.yaml
+ansible-playbook wg_cidr_guard_manage.yaml
+ansible-playbook wg_cidr_guard_verify.yaml
 ```

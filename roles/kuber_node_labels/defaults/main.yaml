@@ -1,0 +1,57 @@
+---
+# kuber_node_labels – defaults
+#
+# Applies topology and worker-class labels to Kubernetes nodes.
+# Labels are derived from inventory group membership unless overridden
+# per-host in host_vars.
+#
+# Label keys applied:
+#   topology.kubernetes.io/region  – bay | vas
+#   topology.kubernetes.io/zone    – bay | vas
+#   kubernetes.io/worker-class – main | office | super  (workers only)
+
+# ---------------------------------------------------------------------------
+# kubectl delegation
+# ---------------------------------------------------------------------------
+# Control-plane node where kubectl runs (must have /etc/kubernetes/admin.conf)
+kuber_node_labels_kubectl_delegate: "{{ groups['planes_all'][0] | default(ansible_play_hosts | first) }}"
+kuber_node_labels_kubeconfig: /etc/kubernetes/admin.conf
+
+# ---------------------------------------------------------------------------
+# Region / zone mapping
+# ---------------------------------------------------------------------------
+# Inventory groups whose members belong to each region.
+# Add new regions here when the cluster expands.
+kuber_node_labels_region_map:
+  bay:
+    - bay_planes_all
+    - bay_workers_all
+  vas:
+    - vas_planes_all
+    - vas_workers_all
+
+# Per-host override (set in host_vars if a node doesn't fit the map)
+# kuber_node_labels_region: "bay"
+# kuber_node_labels_zone: "bay"
+
+# ---------------------------------------------------------------------------
+# Worker-class mapping
+# ---------------------------------------------------------------------------
+# Inventory groups whose members get a specific worker-class label.
+# Nodes in workers_all that do not match any key default to "main".
+kuber_node_labels_worker_class_map:
+  office:
+    - bay_worker_office1
+    - vas_worker_office1
+  super:
+    - bay_worker_super1
+
+# Per-host override
+# kuber_node_labels_worker_class: "office"
+
+# ---------------------------------------------------------------------------
+# Feature flags
+# ---------------------------------------------------------------------------
+# Set to false to skip a label category entirely
+kuber_node_labels_apply_region: true
+kuber_node_labels_apply_worker_class: true

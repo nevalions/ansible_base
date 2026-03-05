@@ -159,17 +159,17 @@ vault_coredns_stub_zones:
 
 ```bash
 # Apply ConfigMap patch and wait for rollout
-ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml
+ansible-playbook kuber_coredns_install.yaml
 
 # Dry-run preview (shows what would change, no cluster writes)
-ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml --check
+ansible-playbook kuber_coredns_install.yaml --check
 
 # Enable query logging for debugging
-ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml \
+ansible-playbook kuber_coredns_install.yaml \
   -e vault_coredns_log_enabled=true
 
 # Override cache TTL only
-ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml \
+ansible-playbook kuber_coredns_install.yaml \
   -e vault_coredns_cache_ttl=600
 ```
 
@@ -177,10 +177,10 @@ ansible-playbook -i hosts_bay.ini kuber_coredns_install.yaml \
 
 ```bash
 # Full verification (deployment status + ConfigMap + resolution probes)
-ansible-playbook -i hosts_bay.ini kuber_coredns_verify.yaml
+ansible-playbook kuber_coredns_verify.yaml
 
 # Resolution probes only
-ansible-playbook -i hosts_bay.ini kuber_coredns_verify.yaml \
+ansible-playbook kuber_coredns_verify.yaml \
   --tags coredns_resolution
 ```
 
@@ -188,7 +188,7 @@ ansible-playbook -i hosts_bay.ini kuber_coredns_verify.yaml \
 
 ```bash
 # Skip the CoreDNS step in kuber_cluster_deploy.yaml
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml \
+ansible-playbook kuber_cluster_deploy.yaml \
   -e skip_coredns=true
 ```
 

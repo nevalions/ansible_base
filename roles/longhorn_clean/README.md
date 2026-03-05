@@ -46,13 +46,13 @@ The playbook loads vault secrets from `vault_secrets.yml` for any sensitive cred
 
 ```bash
 # Dry-run to see what will be removed
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml --check
+ansible-playbook longhorn_remove_workers.yaml --check
 
 # Execute removal
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml
+ansible-playbook longhorn_remove_workers.yaml
 
 # With verbosity for debugging
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml -v
+ansible-playbook longhorn_remove_workers.yaml -v
 ```
 
 ### Custom Paths
@@ -60,7 +60,7 @@ ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml -v
 Override default paths if needed:
 
 ```bash
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml \
+ansible-playbook longhorn_remove_workers.yaml \
   -e longhorn_data_path=/custom/path/to/longhorn \
   -e kubelet_pods_path=/custom/path/to/kubelet/pods
 ```
@@ -105,7 +105,7 @@ The role includes verification tasks to ensure:
 ### Remove from All Workers
 
 ```bash
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml
+ansible-playbook longhorn_remove_workers.yaml
 ```
 
 ## Troubleshooting
@@ -114,7 +114,7 @@ ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml
 
 ```bash
 # Dry-run mode
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml --check -v
+ansible-playbook longhorn_remove_workers.yaml --check -v
 ```
 
 ### Verify directories are gone
@@ -130,7 +130,7 @@ ssh worker_host "find /var/lib/kubelet/pods -name '*longhorn*'"
 Ensure the playbook runs with `become: true` or use sudo:
 
 ```bash
-ansible-playbook -i hosts_bay.ini longhorn_remove_workers.yaml --ask-become-pass
+ansible-playbook longhorn_remove_workers.yaml --ask-become-pass
 ```
 
 ### Files still exist after removal

@@ -17,26 +17,26 @@ See [filter_plugins/README.md](filter_plugins/README.md) for detailed usage.
 
 ### Run full verification
 ```bash
-./ansible_with_agent.sh -i hosts_bay.ini wireguard_verify.yaml --tags verify
+./ansible_with_agent.sh wireguard_verify.yaml --tags verify
 ```
 
 ### Run with verbosity
 ```bash
-./ansible_with_agent.sh -i hosts_bay.ini wireguard_verify.yaml --tags verify -v
+./ansible_with_agent.sh wireguard_verify.yaml --tags verify -v
 ```
 
 ### Verify specific hosts only
 ```bash
 # Verify only WireGuard servers
-./ansible_with_agent.sh -i hosts_bay.ini wireguard_verify.yaml --limit wireguard_servers --tags verify
+./ansible_with_agent.sh wireguard_verify.yaml --limit wireguard_servers --tags verify
 
 # Verify only WireGuard clients
-./ansible_with_agent.sh -i hosts_bay.ini wireguard_verify.yaml --limit wireguard_clients --tags verify
+./ansible_with_agent.sh wireguard_verify.yaml --limit wireguard_clients --tags verify
 ```
 
 ### Run in check mode (no changes)
 ```bash
-./ansible_with_agent.sh -i hosts_bay.ini wireguard_verify.yaml --tags verify --check
+./ansible_with_agent.sh wireguard_verify.yaml --tags verify --check
 ```
 
 ## Verification Checks

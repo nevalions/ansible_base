@@ -50,7 +50,7 @@ verify_external_hostname: "[external-hostname]"
 ### Playbook
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml
+ansible-playbook kuber_verify.yaml
 ```
 
 ### Direct role usage
@@ -155,7 +155,7 @@ kubectl get nodes
 journalctl -u kubelet -f
 
 # Restart kubelet if needed
-ansible-playbook -i hosts_bay.ini kuber.yaml --limit [control-plane-host]
+ansible-playbook kuber.yaml --limit [control-plane-host]
 ```
 
 **Flannel pods not Ready:**
@@ -183,7 +183,7 @@ kubectl delete pods -n calico-system -l k8s-app=calico-node
 kubectl get nodes
 
 # Re-join workers
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+ansible-playbook kuber_worker_join.yaml
 ```
 
 **Pod networking issues:**

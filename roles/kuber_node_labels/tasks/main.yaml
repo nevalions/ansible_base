@@ -1,0 +1,149 @@
+---
+# kuber_node_labels – apply topology and worker-class labels
+#
+# Runs once per node, delegated to a control-plane host that has kubectl.
+# All label commands use --overwrite so the role is fully idempotent.
+
+# =====================================================================
+# RESOLVE LABEL VALUES
+# =====================================================================
+
+- name: Resolve region from inventory groups
+  ansible.builtin.set_fact:
+    _node_label_region: >-
+      {%- set ns = namespace(found='') -%}
+      {%- for region, grps in kuber_node_labels_region_map.items() -%}
+        {%- for grp in grps -%}
+          {%- if grp in group_names and ns.found == '' -%}
+            {%- set ns.found = region -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ kuber_node_labels_region | default(ns.found) }}
+  when: kuber_node_labels_apply_region | bool
+
+- name: Resolve zone (same as region)
+  ansible.builtin.set_fact:
+    _node_label_zone: "{{ kuber_node_labels_zone | default(_node_label_region) }}"
+  when: kuber_node_labels_apply_region | bool
+
+- name: Determine if this node is a worker
+  ansible.builtin.set_fact:
+    _node_is_worker: "{{ 'workers_all' in group_names or (group_names | select('match', '.*workers.*') | list | length > 0) }}"
+
+- name: Resolve worker class from inventory groups
+  ansible.builtin.set_fact:
+    _node_label_worker_class: >-
+      {%- set ns = namespace(found='') -%}
+      {%- for wclass, grps in kuber_node_labels_worker_class_map.items() -%}
+        {%- for grp in grps -%}
+          {%- if grp in group_names and ns.found == '' -%}
+            {%- set ns.found = wclass -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endfor -%}
+      {{ kuber_node_labels_worker_class | default(ns.found if ns.found != '' else 'main') }}
+  when:
+    - kuber_node_labels_apply_worker_class | bool
+    - _node_is_worker | bool
+
+# =====================================================================
+# DISPLAY PLANNED LABELS
+# =====================================================================
+
+- name: Display planned labels
+  ansible.builtin.debug:
+    msg:
+      - "Node: {{ ansible_facts['hostname'] }}"
+      - "Region: {{ _node_label_region | default('skipped') }}"
+      - "Zone: {{ _node_label_zone | default('skipped') }}"
+      - "Worker: {{ _node_is_worker }}"
+      - "Worker class: {{ _node_label_worker_class | default('n/a') }}"
+
+# =====================================================================
+# APPLY REGION AND ZONE LABELS
+# =====================================================================
+
+- name: Apply region label
+  ansible.builtin.command: >-
+    kubectl label node {{ ansible_facts['hostname'] }}
+    topology.kubernetes.io/region={{ _node_label_region }}
+    --overwrite
+  environment:
+    KUBECONFIG: "{{ kuber_node_labels_kubeconfig }}"
+  delegate_to: "{{ kuber_node_labels_kubectl_delegate }}"
+  changed_when: true
+  when:
+    - kuber_node_labels_apply_region | bool
+    - _node_label_region | default('') | length > 0
+    - not ansible_check_mode
+
+- name: Apply zone label
+  ansible.builtin.command: >-
+    kubectl label node {{ ansible_facts['hostname'] }}
+    topology.kubernetes.io/zone={{ _node_label_zone }}
+    --overwrite
+  environment:
+    KUBECONFIG: "{{ kuber_node_labels_kubeconfig }}"
+  delegate_to: "{{ kuber_node_labels_kubectl_delegate }}"
+  changed_when: true
+  when:
+    - kuber_node_labels_apply_region | bool
+    - _node_label_zone | default('') | length > 0
+    - not ansible_check_mode
+
+# =====================================================================
+# APPLY WORKER-CLASS LABEL
+# =====================================================================
+
+- name: Remove old worker-class role label if present
+  ansible.builtin.command: >-
+    kubectl label node {{ ansible_facts['hostname'] }}
+    node-role.kubernetes.io/worker-class-
+  environment:
+    KUBECONFIG: "{{ kuber_node_labels_kubeconfig }}"
+  delegate_to: "{{ kuber_node_labels_kubectl_delegate }}"
+  changed_when: true
+  failed_when: false
+  when:
+    - kuber_node_labels_apply_worker_class | bool
+    - _node_is_worker | bool
+    - not ansible_check_mode
+
+- name: Apply worker-class label
+  ansible.builtin.command: >-
+    kubectl label node {{ ansible_facts['hostname'] }}
+    kubernetes.io/worker-class={{ _node_label_worker_class }}
+    --overwrite
+  environment:
+    KUBECONFIG: "{{ kuber_node_labels_kubeconfig }}"
+  delegate_to: "{{ kuber_node_labels_kubectl_delegate }}"
+  changed_when: true
+  when:
+    - kuber_node_labels_apply_worker_class | bool
+    - _node_is_worker | bool
+    - _node_label_worker_class | default('') | length > 0
+    - not ansible_check_mode
+
+# =====================================================================
+# VERIFY
+# =====================================================================
+
+- name: Verify labels on node
+  ansible.builtin.command: >-
+    kubectl get node {{ ansible_facts['hostname'] }} --show-labels
+  environment:
+    KUBECONFIG: "{{ kuber_node_labels_kubeconfig }}"
+  delegate_to: "{{ kuber_node_labels_kubectl_delegate }}"
+  register: _node_labels_result
+  changed_when: false
+  ignore_errors: true
+  when: not ansible_check_mode
+
+- name: Display node labels
+  ansible.builtin.debug:
+    var: _node_labels_result.stdout_lines
+  when:
+    - not ansible_check_mode
+    - _node_labels_result is defined
+    - _node_labels_result.rc == 0

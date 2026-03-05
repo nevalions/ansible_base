@@ -64,19 +64,22 @@ After running this role on all nodes, use automated playbooks for full cluster s
 
 ```bash
 # 1. Install packages on all nodes (this role)
-ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
+ansible-playbook kuber.yaml --tags kubernetes
 
 # 2. Initialize control plane (automated)
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+ansible-playbook kuber_plane_init.yaml --tags init
 
 # 3. Install Flannel CNI (default)
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 
 # 4. Join workers to cluster (automated)
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
+ansible-playbook kuber_worker_join.yaml --tags join
 
-# 5. Verify cluster health (automated)
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+# 5. Apply node labels (region + worker-class)
+ansible-playbook kuber_node_labels.yaml --tags node_labels
+
+# 6. Verify cluster health (automated)
+ansible-playbook kuber_verify.yaml --tags verify
 ```
 
 For complete setup documentation, see [../../KUBERNETES_SETUP.md](../../KUBERNETES_SETUP.md).
@@ -209,10 +212,10 @@ After cluster initialization, install a CNI plugin.
 
 ```bash
 # Default path in this repo: install Flannel via playbook
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 
 # Legacy Calico Path (optional): Calico-specific playbooks/docs
-# ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
+# ansible-playbook calico_bgp_manage.yaml --tags calico,bgp
 ```
 
 ## Post-Installation Validation

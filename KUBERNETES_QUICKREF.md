@@ -8,6 +8,7 @@
 | `kuber_plane_init.yaml` | Initialize control plane | planes | kubernetes, k8s, init, plane, cni, nfd, node_info, k9s |
 | `kuber_flannel_install.yaml` | Install Flannel CNI | kuber_small_planes | kubernetes, k8s, flannel, cni, addon |
 | `kuber_worker_join.yaml` | Join worker nodes | workers_all | kubernetes, k8s, join, worker |
+| `kuber_node_labels.yaml` | Apply region + worker-class labels | kuber_small_all | kubernetes, k8s, labels, node_labels |
 | `kuber_verify.yaml` | Verify cluster health | planes | kubernetes, k8s, verify, test |
 | `kuber_flannel_remove.yaml` | Remove Flannel CNI | kuber_small_planes | kubernetes, k8s, flannel, cni, remove |
 | `kuber_plane_reset.yaml` | Reset control plane | masters | kubernetes, k8s, reset, cleanup |
@@ -17,11 +18,12 @@
 
 ```bash
 # Full setup (single control plane)
-ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+ansible-playbook kuber.yaml --tags kubernetes
+ansible-playbook kuber_plane_init.yaml --tags init
+ansible-playbook kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_worker_join.yaml --tags join
+ansible-playbook kuber_node_labels.yaml --tags node_labels
+ansible-playbook kuber_verify.yaml --tags verify
 ```
 
 ## Verification Commands
@@ -51,6 +53,7 @@ kubectl delete pod test-pod
 |------|---------|
 | `kuber_init` | Control plane init + verification |
 | `kuber_join` | Worker join + verification |
+| `kuber_node_labels` | Apply region + worker-class node labels |
 | `kuber_verify` | Full cluster health check |
 | `kuber_reset` | Reset/cleanup |
 | `setup` | System setup (includes kuber role) |
@@ -112,16 +115,17 @@ kubectl run -it --rm dns-test --image=busybox:1.36 --restart=Never -- nslookup a
 
 # If you see ImagePullBackOff with IPv6 (2600:...) errors:
 # Enable node-local dnsmasq AAAA filtering on wg99 via dns_client_manage.yaml
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+ansible-playbook dns_client_manage.yaml --tags dns
 kubectl -n kube-system rollout restart deploy/coredns
 ```
 
 ```bash
 # Reset everything
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --tags reset
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --tags reset
+ansible-playbook kuber_plane_reset.yaml --tags reset
+ansible-playbook kuber_worker_reset.yaml --tags reset
 
 # Re-setup
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
+ansible-playbook kuber_plane_init.yaml --tags init
+ansible-playbook kuber_worker_join.yaml --tags join
+ansible-playbook kuber_node_labels.yaml --tags node_labels
 ```

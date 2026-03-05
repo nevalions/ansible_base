@@ -6,44 +6,44 @@ Complete step-by-step guide for deploying a Kubernetes cluster with Flannel CNI 
 
 ```bash
 # Deploy entire cluster from scratch (all phases)
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml
+ansible-playbook kuber_cluster_deploy.yaml
 ```
 
 ### Deploy Options
 
 ```bash
 # Full deployment
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml
+ansible-playbook kuber_cluster_deploy.yaml
 
 # Skip infrastructure (WireGuard + DNS already deployed)
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true
+ansible-playbook kuber_cluster_deploy.yaml -e skip_infrastructure=true
 
 # Skip MetalLB/BGP (no LoadBalancer needed)
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_metallb=true
+ansible-playbook kuber_cluster_deploy.yaml -e skip_metallb=true
 
 # Kubernetes only (skip infra and metallb)
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
+ansible-playbook kuber_cluster_deploy.yaml -e skip_infrastructure=true -e skip_metallb=true
 
 # Run specific phase only
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase1  # Infrastructure
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase2  # K8s prerequisites
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase3  # K8s cluster
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase4  # MetalLB + BGP
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase5  # Traefik ingress
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml --tags phase6  # cert-manager TLS
+ansible-playbook kuber_cluster_deploy.yaml --tags phase1  # Infrastructure
+ansible-playbook kuber_cluster_deploy.yaml --tags phase2  # K8s prerequisites
+ansible-playbook kuber_cluster_deploy.yaml --tags phase3  # K8s cluster
+ansible-playbook kuber_cluster_deploy.yaml --tags phase4  # MetalLB + BGP
+ansible-playbook kuber_cluster_deploy.yaml --tags phase5  # Traefik ingress
+ansible-playbook kuber_cluster_deploy.yaml --tags phase6  # cert-manager TLS
 ```
 
 ### Reset Options
 
 ```bash
 # Full reset (remove packages)
-ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml
+ansible-playbook kuber_cluster_reset.yaml
 
 # Soft reset (keep packages, just reset cluster state)
-ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e reset_mode=soft
+ansible-playbook kuber_cluster_reset.yaml -e reset_mode=soft
 
 # Full cleanup (MetalLB + BGP + Kubernetes)
-ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
+ansible-playbook kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
 ```
 
 ---
@@ -136,7 +136,7 @@ Before running any playbook:
 Deploy WireGuard mesh on all nodes. Servers get full configs; clients get peer configs pointing to servers.
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml
+ansible-playbook wireguard_manage.yaml
 ```
 
 **Hosts:** `wireguard_cluster` (all nodes)
@@ -152,7 +152,7 @@ ansible-playbook -i hosts_bay.ini wireguard_manage.yaml
 ### Step 1.2: Verify WireGuard
 
 ```bash
-ansible-playbook -i hosts_bay.ini wireguard_verify.yaml
+ansible-playbook wireguard_verify.yaml
 ```
 
 **Hosts:** `wireguard_cluster`
@@ -163,7 +163,7 @@ ansible-playbook -i hosts_bay.ini wireguard_verify.yaml
 Deploy dnsmasq on the two DNS servers. These bind to WireGuard IPs — requires Step 1.1 complete.
 
 ```bash
-ansible-playbook -i hosts_bay.ini dns_server_manage.yaml
+ansible-playbook dns_server_manage.yaml
 ```
 
 **Hosts:** `dns_servers` ([haproxy-hostname], [bgp-router-hostname])
@@ -174,7 +174,7 @@ ansible-playbook -i hosts_bay.ini dns_server_manage.yaml
 Configure all K8s nodes and workers to use internal DNS over WireGuard.
 
 ```bash
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml
+ansible-playbook dns_client_manage.yaml
 ```
 
 **Hosts:** `dns_clients` (kuber_small_planes, kuber_small_workers, vas_workers_all)
@@ -183,7 +183,7 @@ ansible-playbook -i hosts_bay.ini dns_client_manage.yaml
 ### Step 1.5: Verify DNS
 
 ```bash
-ansible-playbook -i hosts_bay.ini dns_verify.yaml
+ansible-playbook dns_verify.yaml
 ```
 
 **Hosts:** `wireguard_cluster`
@@ -198,7 +198,7 @@ ansible-playbook -i hosts_bay.ini dns_verify.yaml
 Install kubelet, kubeadm, kubectl, containerd, and nfs-common on all cluster nodes.
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber.yaml
+ansible-playbook kuber.yaml
 ```
 
 **Hosts:** `kuber_small_all` (both planes + all workers)
@@ -219,7 +219,7 @@ This must run before `kubeadm init` — the VIP is used as the `controlPlaneEndp
 and is embedded in the API server TLS certificate SANs.
 
 ```bash
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+ansible-playbook keepalived_manage.yaml
 ```
 
 **Hosts:** `planes_all` ([control-plane-1-hostname], [control-plane-2-hostname])
@@ -238,7 +238,7 @@ with `serial: 1`, so **limit to the first plane** to avoid attempting to init `[
 which will be joined (not initialized) in Step 3.2.
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml -l [control-plane-1-hostname]
+ansible-playbook kuber_plane_init.yaml -l [control-plane-1-hostname]
 ```
 
 **Hosts:** `[control-plane-1-hostname]` (limit explicitly)
@@ -260,7 +260,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml -l [control-plane-1-host
 Install Flannel before worker join so node CNI checks and pod networking validations pass cleanly.
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml
+ansible-playbook kuber_flannel_install.yaml
 ```
 
 **Hosts:** `kuber_small_planes`
@@ -278,7 +278,7 @@ Join `vas_plane1` as a second control plane. This playbook also reconfigures
 Keepalived on both planes and verifies VIP failover.
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_join.yaml
+ansible-playbook kuber_plane_join.yaml
 ```
 
 **Hosts:** `[control-plane-2-hostname]` (hardcoded in playbook plays 1, 2, 4, 5); `planes_all` (play 3 — Keepalived)
@@ -326,7 +326,7 @@ vault_k8s_control_planes:
 ### Step 3.3: Join Worker Nodes
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+ansible-playbook kuber_worker_join.yaml
 ```
 
 **Hosts:** `[worker-remote-office-hostname]` (hardcoded — edit playbook `hosts:` to target all workers)
@@ -342,10 +342,29 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
 > **Note:** `kuber_worker_join.yaml` currently has `hosts: [worker-remote-office-hostname]`.
 > To join all workers at once, run with `-l kuber_small_workers` or edit the playbook `hosts:` field.
 
-### Step 3.4: Verify Cluster
+### Step 3.4: Apply Node Labels (Region + Worker Class)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml
+ansible-playbook kuber_node_labels.yaml
+```
+
+**Hosts:** `kuber_small_all` (all planes + workers)
+**Playbook:** `kuber_node_labels.yaml` → role `kuber_node_labels`
+**What it does:**
+
+- Applies `topology.kubernetes.io/region` and `topology.kubernetes.io/zone` labels based on inventory group (bay / vas)
+- Applies `kubernetes.io/worker-class` label on worker nodes (main / office / super)
+- All labels derived from inventory group membership, overridable per-host
+- Idempotent (`--overwrite`), safe to re-run at any time
+- Skip with `-e skip_node_labels=true` in `kuber_cluster_deploy.yaml`
+
+> **Note:** This is separate from NFD (Node Feature Discovery) which adds hardware/OS labels automatically.
+> `kuber_node_labels` adds topology and workload classification labels for affinity-based scheduling.
+
+### Step 3.5: Verify Cluster
+
+```bash
+ansible-playbook kuber_verify.yaml
 ```
 
 **Hosts:** `kuber_small_planes`
@@ -362,7 +381,7 @@ Skip this step for the default Flannel path.
 Use only if you intentionally run the Legacy Calico Path and need to free TCP/179 for MetalLB.
 
 ```bash
-# ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml
+# ansible-playbook calico_bgp_manage.yaml
 ```
 
 **Hosts:** `kuber_small_all` (legacy only)
@@ -372,7 +391,7 @@ Use only if you intentionally run the Legacy Calico Path and need to free TCP/17
 Deploy FRR BGP router and Keepalived on both BGP HA routers ([bgp-router-hostname] + [haproxy-hostname]).
 
 ```bash
-ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml
+ansible-playbook bgp_ha_deploy.yaml
 ```
 
 **Hosts:** `bgp_routers` ([bgp-router-ha1], [bgp-router-ha2])
@@ -380,7 +399,7 @@ ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml
 ### Step 4.3: Install MetalLB
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml
+ansible-playbook kuber_metallb_install.yaml
 ```
 
 **Hosts:** `planes_all`
@@ -388,13 +407,13 @@ ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml
 ### Step 4.4: Verify BGP HA
 
 ```bash
-ansible-playbook -i hosts_bay.ini bgp_ha_verify.yaml
+ansible-playbook bgp_ha_verify.yaml
 ```
 
 ### Step 4.5: Verify MetalLB
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_metallb_verify.yaml
+ansible-playbook kuber_metallb_verify.yaml
 ```
 
 ---
@@ -402,8 +421,8 @@ ansible-playbook -i hosts_bay.ini kuber_metallb_verify.yaml
 ## Phase 5: Ingress Controller (Traefik)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_traefik_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_traefik_verify.yaml
+ansible-playbook kuber_traefik_install.yaml
+ansible-playbook kuber_traefik_verify.yaml
 ```
 
 ---
@@ -411,8 +430,8 @@ ansible-playbook -i hosts_bay.ini kuber_traefik_verify.yaml
 ## Phase 6: TLS (cert-manager)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_cert_manager_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_cert_manager_verify.yaml
+ansible-playbook kuber_cert_manager_install.yaml
+ansible-playbook kuber_cert_manager_verify.yaml
 ```
 
 See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) for cert-manager + Traefik TLS details.
@@ -425,40 +444,41 @@ See [KUBERNETES_SETUP.md](KUBERNETES_SETUP.md) for cert-manager + Traefik TLS de
 # ── Phase 1: Infrastructure ──────────────────────────────────────────────────
 # WireGuard MUST come before DNS: DNS records contain WG IPs,
 # dnsmasq binds to the WireGuard interface.
-ansible-playbook -i hosts_bay.ini wireguard_manage.yaml
-ansible-playbook -i hosts_bay.ini wireguard_verify.yaml
-ansible-playbook -i hosts_bay.ini dns_server_manage.yaml
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml
-ansible-playbook -i hosts_bay.ini dns_verify.yaml
+ansible-playbook wireguard_manage.yaml
+ansible-playbook wireguard_verify.yaml
+ansible-playbook dns_server_manage.yaml
+ansible-playbook dns_client_manage.yaml
+ansible-playbook dns_verify.yaml
 
 # ── Phase 2: Kubernetes prerequisites ────────────────────────────────────────
-ansible-playbook -i hosts_bay.ini kuber.yaml
+ansible-playbook kuber.yaml
 # Keepalived MUST come before kubeadm init: VIP is the controlPlaneEndpoint
 # and is embedded in API server cert SANs.
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
+ansible-playbook keepalived_manage.yaml
 
 # ── Phase 3: Kubernetes cluster ───────────────────────────────────────────────
 # Limit to [control-plane-1-hostname] only — [control-plane-2-hostname] joins in the next step, not init.
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml -l [control-plane-1-hostname]
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_plane_join.yaml
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml
+ansible-playbook kuber_plane_init.yaml -l [control-plane-1-hostname]
+ansible-playbook kuber_flannel_install.yaml
+ansible-playbook kuber_plane_join.yaml
+ansible-playbook kuber_worker_join.yaml
+ansible-playbook kuber_node_labels.yaml
+ansible-playbook kuber_verify.yaml
 
 # ── Phase 4: LoadBalancer ─────────────────────────────────────────────────────
-# Optional legacy only: ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml
-ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml
-ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml
-ansible-playbook -i hosts_bay.ini bgp_ha_verify.yaml
-ansible-playbook -i hosts_bay.ini kuber_metallb_verify.yaml
+# Optional legacy only: ansible-playbook calico_bgp_manage.yaml
+ansible-playbook bgp_ha_deploy.yaml
+ansible-playbook kuber_metallb_install.yaml
+ansible-playbook bgp_ha_verify.yaml
+ansible-playbook kuber_metallb_verify.yaml
 
 # ── Phase 5: Ingress ──────────────────────────────────────────────────────────
-ansible-playbook -i hosts_bay.ini kuber_traefik_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_traefik_verify.yaml
+ansible-playbook kuber_traefik_install.yaml
+ansible-playbook kuber_traefik_verify.yaml
 
 # ── Phase 6: TLS ──────────────────────────────────────────────────────────────
-ansible-playbook -i hosts_bay.ini kuber_cert_manager_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_cert_manager_verify.yaml
+ansible-playbook kuber_cert_manager_install.yaml
+ansible-playbook kuber_cert_manager_verify.yaml
 ```
 
 ---
@@ -469,7 +489,7 @@ ansible-playbook -i hosts_bay.ini kuber_cert_manager_verify.yaml
 
 | Playbook                    | Purpose               | Key Options                                                                                                                     |
 | --------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `kuber_cluster_deploy.yaml` | Deploy entire cluster | `-e skip_infrastructure=true`, `-e skip_metallb=true`, `-e skip_helm=true`, `-e skip_traefik=true`, `-e skip_cert_manager=true` |
+| `kuber_cluster_deploy.yaml` | Deploy entire cluster | `-e skip_infrastructure=true`, `-e skip_metallb=true`, `-e skip_helm=true`, `-e skip_traefik=true`, `-e skip_cert_manager=true`, `-e skip_node_labels=true` |
 | `kuber_cluster_reset.yaml`  | Reset entire cluster  | `-e reset_mode=soft`, `-e cleanup_metallb=true`, `-e cleanup_bgp=true`                                                          |
 
 ### Individual Playbooks — Deployment Order
@@ -487,7 +507,8 @@ ansible-playbook -i hosts_bay.ini kuber_cert_manager_verify.yaml
 | 3.2  | `kuber_flannel_install.yaml`          | `kuber_small_planes` | Install Flannel CNI                    |
 | 3.3  | `kuber_plane_join.yaml`               | `[control-plane-2-hostname]` | Join second control plane + Keepalived |
 | 3.4  | `kuber_worker_join.yaml`              | workers              | Join worker nodes                      |
-| 3.5  | `kuber_verify.yaml`                   | `kuber_small_planes` | Full cluster health check              |
+| 3.5  | `kuber_node_labels.yaml`              | `kuber_small_all`    | Apply region + worker-class labels     |
+| 3.6  | `kuber_verify.yaml`                   | `kuber_small_planes` | Full cluster health check              |
 | 4.1  | `calico_bgp_manage.yaml`              | `kuber_small_all`    | Legacy Calico Path (optional) BGP tuning |
 | 4.2  | `bgp_ha_deploy.yaml`                  | `bgp_routers`        | Deploy FRR + Keepalived HA             |
 | 4.3  | `kuber_metallb_install.yaml`          | `planes_all`         | Install MetalLB                        |
@@ -505,37 +526,39 @@ ansible-playbook -i hosts_bay.ini kuber_cert_manager_verify.yaml
 ### Full Reset and Rebuild
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
-ansible-playbook -i hosts_bay.ini kuber_cluster_deploy.yaml
+ansible-playbook kuber_cluster_reset.yaml -e cleanup_metallb=true -e cleanup_bgp=true
+ansible-playbook kuber_cluster_deploy.yaml
 ```
 
 ### Kubernetes-Only Reset (keep WireGuard + DNS)
 
 ```bash
 # Reset workers first, then control planes
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml
+ansible-playbook kuber_worker_reset.yaml
+ansible-playbook kuber_plane_reset.yaml
 
 # Rebuild
-ansible-playbook -i hosts_bay.ini keepalived_manage.yaml
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml -l [control-plane-1-hostname]
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml
-ansible-playbook -i hosts_bay.ini kuber_plane_join.yaml
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
-# Optional legacy only: ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml
-ansible-playbook -i hosts_bay.ini bgp_ha_deploy.yaml
-ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml
+ansible-playbook keepalived_manage.yaml
+ansible-playbook kuber_plane_init.yaml -l [control-plane-1-hostname]
+ansible-playbook kuber_flannel_install.yaml
+ansible-playbook kuber_plane_join.yaml
+ansible-playbook kuber_worker_join.yaml
+ansible-playbook kuber_node_labels.yaml
+# Optional legacy only: ansible-playbook calico_bgp_manage.yaml
+ansible-playbook bgp_ha_deploy.yaml
+ansible-playbook kuber_metallb_install.yaml
 ```
 
 ### Soft Reset (keep packages, reset cluster state only)
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_soft_reset.yaml
-ansible-playbook -i hosts_bay.ini kuber_plane_soft_reset.yaml
+ansible-playbook kuber_worker_soft_reset.yaml
+ansible-playbook kuber_plane_soft_reset.yaml
 
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml -l [control-plane-1-hostname]
-ansible-playbook -i hosts_bay.ini kuber_plane_join.yaml
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml
+ansible-playbook kuber_plane_init.yaml -l [control-plane-1-hostname]
+ansible-playbook kuber_plane_join.yaml
+ansible-playbook kuber_worker_join.yaml
+ansible-playbook kuber_node_labels.yaml
 ```
 
 ---
@@ -580,7 +603,9 @@ WireGuard VPN
                                                             │
                                                             └─→ Worker Join
                                                                     │
-                                                                    └─→ Cluster Verify
+                                                                    └─→ Node Labels (region + worker-class)
+                                                                            │
+                                                                            └─→ Cluster Verify
                                                                             │
                                                                             └─→ Flannel Install
                                                                                     │
@@ -670,14 +695,14 @@ Diagnosis:
 
 ```bash
 # Test tunnel connectivity from each plane
-ansible -i hosts_bay.ini [control-plane-1-hostname] -m shell -a "ping -c 3 <vas-plane1-wg-ip>"
-ansible -i hosts_bay.ini [control-plane-2-hostname] -m shell -a "ping -c 3 <bay-plane1-wg-ip>"
+ansible [control-plane-1-hostname] -m shell -a "ping -c 3 <vas-plane1-wg-ip>"
+ansible [control-plane-2-hostname] -m shell -a "ping -c 3 <bay-plane1-wg-ip>"
 
 # Capture ICMP inside tunnel (no packets = WG not decrypting)
-ansible -i hosts_bay.ini [control-plane-2-hostname] -m shell -a "timeout 5 tcpdump -i wg99 icmp -c 5"
+ansible [control-plane-2-hostname] -m shell -a "timeout 5 tcpdump -i wg99 icmp -c 5"
 
 # Check actual WireGuard endpoint vs configured endpoint
-ansible -i hosts_bay.ini [control-plane-1-hostname] -m shell -a "wg show wg99 | grep -A6 '<vas-plane1-pubkey>'"
+ansible [control-plane-1-hostname] -m shell -a "wg show wg99 | grep -A6 '<vas-plane1-pubkey>'"
 # endpoint: field shows the live NAT-mapped port (may differ from static config)
 ```
 
@@ -692,6 +717,6 @@ Common cause — NAT port-forward missing or wrong:
 After fixing the tunnel, restart Keepalived on both planes to clear stale state:
 
 ```bash
-ansible -i hosts_bay.ini keepalived_vip_servers -m systemd \
+ansible keepalived_vip_servers -m systemd \
   -a "name=keepalived state=restarted" --extra-vars "@vault_secrets.yml"
 ```

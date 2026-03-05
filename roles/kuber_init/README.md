@@ -20,10 +20,10 @@ This role does not install a CNI plugin. Use dedicated CNI playbooks after init:
 
 ```bash
 # Default CNI path (recommended)
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 
 # Optional legacy path
-# ansible-playbook -i hosts_bay.ini calico_bgp_manage.yaml --tags calico,bgp
+# ansible-playbook calico_bgp_manage.yaml --tags calico,bgp
 ```
 
 For Flannel over WireGuard, keep pod subnet and MTU consistent across kubeadm and Flannel values.
@@ -92,7 +92,7 @@ vault_admin_user: "[admin-username]"
 ### Playbook
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml
+ansible-playbook kuber_plane_init.yaml
 ```
 
 ### Direct role usage

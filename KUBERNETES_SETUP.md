@@ -61,10 +61,10 @@ Flannel is managed as a dedicated step and is not installed by `kuber_plane_init
 
 ```bash
 # Install Flannel CNI
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 
 # Remove Flannel CNI
-ansible-playbook -i hosts_bay.ini kuber_flannel_remove.yaml --tags flannel
+ansible-playbook kuber_flannel_remove.yaml --tags flannel
 ```
 
 ## Playbooks
@@ -119,11 +119,11 @@ Why this is recommended:
 Steps:
 ```bash
 # Install cert-manager and ClusterIssuer
-ansible-playbook -i hosts_bay.ini kuber_cert_manager_install.yaml
+ansible-playbook kuber_cert_manager_install.yaml
 
 # Install/upgrade Traefik (with Traefik ACME disabled)
 # In vault_secrets.yml: vault_traefik_certresolver_enabled: false
-ansible-playbook -i hosts_bay.ini kuber_traefik_install.yaml
+ansible-playbook kuber_traefik_install.yaml
 ```
 
 Optional cleanup after the switch:
@@ -197,7 +197,7 @@ vault_k8s_preflight_fail_on_warnings: false
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
+ansible-playbook kuber.yaml --tags kubernetes
 ```
 
 **Pre-flight Validation Behavior:**
@@ -242,7 +242,7 @@ nfd_kustomize_ref: "https://github.com/kubernetes-sigs/node-feature-discovery/de
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+ansible-playbook kuber_plane_init.yaml --tags init
 ```
 
 **Verification included:**
@@ -266,7 +266,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 ```
 
 ---
@@ -356,13 +356,13 @@ verify_retry_count: "20"
 **Usage:**
 ```bash
 # Full verification
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+ansible-playbook kuber_verify.yaml --tags verify
 
 # Run after control plane init
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+ansible-playbook kuber_verify.yaml --tags verify
 
 # Run after worker join
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+ansible-playbook kuber_verify.yaml --tags verify
 ```
 
 **Verification Report:**
@@ -387,7 +387,7 @@ DNS: Functional/Issues detected
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --tags reset
+ansible-playbook kuber_plane_reset.yaml --tags reset
 ```
 
 ---
@@ -401,7 +401,7 @@ ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --tags reset
 
 **Usage:**
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --tags reset
+ansible-playbook kuber_worker_reset.yaml --tags reset
 ```
 
 ---
@@ -412,51 +412,55 @@ ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --tags reset
 
 ```bash
 # 1. Install packages on all nodes
-ansible-playbook -i hosts_bay.ini kuber.yaml --tags kubernetes
+ansible-playbook kuber.yaml --tags kubernetes
 
 # 2. Initialize control plane ([control-plane-ip])
 # Includes automatic control-plane checks
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
+ansible-playbook kuber_plane_init.yaml --tags init
 
 # 2.5 Install Flannel CNI (required before worker CNI checks are expected to pass)
-ansible-playbook -i hosts_bay.ini kuber_flannel_install.yaml --tags flannel
+ansible-playbook kuber_flannel_install.yaml --tags flannel
 
 # 3. Join workers (all 4 workers)
 # Includes automatic verification of each worker
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --tags join
+ansible-playbook kuber_worker_join.yaml --tags join
 
-# 3.5 (Optional) Configure BGP router and install MetalLB (LoadBalancer)
+# 3.5 Apply node labels (region + worker-class for affinity scheduling)
+ansible-playbook kuber_node_labels.yaml --tags node_labels
+
+# 4. (Optional) Configure BGP router and install MetalLB (LoadBalancer)
 # Recommended for WireGuard/L3 clusters.
 #
 # 1) Configure FRR on the BGP router host (e.g., [bgp-router-hostname])
-ansible-playbook -i hosts_bay.ini bgp_router_manage.yaml --tags bgp
+ansible-playbook bgp_router_manage.yaml --tags bgp
 #
 # 2) Install and configure MetalLB (BGP mode)
-ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml --tags metallb
+ansible-playbook kuber_metallb_install.yaml --tags metallb
 
 # Remove MetalLB (cleanup)
-ansible-playbook -i hosts_bay.ini kuber_metallb_remove.yaml --tags remove
+ansible-playbook kuber_metallb_remove.yaml --tags remove
 
 # Remove BGP router configuration (cleanup)
-ansible-playbook -i hosts_bay.ini bgp_router_remove.yaml --tags remove
+ansible-playbook bgp_router_remove.yaml --tags remove
 
 # 4. Full cluster verification (optional but recommended)
 # Tests pod-to-pod connectivity, DNS, external access
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --tags verify
+ansible-playbook kuber_verify.yaml --tags verify
 ```
 
 ### Rolling Updates or Reconfiguration
 
 ```bash
 # Reset control plane
-ansible-playbook -i hosts_bay.ini kuber_plane_reset.yaml --tags reset
+ansible-playbook kuber_plane_reset.yaml --tags reset
 
 # Reset specific workers
-ansible-playbook -i hosts_bay.ini kuber_worker_reset.yaml --limit workers_main --tags reset
+ansible-playbook kuber_worker_reset.yaml --limit workers_main --tags reset
 
 # Re-run setup steps
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --tags init
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_main --tags join
+ansible-playbook kuber_plane_init.yaml --tags init
+ansible-playbook kuber_worker_join.yaml --limit workers_main --tags join
+ansible-playbook kuber_node_labels.yaml --tags node_labels
 ```
 
 ---
@@ -470,6 +474,10 @@ ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --limit workers_main --
 - `[workers_super]` - Super workers ([worker-super-ip])
 - `[workers_longhorn]` - Longhorn storage workers ([worker-longhorn-ip])
 - `[masters]` - Master nodes (same as planes)
+
+> **Node labels:** The `kuber_node_labels` role maps these inventory groups to Kubernetes labels:
+> `bay_*` → `topology.kubernetes.io/region=bay`, `vas_*` → `region=vas`,
+> `*_office*` → `kubernetes.io/worker-class=office`, `*_super*` → `worker-class=super`, others → `worker-class=main`.
 
 ---
 
@@ -489,6 +497,17 @@ Worker node joining role with built-in verification
 - `defaults/main.yaml` - Variables (control plane IP, port)
 - `templates/kube-join.yaml.j2` - Dynamic join config
 - `meta/main.yaml` - Role metadata
+
+### roles/kuber_node_labels/
+Apply region and worker-class labels to Kubernetes nodes for affinity scheduling
+- `tasks/main.yaml` - Resolve labels from inventory groups and apply via kubectl
+- `defaults/main.yaml` - Region/zone map, worker-class map, feature flags
+- `meta/main.yaml` - Role metadata
+
+Labels applied:
+- `topology.kubernetes.io/region` — bay / vas (all nodes)
+- `topology.kubernetes.io/zone` — bay / vas (all nodes)
+- `kubernetes.io/worker-class` — main / office / super (workers only)
 
 ### roles/kuber_verify/
 Comprehensive cluster verification role
@@ -599,7 +618,7 @@ the node `/etc/resolv.conf` at that node IP. This is Kubernetes-safe when CoreDN
 
 **Apply:**
 ```bash
-ansible-playbook -i hosts_bay.ini dns_client_manage.yaml --tags dns
+ansible-playbook dns_client_manage.yaml --tags dns
 
 # CoreDNS pods need a restart to pick up updated node resolv.conf
 kubectl -n kube-system rollout restart deploy/coredns
@@ -774,9 +793,9 @@ ansible-lint kuber_verify.yaml
 ### Dry Run
 ```bash
 # Check mode (no changes made)
-ansible-playbook -i hosts_bay.ini kuber_plane_init.yaml --check
-ansible-playbook -i hosts_bay.ini kuber_worker_join.yaml --check
-ansible-playbook -i hosts_bay.ini kuber_verify.yaml --check
+ansible-playbook kuber_plane_init.yaml --check
+ansible-playbook kuber_worker_join.yaml --check
+ansible-playbook kuber_verify.yaml --check
 ```
 
 ---

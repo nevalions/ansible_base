@@ -52,5 +52,5 @@ vault_metallb_bgp_aggregate_length_v4: 24
 Example playbook: `kuber_metallb_install.yaml`
 
 ```bash
-ansible-playbook -i hosts_bay.ini kuber_metallb_install.yaml --tags metallb
+ansible-playbook kuber_metallb_install.yaml --tags metallb
 ```

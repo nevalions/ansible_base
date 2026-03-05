@@ -123,7 +123,7 @@ vault_wg_peer_public_keys:
 
  Verify keys are properly configured:
  ```bash
- ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard --limit [server-ip] --check
+ ansible-playbook wireguard_manage.yaml --tags wireguard --limit [server-ip] --check
  ```
 
 The playbook should now pass the key validation check.
@@ -132,7 +132,7 @@ The playbook should now pass the key validation check.
 
  Run full deployment:
  ```bash
- ansible-playbook -i hosts_bay.ini wireguard_manage.yaml --tags wireguard
+ ansible-playbook wireguard_manage.yaml --tags wireguard
  ```
 
  ## Step 5: Verify WireGuard is Running
@@ -140,10 +140,10 @@ The playbook should now pass the key validation check.
  Check WireGuard status on each host:
  ```bash
  # Server ([server-hostname])
- ansible -i hosts_bay.ini [server-ip] -b -m shell -a "wg show [interface-name]"
+ ansible [server-ip] -b -m shell -a "wg show [interface-name]"
 
  # Client ([client-hostname])
- ansible -i hosts_bay.ini [client-ip] -b -m shell -a "wg show [interface-name]"
+ ansible [client-ip] -b -m shell -a "wg show [interface-name]"
  ```
 
 ## Step 5: Verify WireGuard is Running
@@ -151,10 +151,10 @@ The playbook should now pass the key validation check.
 Check WireGuard status on each host:
 ```bash
 # Server ([SERVER_HOSTNAME])
-ansible -i hosts_bay.ini [SERVER_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
+ansible [SERVER_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
 
 # Client ([CLIENT_HOSTNAME])
-ansible -i hosts_bay.ini [CLIENT_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
+ansible [CLIENT_IP] -b -m shell -a "wg show [INTERFACE_NAME]"
 ```
 
 ## AllowedIPs Design Rules
@@ -210,7 +210,7 @@ sudo systemctl restart wg-quick@wg99
  ### Service fails to start
  Check journal logs:
  ```bash
- ansible -i hosts_bay.ini [hostname] -b -m shell -a "journalctl -xeu wg-quick@[interface-name].service --no-pager -n 50"
+ ansible [hostname] -b -m shell -a "journalctl -xeu wg-quick@[interface-name].service --no-pager -n 50"
  ```
 
 ### Keys are empty in config
