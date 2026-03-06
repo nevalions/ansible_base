@@ -36,28 +36,46 @@
     - alerts
 
   tasks:
+    - name: Check if PrometheusRule CRD exists
+      ansible.builtin.command: kubectl get crd prometheusrules.monitoring.coreos.com
+      register: wg_alerts_crd_check
+      changed_when: false
+      failed_when: false
+
+    - name: Skip alerts if PrometheusRule CRD is missing
+      ansible.builtin.debug:
+        msg: >-
+          Skipping PrometheusRule deployment — Prometheus Operator CRD not found.
+          Install kube-prometheus-stack or Prometheus Operator to enable alert rules.
+      when: wg_alerts_crd_check.rc != 0
+
     - name: Deploy WireGuard PrometheusRule
       ansible.builtin.template:
         src: roles/wireguard_exporter/templates/wireguard-alerts.rules.yaml.j2
         dest: /tmp/wireguard-alerts.rules.yaml
         mode: "0644"
+      when: wg_alerts_crd_check.rc == 0
 
     - name: Apply WireGuard PrometheusRule to cluster
       ansible.builtin.command: kubectl apply -f /tmp/wireguard-alerts.rules.yaml
       register: wg_alerts_apply
       changed_when: "'created' in wg_alerts_apply.stdout or 'configured' in wg_alerts_apply.stdout"
+      when: wg_alerts_crd_check.rc == 0
 
     - name: Clean up temporary manifest
       ansible.builtin.file:
         path: /tmp/wireguard-alerts.rules.yaml
         state: absent
+      when: wg_alerts_crd_check.rc == 0
 
     - name: Verify PrometheusRule was created
       ansible.builtin.command: kubectl get prometheusrule wireguard-alerts -n monitoring
       register: wg_alerts_check
       changed_when: false
-      ignore_errors: true
+      failed_when: false
+      when: wg_alerts_crd_check.rc == 0
 
     - name: Display alert deployment status
       ansible.builtin.debug:
         msg: "WireGuard PrometheusRule: {{ 'deployed' if wg_alerts_check.rc == 0 else 'failed' }}"
+      when: wg_alerts_crd_check.rc == 0

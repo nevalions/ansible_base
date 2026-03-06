@@ -53,9 +53,13 @@
 
 # The set_fact above produces a string like "['...']" due to >- block scalar.
 # Convert it back to a proper list for the loop below.
+# Guard from_yaml: only apply when value is a string (ansible-core 2.19+ warns on list input)
 - name: Parse duplicate CIDRs to list
   ansible.builtin.set_fact:
-    wg_duplicate_cidrs: "{{ wg_duplicate_cidrs | default('[]') | from_yaml }}"
+    wg_duplicate_cidrs: >-
+      {{ wg_duplicate_cidrs | from_yaml
+         if wg_duplicate_cidrs is string
+         else wg_duplicate_cidrs | default([]) }}
   when: wg_live_allowed_ips.rc | default(1) == 0
 
 - name: Report duplicate CIDRs

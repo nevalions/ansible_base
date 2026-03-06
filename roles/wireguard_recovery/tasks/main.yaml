@@ -46,13 +46,16 @@
     state: started
     enabled: true
     daemon_reload: true
+  when: not ansible_check_mode
 
 - name: Verify timer is active
   ansible.builtin.command: systemctl is-active wg-recovery-check.timer
   register: wg_recovery_timer_status
   changed_when: false
   ignore_errors: true
+  when: not ansible_check_mode
 
 - name: Display recovery timer status
   ansible.builtin.debug:
     msg: "WireGuard recovery timer: {{ wg_recovery_timer_status.stdout | default('unknown') }}"
+  when: not ansible_check_mode

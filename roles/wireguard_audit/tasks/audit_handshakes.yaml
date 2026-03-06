@@ -30,7 +30,7 @@
 - name: Check each peer handshake freshness
   ansible.builtin.debug:
     msg: >-
-      {% set now = ansible_date_time.epoch | int %}
+      {% set now = ansible_facts['date_time']['epoch'] | int %}
       {% set pubkey = item.split('\t')[0] | default('') %}
       {% set epoch = item.split('\t')[1] | default('0') | int %}
       {% set peer_name = wg_peer_pubkey_to_name.get(pubkey, pubkey[:12] ~ '...') %}
@@ -51,7 +51,7 @@
 - name: Count stale handshakes
   ansible.builtin.set_fact:
     wg_audit_stale_count: >-
-      {% set now = ansible_date_time.epoch | int %}
+      {% set now = ansible_facts['date_time']['epoch'] | int %}
       {% set count = 0 %}
       {% for line in wg_handshakes_raw.stdout_lines | default([]) %}
       {% if '\t' in line %}

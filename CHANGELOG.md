@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.1] - 2026-03-06
+
+### Fixed
+
+- **wireguard_exporter role**: Detect containerized node_exporter (kube-prometheus-stack
+  DaemonSet with hostNetwork) by checking port 9100 when no standalone binary is found.
+  Previously the role failed on k8s nodes where node_exporter runs as a container.
+
+- **wireguard_exporter playbook**: Added PrometheusRule CRD pre-check before deploying
+  alert rules. Previously the alerts play would fail if Prometheus Operator was not
+  installed on the delegated host.
+
+- **wireguard_recovery role**: Added `when: not ansible_check_mode` guards to systemd
+  enable/start, timer verification, and status display tasks. Prevents failures during
+  `--check` dry-run mode.
+
+- **wireguard_exporter role**: Added `when: not ansible_check_mode` guards to systemd
+  enable/start, initial metrics collection, file verification, and assertion tasks.
+
+- **wireguard_audit**: Guard `from_yaml` filter to only apply when input is a string
+  (ansible-core 2.19+ warns on list input).
+
+- **wireguard_audit**: Replaced deprecated `ansible_date_time.epoch` with
+  `ansible_facts['date_time']['epoch']` in handshake freshness checks.
+
+### Changed
+
+- **vault_secrets.example.yml**: Added `vault_haproxy_stats_port`,
+  `vault_metallb_bay_vip`, and `vault_metallb_vas_vip` placeholders
+  (used by wireguard_e2e_test role for connectivity checks).
+
 ## [1.14.0] - 2026-03-06
 
 ### Added

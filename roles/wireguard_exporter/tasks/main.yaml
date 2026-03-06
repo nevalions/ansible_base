@@ -2,6 +2,61 @@
 # Deploy WireGuard metrics collector for Prometheus node-exporter textfile collector
 # Option C from KL-34: Ansible-deployed systemd timer + textfile on each host
 
+# Pre-check: verify node_exporter is available (binary or containerized via k8s DaemonSet)
+- name: Check if node_exporter binary is installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/node_exporter
+  register: wg_exporter_node_exporter_bin
+
+- name: Check for node_exporter in standard paths
+  ansible.builtin.command: which node_exporter
+  register: wg_exporter_node_exporter_which
+  changed_when: false
+  failed_when: false
+  when: not wg_exporter_node_exporter_bin.stat.exists
+
+- name: Check for containerized node_exporter listening on port 9100
+  ansible.builtin.command: ss -tlnp sport = :9100
+  register: wg_exporter_node_exporter_port
+  changed_when: false
+  failed_when: false
+  when:
+    - not wg_exporter_node_exporter_bin.stat.exists
+    - wg_exporter_node_exporter_which.rc | default(1) != 0
+
+- name: Assert node_exporter is available
+  ansible.builtin.assert:
+    that:
+      - >-
+        wg_exporter_node_exporter_bin.stat.exists or
+        (wg_exporter_node_exporter_which.rc | default(1) == 0) or
+        ('9100' in (wg_exporter_node_exporter_port.stdout | default('')))
+    success_msg: "node_exporter is available"
+    fail_msg: >-
+      node_exporter is not available. The wireguard_exporter role writes metrics
+      to {{ wg_exporter_textfile_dir }} which requires node_exporter with
+      --collector.textfile.directory configured. Install node_exporter (standalone
+      or via kube-prometheus-stack DaemonSet with hostNetwork) first.
+
+- name: Check node_exporter textfile collector is configured
+  ansible.builtin.command: pgrep -a node_exporter
+  register: wg_exporter_node_exporter_proc
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Warn if textfile collector directory flag not detected
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Could not verify node_exporter is running with
+      --collector.textfile.directory={{ wg_exporter_textfile_dir }}.
+      Ensure node_exporter is configured to read from this path.
+  when:
+    - not ansible_check_mode
+    - >-
+      wg_exporter_node_exporter_proc.rc | default(1) != 0 or
+      wg_exporter_textfile_dir not in (wg_exporter_node_exporter_proc.stdout | default(''))
+
 - name: Ensure textfile collector directory exists
   ansible.builtin.file:
     path: "{{ wg_exporter_textfile_dir }}"
@@ -43,15 +98,18 @@
     state: started
     enabled: true
     daemon_reload: true
+  when: not ansible_check_mode
 
 - name: Run initial metrics collection
   ansible.builtin.command: "{{ wg_exporter_script_path }}"
   changed_when: true
+  when: not ansible_check_mode
 
 - name: Verify metrics file was created
   ansible.builtin.stat:
     path: "{{ wg_exporter_textfile_dir }}/{{ wg_exporter_metrics_file }}"
   register: wg_metrics_file
+  when: not ansible_check_mode
 
 - name: Assert metrics file exists
   ansible.builtin.assert:
@@ -59,3 +117,4 @@
       - wg_metrics_file.stat.exists
     success_msg: "Metrics file created at {{ wg_exporter_textfile_dir }}/{{ wg_exporter_metrics_file }}"
     fail_msg: "Metrics file was not created"
+  when: not ansible_check_mode
