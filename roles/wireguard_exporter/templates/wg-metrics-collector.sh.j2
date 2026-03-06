@@ -2,6 +2,19 @@
 # WireGuard metrics collector for Prometheus node-exporter textfile collector
 # Deployed by Ansible role: wireguard_exporter
 # Writes metrics to {{ wg_exporter_textfile_dir }}/{{ wg_exporter_metrics_file }}
+#
+# Metrics exported:
+#   wireguard_interface_up              — gauge: 1 if wg interface exists, 0 otherwise
+#   wireguard_peer_last_handshake_seconds — gauge: seconds since last handshake
+#   wireguard_peer_receive_bytes_total  — counter: bytes received from peer
+#   wireguard_peer_transmit_bytes_total — counter: bytes transmitted to peer
+#   wireguard_peers_total               — gauge: number of configured peers
+#
+# NOTE (2026-03-06): wireguard_peer_up was removed. It was hardcoded to
+# peer_up=0 when handshake > 300s, which produced false positives — WireGuard
+# does not re-handshake on every keepalive. Alert rules now use traffic rate
+# (rate(receive_bytes[10m]) == 0 AND rate(transmit_bytes[10m]) == 0) instead,
+# which is computed by Prometheus from the counter metrics below.
 
 set -euo pipefail
 
@@ -42,8 +55,6 @@ NOW=$(date +%s)
     echo "# TYPE wireguard_peer_receive_bytes_total counter"
     echo "# HELP wireguard_peer_transmit_bytes_total Bytes transmitted to peer"
     echo "# TYPE wireguard_peer_transmit_bytes_total counter"
-    echo "# HELP wireguard_peer_up Whether the peer has completed a handshake recently"
-    echo "# TYPE wireguard_peer_up gauge"
 
     # Get handshakes
     while IFS=$'\t' read -r pubkey epoch; do
@@ -52,19 +63,11 @@ NOW=$(date +%s)
         
         if [ "${epoch}" -eq 0 ] 2>/dev/null; then
             handshake_age=-1
-            peer_up=0
         else
             handshake_age=$((NOW - epoch))
-            # Peer is "up" if handshake was within last 5 minutes (300s)
-            if [ "${handshake_age}" -le 300 ]; then
-                peer_up=1
-            else
-                peer_up=0
-            fi
         fi
 
         echo "wireguard_peer_last_handshake_seconds{interface=\"${INTERFACE}\",public_key=\"${pubkey_short}\"} ${handshake_age}"
-        echo "wireguard_peer_up{interface=\"${INTERFACE}\",public_key=\"${pubkey_short}\"} ${peer_up}"
     done < <(wg show "${INTERFACE}" latest-handshakes 2>/dev/null || true)
 
     # Get transfer stats

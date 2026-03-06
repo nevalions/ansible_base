@@ -1,10 +1,23 @@
 ---
+# Deployed by Ansible role: wireguard_exporter
+# Matching kube-lvl47 source: monitoring/main/alerts/wireguard-rules.yaml
+#
+# Design rationale (2026-03-06 rethink):
+#   Handshake-based alerts (>300s, >900s) and the derived wireguard_peer_up
+#   gauge produced persistent false positives. WireGuard does not re-handshake
+#   on every keepalive — it reuses the session until REKEY_AFTER_TIME of
+#   transport-data silence triggers a new one. Cross-site peer pairs
+#   legitimately show 15-25 minute handshake ages while actively transferring.
+#
+#   New approach: traffic-rate-based detection. A peer with zero rx AND zero tx
+#   rate is genuinely stalled regardless of handshake age.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: wireguard-alerts
+  name: kube-lvl47-wireguard-rules
   namespace: monitoring
   labels:
+    app: monitoring
     release: kube-prometheus-stack
 spec:
   groups:
@@ -19,55 +32,74 @@ spec:
             summary: "WireGuard interface down on {{ '{{' }} $labels.instance {{ '}}' }}"
             description: >-
               WireGuard interface {{ '{{' }} $labels.interface {{ '}}' }} is down on
-              {{ '{{' }} $labels.instance {{ '}}' }}. Tunnel connectivity lost.
+              {{ '{{' }} $labels.instance {{ '}}' }}. All peer tunnels through this
+              interface are unavailable. This typically means the interface was
+              deleted, the WireGuard kernel module is unloaded, or the host
+              rebooted without re-creating the interface.
+            investigation: >-
+              1. Check interface status:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'ip link show {{ '{{' }} $labels.interface {{ '}}' }}'
+              ---
+              2. Check WireGuard module:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'lsmod | grep wireguard'
+              ---
+              3. Try bringing the interface up:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'wg-quick up {{ '{{' }} $labels.interface {{ '}}' }}'
+              ---
+              4. Check systemd service:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'systemctl status wg-quick@{{ '{{' }} $labels.interface {{ '}}' }}'
 
-        - alert: WireguardPeerHandshakeStale
-          expr: wireguard_peer_last_handshake_seconds > 300
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "WireGuard peer handshake stale on {{ '{{' }} $labels.instance {{ '}}' }}"
-            description: >-
-              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
-              {{ '{{' }} $labels.instance {{ '}}' }} has not completed a handshake
-              in {{ '{{' }} $value {{ '}}' }} seconds (threshold: 300s).
-
-        - alert: WireguardPeerHandshakeCritical
-          expr: wireguard_peer_last_handshake_seconds > 900
-          for: 5m
-          labels:
-            severity: critical
-          annotations:
-            summary: "WireGuard peer handshake critical on {{ '{{' }} $labels.instance {{ '}}' }}"
-            description: >-
-              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
-              {{ '{{' }} $labels.instance {{ '}}' }} has not completed a handshake
-              in {{ '{{' }} $value {{ '}}' }} seconds (threshold: 900s / 15min).
-              Tunnel may be completely down.
-
-        - alert: WireguardPeerDown
-          expr: wireguard_peer_up == 0
-          for: 10m
-          labels:
-            severity: critical
-          annotations:
-            summary: "WireGuard peer down on {{ '{{' }} $labels.instance {{ '}}' }}"
-            description: >-
-              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
-              {{ '{{' }} $labels.instance {{ '}}' }} has no recent handshake.
-              Zero traffic for more than 10 minutes.
-
-        - alert: WireguardPeerNoTraffic
-          expr: >-
-            wireguard_peer_receive_bytes_total == 0
-            and wireguard_peer_transmit_bytes_total == 0
+        - alert: WireguardPeerTrafficStalled
+          expr: |
+            rate(wireguard_peer_receive_bytes_total[10m]) == 0
+              and
+            rate(wireguard_peer_transmit_bytes_total[10m]) == 0
           for: 10m
           labels:
             severity: warning
           annotations:
-            summary: "WireGuard peer has zero traffic on {{ '{{' }} $labels.instance {{ '}}' }}"
+            summary: "WireGuard peer {{ '{{' }} $labels.public_key {{ '}}' }} stalled on {{ '{{' }} $labels.instance {{ '}}' }}"
             description: >-
               Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
-              {{ '{{' }} $labels.instance {{ '}}' }} has 0 rx/tx bytes.
-              This peer may have never connected.
+              {{ '{{' }} $labels.instance {{ '}}' }} has had zero rx and zero tx
+              traffic for 10 minutes. With persistent keepalive enabled, this
+              indicates the tunnel is not functioning. The peer endpoint may be
+              unreachable, or the WireGuard session has failed to re-establish.
+            investigation: >-
+              1. Check peer status from the node:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'wg show {{ '{{' }} $labels.interface {{ '}}' }} | grep -A5 {{ '{{' }} $labels.public_key {{ '}}' }}'
+              ---
+              2. Check if endpoint is reachable:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'ping -c3 -W2 $(wg show {{ '{{' }} $labels.interface {{ '}}' }} endpoints | grep {{ '{{' }} $labels.public_key {{ '}}' }} | cut -f2 | cut -d: -f1)'
+              ---
+              3. Check handshake age (informational):
+              Look at wireguard_peer_last_handshake_seconds{instance="{{ '{{' }} $labels.instance {{ '}}' }}",public_key="{{ '{{' }} $labels.public_key {{ '}}' }}"}
+
+        - alert: WireguardPeerTrafficStalledCritical
+          expr: |
+            rate(wireguard_peer_receive_bytes_total[10m]) == 0
+              and
+            rate(wireguard_peer_transmit_bytes_total[10m]) == 0
+          for: 30m
+          labels:
+            severity: critical
+          annotations:
+            summary: "WireGuard peer {{ '{{' }} $labels.public_key {{ '}}' }} down on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
+              {{ '{{' }} $labels.instance {{ '}}' }} has had zero rx and zero tx
+              traffic for 30 minutes. The tunnel is confirmed down. Persistent
+              keepalive packets are not being exchanged. Immediate investigation
+              required — this peer's network segment may be isolated.
+            investigation: >-
+              1. Check peer status from the node:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'wg show {{ '{{' }} $labels.interface {{ '}}' }}'
+              ---
+              2. Check if the remote host is reachable:
+              ssh {{ '{{' }} $labels.instance | reReplaceAll ":.*" "" {{ '}}' }} 'ping -c3 -W2 $(wg show {{ '{{' }} $labels.interface {{ '}}' }} endpoints | grep {{ '{{' }} $labels.public_key {{ '}}' }} | cut -f2 | cut -d: -f1)'
+              ---
+              3. Check remote host is up:
+              Look for NodeDown alert on the peer's node
+              ---
+              4. Check Flannel overlay health:
+              kubectl get nodes -o wide — verify all nodes are Ready

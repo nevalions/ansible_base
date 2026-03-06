@@ -3,7 +3,7 @@
 #
 # This deploys a systemd timer that periodically writes WireGuard peer
 # metrics to a textfile that node-exporter scrapes. It also deploys
-# PrometheusRule alerts for stale handshakes, down peers, and interface issues.
+# PrometheusRule alerts for traffic-stalled peers and interface issues.
 #
 # Usage:
 #   ansible-playbook -i inventory wireguard_exporter_manage.yaml
@@ -68,8 +68,16 @@
         state: absent
       when: wg_alerts_crd_check.rc == 0
 
+    # Remove legacy PrometheusRule (renamed from wireguard-alerts to
+    # kube-lvl47-wireguard-rules for consistency with other alert rules)
+    - name: Remove legacy wireguard-alerts PrometheusRule
+      ansible.builtin.command: kubectl delete prometheusrule wireguard-alerts -n monitoring --ignore-not-found
+      register: wg_alerts_legacy_delete
+      changed_when: "'deleted' in wg_alerts_legacy_delete.stdout"
+      when: wg_alerts_crd_check.rc == 0
+
     - name: Verify PrometheusRule was created
-      ansible.builtin.command: kubectl get prometheusrule wireguard-alerts -n monitoring
+      ansible.builtin.command: kubectl get prometheusrule kube-lvl47-wireguard-rules -n monitoring
       register: wg_alerts_check
       changed_when: false
       failed_when: false
