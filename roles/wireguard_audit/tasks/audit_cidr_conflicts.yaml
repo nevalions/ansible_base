@@ -31,24 +31,31 @@
 - name: Find duplicate CIDRs across peers
   ansible.builtin.set_fact:
     wg_duplicate_cidrs: >-
-      {% set cidr_owners = {} %}
-      {% for entry in wg_all_peer_cidrs | default([]) %}
-      {% set parts = entry.split(':') %}
-      {% set owner = parts[0] %}
-      {% set cidr = parts[1] %}
-      {% if cidr in cidr_owners %}
-      {% set _ = cidr_owners.update({cidr: cidr_owners[cidr] ~ ',' ~ owner}) %}
-      {% else %}
-      {% set _ = cidr_owners.update({cidr: owner}) %}
-      {% endif %}
-      {% endfor %}
-      {% set dupes = [] %}
-      {% for cidr, owners in cidr_owners.items() %}
-      {% if ',' in owners %}
-      {% set _ = dupes.append(cidr ~ ' claimed by ' ~ owners) %}
-      {% endif %}
-      {% endfor %}
+      {%- set cidr_owners = {} -%}
+      {%- for entry in wg_all_peer_cidrs | default([]) -%}
+        {%- set parts = entry.split(':') -%}
+        {%- set owner = parts[0] -%}
+        {%- set cidr = parts[1] -%}
+        {%- if cidr in cidr_owners -%}
+          {%- set _ = cidr_owners.update({cidr: cidr_owners[cidr] ~ ',' ~ owner}) -%}
+        {%- else -%}
+          {%- set _ = cidr_owners.update({cidr: owner}) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {%- set dupes = [] -%}
+      {%- for cidr, owners in cidr_owners.items() -%}
+        {%- if ',' in owners -%}
+          {%- set _ = dupes.append(cidr ~ ' claimed by ' ~ owners) -%}
+        {%- endif -%}
+      {%- endfor -%}
       {{ dupes }}
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+# The set_fact above produces a string like "['...']" due to >- block scalar.
+# Convert it back to a proper list for the loop below.
+- name: Parse duplicate CIDRs to list
+  ansible.builtin.set_fact:
+    wg_duplicate_cidrs: "{{ wg_duplicate_cidrs | default('[]') | from_yaml }}"
   when: wg_live_allowed_ips.rc | default(1) == 0
 
 - name: Report duplicate CIDRs
