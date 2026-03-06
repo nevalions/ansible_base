@@ -1,0 +1,7 @@
+[Unit]
+Description=WireGuard tunnel health check and automatic recovery
+After=network.target wg-quick@{{ wg_recovery_interface }}.service
+
+[Service]
+Type=oneshot
+ExecStart={{ wg_recovery_script_path }}

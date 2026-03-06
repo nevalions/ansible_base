@@ -58,3 +58,62 @@
 - name: Display total connectivity test results
   ansible.builtin.debug:
     msg: "Connectivity tests: {{ total_connectivity_tests }} total, {{ connectivity_tests_failed }} failed"
+
+# Handshake freshness check — detect stale peers (> threshold)
+- name: Get latest handshake timestamps for freshness check
+  ansible.builtin.command: wg show {{ vault_wg_interface }} latest-handshakes
+  register: wg_handshake_freshness
+  changed_when: false
+  failed_when: false
+
+- name: Check handshake freshness per peer
+  ansible.builtin.debug:
+    msg: >-
+      {% set now = ansible_date_time.epoch | int %}
+      {% set pubkey = item.split('\t')[0] | default('') %}
+      {% set epoch = item.split('\t')[1] | default('0') | int %}
+      {% set age = now - epoch %}
+      {% if epoch == 0 %}
+      STALE: Peer {{ pubkey[:12] }}... has NEVER completed a handshake
+      {% elif age > (verify_handshake_stale_seconds | int) %}
+      STALE: Peer {{ pubkey[:12] }}... last handshake {{ age }}s ago (threshold: {{ verify_handshake_stale_seconds }}s)
+      {% else %}
+      OK: Peer {{ pubkey[:12] }}... last handshake {{ age }}s ago
+      {% endif %}
+  loop: "{{ wg_handshake_freshness.stdout_lines | default([]) }}"
+  when:
+    - wg_handshake_freshness.rc == 0
+    - "'\t' in item"
+
+# Detect peers with 0 rx/tx bytes (never connected)
+- name: Get transfer statistics for zero-traffic detection
+  ansible.builtin.command: wg show {{ vault_wg_interface }} transfer
+  register: wg_transfer_stats
+  changed_when: false
+  failed_when: false
+
+- name: Report peers with zero traffic
+  ansible.builtin.debug:
+    msg: >-
+      {% set pubkey = item.split('\t')[0] | default('') %}
+      {% set rx = item.split('\t')[1] | default('0') | int %}
+      {% set tx = item.split('\t')[2] | default('0') | int %}
+      {% if rx == 0 and tx == 0 %}
+      WARNING: Peer {{ pubkey[:12] }}... has 0 rx/tx bytes (never connected)
+      {% else %}
+      OK: Peer {{ pubkey[:12] }}... rx={{ rx }} tx={{ tx }} bytes
+      {% endif %}
+  loop: "{{ wg_transfer_stats.stdout_lines | default([]) }}"
+  when:
+    - wg_transfer_stats.rc == 0
+    - "'\t' in item"
+
+# Packet loss summary from ping results
+- name: Summarize packet loss per peer
+  ansible.builtin.debug:
+    msg: >-
+      {% set loss_line = item.stdout_lines | select('search', 'packet loss') | list | first | default('') %}
+      {% set loss_pct = loss_line | regex_search('(\\d+)% packet loss', '\\1') | default(['unknown']) | first %}
+      Peer {{ item.item }}: {{ loss_pct }}% packet loss
+  loop: "{{ ping_peer_result.results | default([]) | selectattr('rc', 'defined') | list }}"
+  when: ping_peer_result.results is defined

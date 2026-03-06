@@ -1,0 +1,31 @@
+---
+# WireGuard AllowedIPs Audit
+#
+# Detects:
+#   - AllowedIPs config drift (live vs vault-computed)
+#   - /24 vs /32 routing conflicts (overlapping CIDRs across peers)
+#   - Missing vas-site VIP /32 overrides
+#   - Duplicate CIDRs across peers (WireGuard silently deduplicates)
+#   - Peers with 0 rx/tx bytes (never connected)
+#   - Stale handshakes (> threshold)
+
+- name: Import AllowedIPs drift check
+  ansible.builtin.include_tasks: audit_allowed_ips.yaml
+
+- name: Import CIDR conflict detection
+  ansible.builtin.include_tasks: audit_cidr_conflicts.yaml
+
+- name: Import handshake and transfer audit
+  ansible.builtin.include_tasks: audit_handshakes.yaml
+
+- name: Generate audit report
+  ansible.builtin.debug:
+    msg:
+      - "=== WireGuard AllowedIPs Audit Report ==="
+      - "Host: {{ inventory_hostname }}"
+      - "Interface: {{ vault_wg_interface }}"
+      - "AllowedIPs drift: {{ wg_audit_drift_count | default(0) }} peer(s)"
+      - "CIDR conflicts: {{ wg_audit_conflict_count | default(0) }} detected"
+      - "Stale handshakes: {{ wg_audit_stale_count | default(0) }} peer(s)"
+      - "Never-connected peers: {{ wg_audit_never_connected_count | default(0) }} peer(s)"
+      - "============================================="

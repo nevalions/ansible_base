@@ -1,0 +1,83 @@
+---
+# WireGuard AllowedIPs Audit Playbook
+#
+# Detects routing conflicts, config drift, and missing VIP overrides.
+# Runs on all WireGuard hosts, makes no changes (read-only).
+#
+# Usage:
+#   ansible-playbook -i inventory wireguard_audit.yaml
+#   ansible-playbook -i inventory wireguard_audit.yaml --check
+#
+# The playbook recomputes expected AllowedIPs using the same filter plugin
+# (build_peers_extra_cidrs) as wireguard_manage.yaml, then compares live
+# WireGuard AllowedIPs against the computed values.
+
+- name: Audit WireGuard AllowedIPs and routing integrity
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - audit
+    - verify
+
+  pre_tasks:
+    - name: Normalize MetalLB pool CIDR
+      ansible.builtin.set_fact:
+        wg_metallb_pool_cidr_normalized: >-
+          {{
+            vault_metallb_pool_cidr
+            if (vault_metallb_pool_cidr | string) is search('/')
+            else (vault_metallb_pool_cidr | string) + '/24'
+          }}
+
+    - name: Compute expected per-peer extra CIDRs
+      ansible.builtin.set_fact:
+        wg_computed_peers_extra_cidrs: >-
+          {{
+            vault_wg_peers | default([])
+            | build_peers_extra_cidrs(
+                groups,
+                groups.get('bgp_routers', []),
+                groups.get('kuber_small_workers', []) + groups.get('vas_workers_all', []),
+                wg_metallb_pool_cidr_normalized,
+                vault_k8s_pod_subnet,
+                vault_db_wg_route_cidr | default(''),
+                groups.get('db', [])
+              )
+          }}
+
+    - name: Find first vas worker peer name
+      ansible.builtin.set_fact:
+        wg_first_vas_worker_peer: >-
+          {{
+            (vault_wg_peers | default([])
+              | selectattr('host_group', 'defined')
+              | peers_in_groups(groups, groups.get('vas_workers_all', []))
+              | first)
+            if (vault_wg_peers | default([])
+                | peers_in_groups(groups, groups.get('vas_workers_all', []))
+                | length > 0)
+            else ''
+          }}
+
+    - name: Inject vas VIP /32 overrides into computed extra CIDRs
+      ansible.builtin.set_fact:
+        wg_computed_peers_extra_cidrs: >-
+          {{
+            wg_computed_peers_extra_cidrs | default({})
+            | combine({
+                wg_first_vas_worker_peer:
+                  (wg_computed_peers_extra_cidrs[wg_first_vas_worker_peer] | default([]))
+                  + (vault_wg_vas_vip_overrides | default([]))
+              })
+          }}
+      when:
+        - wg_first_vas_worker_peer | default('') | length > 0
+        - vault_wg_vas_vip_overrides | default([]) | length > 0
+
+  roles:
+    - wireguard_audit

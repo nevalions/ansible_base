@@ -8,5 +8,11 @@ verify_retry_count: 5
 verify_sleep_seconds: 5
 verify_timeout_seconds: 30
 
+# Expected MTU for WireGuard interfaces (1420 is the WG default)
+verify_expected_mtu: 1420
+
+# Handshake freshness threshold in seconds (3 minutes)
+verify_handshake_stale_seconds: 180
+
 # Test namespace for verification (not used in WireGuard but following pattern)
 verify_test_namespace: "wg-verify"

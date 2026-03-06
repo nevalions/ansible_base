@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  author: linroot
+  description: >-
+    Export WireGuard peer metrics to Prometheus via node-exporter textfile
+    collector. Deploys a systemd timer that periodically writes metrics.
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+
+  galaxy_tags:
+    - wireguard
+    - monitoring
+    - prometheus
+    - networking
+
+dependencies: []

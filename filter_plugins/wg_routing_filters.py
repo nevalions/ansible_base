@@ -115,9 +115,58 @@ def build_peers_extra_cidrs(
     return result
 
 
+def validate_vip_overrides(metallb_pool_cidr, vas_vip_overrides):
+    """Validate that vas VIP overrides are /32 entries within the MetalLB pool.
+
+    Returns a list of warning strings (empty if all valid).
+    Use in playbooks:  {{ metallb_cidr | validate_vip_overrides(vip_list) }}
+
+    Args:
+        metallb_pool_cidr: MetalLB pool CIDR string (e.g. "11.11.0.0/24")
+        vas_vip_overrides: list of /32 CIDR strings (e.g. ["11.11.0.3/32"])
+
+    Returns:
+        list of warning message strings
+    """
+    import ipaddress
+
+    warnings = []
+    if not metallb_pool_cidr or not vas_vip_overrides:
+        return warnings
+
+    try:
+        pool = ipaddress.ip_network(metallb_pool_cidr, strict=False)
+    except ValueError:
+        warnings.append("Invalid MetalLB pool CIDR: {}".format(metallb_pool_cidr))
+        return warnings
+
+    for vip in vas_vip_overrides:
+        if not vip:
+            continue
+        try:
+            vip_net = ipaddress.ip_network(vip, strict=False)
+        except ValueError:
+            warnings.append("Invalid VIP override CIDR: {}".format(vip))
+            continue
+
+        if vip_net.prefixlen != 32:
+            warnings.append(
+                "VIP override {} is not a /32 — must be a host route".format(vip)
+            )
+
+        if not vip_net.subnet_of(pool):
+            warnings.append(
+                "VIP override {} is outside MetalLB pool {} — "
+                "may not need a WireGuard override".format(vip, metallb_pool_cidr)
+            )
+
+    return warnings
+
+
 class FilterModule:
     def filters(self):
         return {
             "peers_in_groups": peers_in_groups,
             "build_peers_extra_cidrs": build_peers_extra_cidrs,
+            "validate_vip_overrides": validate_vip_overrides,
         }

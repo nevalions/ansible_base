@@ -1,0 +1,104 @@
+---
+# Audit peer handshakes and transfer statistics
+# Detect stale handshakes and never-connected peers
+
+- name: Initialize handshake counters
+  ansible.builtin.set_fact:
+    wg_audit_stale_count: 0
+    wg_audit_never_connected_count: 0
+
+- name: Get latest handshake timestamps
+  ansible.builtin.command: wg show {{ vault_wg_interface }} latest-handshakes
+  register: wg_handshakes_raw
+  changed_when: false
+  failed_when: false
+
+- name: Skip handshake audit if interface is down
+  ansible.builtin.debug:
+    msg: "WireGuard interface not running, skipping handshake audit"
+  when: wg_handshakes_raw.rc | default(1) != 0
+
+- name: Get transfer statistics
+  ansible.builtin.command: wg show {{ vault_wg_interface }} transfer
+  register: wg_transfer_raw
+  changed_when: false
+  failed_when: false
+  when: wg_handshakes_raw.rc | default(1) == 0
+
+# Parse handshakes: "pubkey\tepoch_timestamp" format
+# Epoch 0 means no handshake ever
+- name: Check each peer handshake freshness
+  ansible.builtin.debug:
+    msg: >-
+      {% set now = ansible_date_time.epoch | int %}
+      {% set pubkey = item.split('\t')[0] | default('') %}
+      {% set epoch = item.split('\t')[1] | default('0') | int %}
+      {% set peer_name = wg_peer_pubkey_to_name.get(pubkey, pubkey[:12] ~ '...') %}
+      {% set age = now - epoch %}
+      {% if epoch == 0 %}
+      STALE: Peer {{ peer_name }} has NEVER completed a handshake
+      {% elif age > (wg_audit_handshake_stale_seconds | int) %}
+      STALE: Peer {{ peer_name }} last handshake {{ age }}s ago (threshold: {{ wg_audit_handshake_stale_seconds }}s)
+      {% else %}
+      OK: Peer {{ peer_name }} last handshake {{ age }}s ago
+      {% endif %}
+  loop: "{{ wg_handshakes_raw.stdout_lines | default([]) }}"
+  when:
+    - wg_handshakes_raw.rc | default(1) == 0
+    - "'\t' in item"
+
+# Count stale handshakes
+- name: Count stale handshakes
+  ansible.builtin.set_fact:
+    wg_audit_stale_count: >-
+      {% set now = ansible_date_time.epoch | int %}
+      {% set count = 0 %}
+      {% for line in wg_handshakes_raw.stdout_lines | default([]) %}
+      {% if '\t' in line %}
+      {% set epoch = line.split('\t')[1] | default('0') | int %}
+      {% set age = now - epoch %}
+      {% if epoch == 0 or age > (wg_audit_handshake_stale_seconds | int) %}
+      {% set count = count + 1 %}
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {{ count }}
+  when: wg_handshakes_raw.rc | default(1) == 0
+
+# Check for peers with 0 rx/tx bytes (never connected)
+- name: Check peer transfer statistics
+  ansible.builtin.debug:
+    msg: >-
+      {% set pubkey = item.split('\t')[0] | default('') %}
+      {% set rx = item.split('\t')[1] | default('0') | int %}
+      {% set tx = item.split('\t')[2] | default('0') | int %}
+      {% set peer_name = wg_peer_pubkey_to_name.get(pubkey, pubkey[:12] ~ '...') %}
+      {% if rx == 0 and tx == 0 %}
+      NEVER-CONNECTED: Peer {{ peer_name }} has 0 rx/tx bytes
+      {% else %}
+      OK: Peer {{ peer_name }} rx={{ rx }} tx={{ tx }} bytes
+      {% endif %}
+  loop: "{{ wg_transfer_raw.stdout_lines | default([]) }}"
+  when:
+    - wg_transfer_raw is defined
+    - wg_transfer_raw.rc | default(1) == 0
+    - "'\t' in item"
+
+- name: Count never-connected peers
+  ansible.builtin.set_fact:
+    wg_audit_never_connected_count: >-
+      {% set count = 0 %}
+      {% for line in wg_transfer_raw.stdout_lines | default([]) %}
+      {% if '\t' in line %}
+      {% set parts = line.split('\t') %}
+      {% set rx = parts[1] | default('0') | int %}
+      {% set tx = parts[2] | default('0') | int %}
+      {% if rx == 0 and tx == 0 %}
+      {% set count = count + 1 %}
+      {% endif %}
+      {% endif %}
+      {% endfor %}
+      {{ count }}
+  when:
+    - wg_transfer_raw is defined
+    - wg_transfer_raw.rc | default(1) == 0

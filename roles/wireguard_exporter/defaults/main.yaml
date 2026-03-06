@@ -1,0 +1,18 @@
+---
+# WireGuard exporter settings
+wg_exporter_enabled: true
+
+# WireGuard interface to monitor
+wg_exporter_interface: "{{ vault_wg_interface | default('[interface-name]') }}"
+
+# node-exporter textfile collector directory
+wg_exporter_textfile_dir: /var/lib/node_exporter/textfile_collector
+
+# Metrics output file name
+wg_exporter_metrics_file: wireguard.prom
+
+# Systemd timer interval (how often to collect metrics)
+wg_exporter_interval: "30s"
+
+# Script location
+wg_exporter_script_path: /usr/local/bin/wg-metrics-collector.sh

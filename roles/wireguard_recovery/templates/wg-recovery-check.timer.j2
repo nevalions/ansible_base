@@ -1,0 +1,10 @@
+[Unit]
+Description=Run WireGuard recovery check periodically
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec={{ wg_recovery_check_interval }}
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

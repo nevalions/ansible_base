@@ -1,0 +1,188 @@
+---
+# MetalLB VIP Reachability End-to-End Test
+#
+# Verifies the full traffic path:
+#   HAProxy -> WireGuard -> MetalLB VIP -> Traefik -> backend
+# for both bay and vas sites.
+#
+# Usage:
+#   ansible-playbook -i inventory wireguard_e2e_test.yaml
+#
+# This playbook makes NO changes to the infrastructure.
+# It only reads state and runs connectivity checks.
+
+- name: End-to-end VIP reachability test (from HAProxy)
+  hosts: haproxy_spb
+  become: true
+  gather_facts: true
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - metallb
+    - e2e
+    - test
+
+  tasks:
+    - name: Display test plan
+      ansible.builtin.debug:
+        msg:
+          - "=== MetalLB VIP End-to-End Reachability Test ==="
+          - "Testing from: {{ inventory_hostname }} (HAProxy)"
+          - "Bay VIP: {{ vault_metallb_bay_vip | default('[bay-vip]') }}"
+          - "Vas VIP: {{ vault_metallb_vas_vip | default('[vas-vip]') }}"
+          - "================================================"
+
+    # Test 1: WireGuard tunnel connectivity
+    - name: Verify WireGuard interface is up
+      ansible.builtin.command: wg show {{ vault_wg_interface }}
+      register: wg_status
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Assert WireGuard interface is running
+      ansible.builtin.assert:
+        that:
+          - wg_status.rc == 0
+        success_msg: "WireGuard interface {{ vault_wg_interface }} is UP"
+        fail_msg: "WireGuard interface {{ vault_wg_interface }} is DOWN - all VIP tests will fail"
+
+    # Test 2: Ping bay-site VIP (MetalLB)
+    - name: Ping bay Traefik VIP
+      ansible.builtin.command: >-
+        ping -c 3 -W 5 {{ vault_metallb_bay_vip | default('[bay-vip]') }}
+      register: bay_vip_ping
+      changed_when: false
+      ignore_errors: true
+      when: vault_metallb_bay_vip is defined
+
+    - name: Display bay VIP ping result
+      ansible.builtin.debug:
+        msg: >-
+          Bay VIP {{ vault_metallb_bay_vip | default('[bay-vip]') }}:
+          {{ 'REACHABLE' if bay_vip_ping.rc | default(1) == 0 else 'UNREACHABLE' }}
+      when: vault_metallb_bay_vip is defined
+
+    # Test 3: Ping vas-site VIP (MetalLB)
+    - name: Ping vas Traefik VIP
+      ansible.builtin.command: >-
+        ping -c 3 -W 5 {{ vault_metallb_vas_vip | default('[vas-vip]') }}
+      register: vas_vip_ping
+      changed_when: false
+      ignore_errors: true
+      when: vault_metallb_vas_vip is defined
+
+    - name: Display vas VIP ping result
+      ansible.builtin.debug:
+        msg: >-
+          Vas VIP {{ vault_metallb_vas_vip | default('[vas-vip]') }}:
+          {{ 'REACHABLE' if vas_vip_ping.rc | default(1) == 0 else 'UNREACHABLE' }}
+      when: vault_metallb_vas_vip is defined
+
+    # Test 4: HTTP check on bay Traefik VIP
+    - name: HTTP check on bay Traefik VIP
+      ansible.builtin.uri:
+        url: "http://{{ vault_metallb_bay_vip | default('[bay-vip]') }}"
+        method: GET
+        timeout: 10
+        validate_certs: false
+        status_code: [200, 301, 302, 404]
+      register: bay_http
+      ignore_errors: true
+      when: vault_metallb_bay_vip is defined
+
+    - name: Display bay HTTP result
+      ansible.builtin.debug:
+        msg: >-
+          Bay VIP HTTP:
+          {{ 'OK (status ' ~ bay_http.status | default('N/A') ~ ')'
+             if not bay_http.failed | default(true)
+             else 'FAILED - ' ~ bay_http.msg | default('connection error') }}
+      when: vault_metallb_bay_vip is defined
+
+    # Test 5: HTTP check on vas Traefik VIP
+    - name: HTTP check on vas Traefik VIP
+      ansible.builtin.uri:
+        url: "http://{{ vault_metallb_vas_vip | default('[vas-vip]') }}"
+        method: GET
+        timeout: 10
+        validate_certs: false
+        status_code: [200, 301, 302, 404]
+      register: vas_http
+      ignore_errors: true
+      when: vault_metallb_vas_vip is defined
+
+    - name: Display vas HTTP result
+      ansible.builtin.debug:
+        msg: >-
+          Vas VIP HTTP:
+          {{ 'OK (status ' ~ vas_http.status | default('N/A') ~ ')'
+             if not vas_http.failed | default(true)
+             else 'FAILED - ' ~ vas_http.msg | default('connection error') }}
+      when: vault_metallb_vas_vip is defined
+
+    # Test 6: Check HAProxy backend status (if stats API is available)
+    - name: Check HAProxy stats for backend health
+      ansible.builtin.command: >-
+        curl -sf http://127.0.0.1:{{ vault_haproxy_stats_port | default('8404') }}/stats
+      register: haproxy_stats
+      changed_when: false
+      ignore_errors: true
+      when: vault_haproxy_stats_port is defined
+
+    - name: Display HAProxy backend summary
+      ansible.builtin.debug:
+        msg: "HAProxy stats: {{ 'available' if haproxy_stats.rc | default(1) == 0 else 'not available or not configured' }}"
+      when: vault_haproxy_stats_port is defined
+
+    # Summary
+    - name: Display test summary
+      ansible.builtin.debug:
+        msg:
+          - "=== End-to-End Test Summary ==="
+          - "WireGuard: {{ 'UP' if wg_status.rc == 0 else 'DOWN' }}"
+          - "Bay VIP ping: {{ 'PASS' if bay_vip_ping.rc | default(1) == 0 else 'FAIL' }}"
+          - "Vas VIP ping: {{ 'PASS' if vas_vip_ping.rc | default(1) == 0 else 'FAIL' }}"
+          - "Bay HTTP: {{ 'PASS' if not bay_http.failed | default(true) else 'FAIL' }}"
+          - "Vas HTTP: {{ 'PASS' if not vas_http.failed | default(true) else 'FAIL' }}"
+          - "================================"
+
+- name: End-to-end VIP test (from control plane)
+  hosts: kuber_small_planes[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - metallb
+    - e2e
+    - test
+
+  tasks:
+    - name: Get MetalLB service VIPs
+      ansible.builtin.command: >-
+        kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type=="LoadBalancer")]}{.metadata.namespace}/{.metadata.name}: {.status.loadBalancer.ingress[0].ip}{"\n"}{end}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_services
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display LoadBalancer services with VIPs
+      ansible.builtin.debug:
+        msg: "{{ metallb_services.stdout_lines | default(['No LoadBalancer services found']) }}"
+
+    - name: Get MetalLB BGP peer status
+      ansible.builtin.command: >-
+        kubectl -n metallb-system get bgppeers.metallb.io -o jsonpath='{range .items[*]}{.metadata.name}: {.spec.peerAddress} ASN {.spec.peerASN}{"\n"}{end}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: metallb_bgp_peers
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display MetalLB BGP peers
+      ansible.builtin.debug:
+        msg: "{{ metallb_bgp_peers.stdout_lines | default(['No BGP peers found']) }}"

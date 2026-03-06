@@ -1,0 +1,5 @@
+---
+# Audit settings
+wg_audit_fail_on_drift: true
+wg_audit_fail_on_conflict: true
+wg_audit_handshake_stale_seconds: 180

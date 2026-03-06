@@ -1,0 +1,10 @@
+[Unit]
+Description=Run WireGuard metrics collector periodically
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec={{ wg_exporter_interval }}
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

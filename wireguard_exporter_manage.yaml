@@ -1,0 +1,63 @@
+---
+# Deploy WireGuard Prometheus metrics exporter on all WireGuard hosts
+#
+# This deploys a systemd timer that periodically writes WireGuard peer
+# metrics to a textfile that node-exporter scrapes. It also deploys
+# PrometheusRule alerts for stale handshakes, down peers, and interface issues.
+#
+# Usage:
+#   ansible-playbook -i inventory wireguard_exporter_manage.yaml
+#   ansible-playbook -i inventory wireguard_exporter_manage.yaml --tags exporter
+#   ansible-playbook -i inventory wireguard_exporter_manage.yaml --tags alerts
+
+- name: Deploy WireGuard metrics exporter
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - monitoring
+    - exporter
+  roles:
+    - wireguard_exporter
+
+- name: Deploy WireGuard PrometheusRule alerts
+  hosts: kuber_small_planes[0]
+  become: true
+  gather_facts: false
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - monitoring
+    - alerts
+
+  tasks:
+    - name: Deploy WireGuard PrometheusRule
+      ansible.builtin.template:
+        src: roles/wireguard_exporter/templates/wireguard-alerts.rules.yaml.j2
+        dest: /tmp/wireguard-alerts.rules.yaml
+        mode: "0644"
+
+    - name: Apply WireGuard PrometheusRule to cluster
+      ansible.builtin.command: kubectl apply -f /tmp/wireguard-alerts.rules.yaml
+      register: wg_alerts_apply
+      changed_when: "'created' in wg_alerts_apply.stdout or 'configured' in wg_alerts_apply.stdout"
+
+    - name: Clean up temporary manifest
+      ansible.builtin.file:
+        path: /tmp/wireguard-alerts.rules.yaml
+        state: absent
+
+    - name: Verify PrometheusRule was created
+      ansible.builtin.command: kubectl get prometheusrule wireguard-alerts -n monitoring
+      register: wg_alerts_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display alert deployment status
+      ansible.builtin.debug:
+        msg: "WireGuard PrometheusRule: {{ 'deployed' if wg_alerts_check.rc == 0 else 'failed' }}"

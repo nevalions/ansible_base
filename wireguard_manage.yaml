@@ -159,6 +159,20 @@
         - wg_first_vas_worker_peer | default('') | length > 0
         - vault_wg_vas_vip_overrides | default([]) | length > 0
 
+    - name: Validate vas VIP overrides against MetalLB pool
+      ansible.builtin.assert:
+        that:
+          - vip_warnings | length == 0
+        fail_msg: "VIP override warnings: {{ vip_warnings | join('; ') }}"
+        success_msg: "All vas VIP /32 overrides are valid"
+      vars:
+        vip_warnings: >-
+          {{
+            wg_metallb_pool_cidr_normalized
+            | validate_vip_overrides(vault_wg_vas_vip_overrides | default([]))
+          }}
+      when: vault_wg_vas_vip_overrides | default([]) | length > 0
+
     - name: Debug computed peer extra CIDRs
       ansible.builtin.debug:
         msg: "Per-peer extra CIDRs: {{ wg_computed_peers_extra_cidrs }}"

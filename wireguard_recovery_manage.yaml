@@ -1,0 +1,22 @@
+---
+# Deploy WireGuard automatic peer recovery on all WireGuard hosts
+#
+# Deploys a systemd timer that periodically checks tunnel health and
+# automatically restarts the WireGuard interface if peers are unreachable.
+# Includes exponential backoff to prevent tunnel flapping.
+#
+# Usage:
+#   ansible-playbook -i inventory wireguard_recovery_manage.yaml
+
+- name: Deploy WireGuard automatic recovery
+  hosts: wireguard_cluster
+  become: true
+  gather_facts: true
+  serial: 1
+  vars_files:
+    - vault_secrets.yml
+  tags:
+    - wireguard
+    - recovery
+  roles:
+    - wireguard_recovery

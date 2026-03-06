@@ -80,6 +80,25 @@
   run_once: true
   delegate_to: "{{ metallb_verify_delegate }}"
 
+- name: Verify speaker pods only run on worker nodes
+  ansible.builtin.command: >-
+    kubectl -n {{ metallb_namespace }} get pods -l component=speaker
+    -o jsonpath='{range .items[*]}{.spec.nodeName}{"\n"}{end}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_speaker_nodes
+  changed_when: false
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+
+- name: Display speaker node placement
+  ansible.builtin.debug:
+    msg: "Speaker pods running on: {{ metallb_speaker_nodes.stdout_lines | default([]) | join(', ') }}"
+  run_once: true
+  delegate_to: "{{ metallb_verify_delegate }}"
+  when: metallb_speaker_nodes.stdout_lines is defined
+
 - name: Get MetalLB IPAddressPools
   ansible.builtin.command: kubectl -n {{ metallb_namespace }} get ipaddresspools.metallb.io
   environment:

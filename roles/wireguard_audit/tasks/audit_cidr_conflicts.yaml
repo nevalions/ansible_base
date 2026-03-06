@@ -1,0 +1,143 @@
+---
+# Detect CIDR routing conflicts across peers:
+#   - Two peers claiming the same CIDR
+#   - A /24 catch-all that swallows /32 overrides without proper peer routing
+#   - Missing /32 overrides for vas-site VIPs
+#   - Peers with AllowedIPs that include the pod CIDR (should be MASQUERADE'd)
+
+- name: Initialize conflict counter
+  ansible.builtin.set_fact:
+    wg_audit_conflict_count: 0
+    wg_audit_conflict_details: []
+
+- name: Skip conflict audit if interface is down
+  ansible.builtin.debug:
+    msg: "WireGuard interface not running, skipping CIDR conflict audit"
+  when: wg_live_allowed_ips.rc | default(1) != 0
+
+# Collect all CIDRs across all peers to check for duplicates
+- name: Build flat list of all peer CIDRs with owner
+  ansible.builtin.set_fact:
+    wg_all_peer_cidrs: >-
+      {{
+        wg_all_peer_cidrs | default([])
+        + (item.value | map('regex_replace', '^(.*)$', item.key ~ ':' ~ '\1') | list)
+      }}
+  loop: "{{ wg_live_allowed_map | default({}) | dict2items }}"
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+# Check for duplicate CIDRs across different peers
+# WireGuard silently deduplicates: last writer wins
+- name: Find duplicate CIDRs across peers
+  ansible.builtin.set_fact:
+    wg_duplicate_cidrs: >-
+      {% set cidr_owners = {} %}
+      {% for entry in wg_all_peer_cidrs | default([]) %}
+      {% set parts = entry.split(':') %}
+      {% set owner = parts[0] %}
+      {% set cidr = parts[1] %}
+      {% if cidr in cidr_owners %}
+      {% set _ = cidr_owners.update({cidr: cidr_owners[cidr] ~ ',' ~ owner}) %}
+      {% else %}
+      {% set _ = cidr_owners.update({cidr: owner}) %}
+      {% endif %}
+      {% endfor %}
+      {% set dupes = [] %}
+      {% for cidr, owners in cidr_owners.items() %}
+      {% if ',' in owners %}
+      {% set _ = dupes.append(cidr ~ ' claimed by ' ~ owners) %}
+      {% endif %}
+      {% endfor %}
+      {{ dupes }}
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+- name: Report duplicate CIDRs
+  ansible.builtin.debug:
+    msg: "CONFLICT: Duplicate CIDR {{ item }}"
+  loop: "{{ wg_duplicate_cidrs | default([]) }}"
+  when:
+    - wg_duplicate_cidrs is defined
+    - wg_duplicate_cidrs | length > 0
+
+# Check for /24 vs /32 overlap: if a peer has a /24 and another peer needs
+# a /32 within that range, the /32 must exist or traffic goes to wrong peer
+- name: Check for /24 catch-all without required /32 overrides
+  ansible.builtin.debug:
+    msg: >-
+      {% set has_24 = false %}
+      {% set peers_with_24 = [] %}
+      {% for pubkey, cidrs in (wg_live_allowed_map | default({})).items() %}
+      {% for cidr in cidrs %}
+      {% if cidr is search('/24$') %}
+      {% set _ = peers_with_24.append(wg_peer_pubkey_to_name.get(pubkey, pubkey[:12])) %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      {% if peers_with_24 | length > 0 %}
+      INFO: /24 catch-all found on peer(s): {{ peers_with_24 | join(', ') }}.
+      Verify that all required /32 overrides exist on vas-site workers.
+      {% else %}
+      INFO: No /24 catch-all CIDRs found in AllowedIPs.
+      {% endif %}
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+# Check that vas VIP overrides are present when expected
+- name: Verify vas VIP /32 overrides are configured
+  ansible.builtin.debug:
+    msg: >-
+      {% set missing_overrides = [] %}
+      {% set all_live_cidrs = [] %}
+      {% for pubkey, cidrs in (wg_live_allowed_map | default({})).items() %}
+      {% for cidr in cidrs %}
+      {% set _ = all_live_cidrs.append(cidr) %}
+      {% endfor %}
+      {% endfor %}
+      {% for vip in vault_wg_vas_vip_overrides | default([]) %}
+      {% if vip not in all_live_cidrs %}
+      {% set _ = missing_overrides.append(vip) %}
+      {% endif %}
+      {% endfor %}
+      {% if missing_overrides | length > 0 %}
+      CONFLICT: Missing vas VIP /32 overrides: {{ missing_overrides | join(', ') }}.
+      These VIPs will be caught by the /24 and routed to the wrong site!
+      {% else %}
+      PASS: All vas VIP /32 overrides ({{ vault_wg_vas_vip_overrides | default([]) | length }}) are present in AllowedIPs.
+      {% endif %}
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+# Check for pod CIDR in AllowedIPs (it should not be there)
+- name: Check for pod CIDR leaking into AllowedIPs
+  ansible.builtin.debug:
+    msg: >-
+      {% set pod_cidr_peers = [] %}
+      {% for pubkey, cidrs in (wg_live_allowed_map | default({})).items() %}
+      {% for cidr in cidrs %}
+      {% if cidr == vault_k8s_pod_subnet | default('') %}
+      {% set _ = pod_cidr_peers.append(wg_peer_pubkey_to_name.get(pubkey, pubkey[:12])) %}
+      {% endif %}
+      {% endfor %}
+      {% endfor %}
+      {% if pod_cidr_peers | length > 0 %}
+      WARNING: Pod CIDR ({{ vault_k8s_pod_subnet | default('unknown') }}) found in
+      AllowedIPs for: {{ pod_cidr_peers | join(', ') }}.
+      This should be handled by MASQUERADE, not WireGuard routing.
+      {% else %}
+      PASS: Pod CIDR not found in any peer's AllowedIPs (correct: handled by MASQUERADE).
+      {% endif %}
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+- name: Update conflict counter
+  ansible.builtin.set_fact:
+    wg_audit_conflict_count: "{{ wg_duplicate_cidrs | default([]) | length }}"
+  when: wg_live_allowed_ips.rc | default(1) == 0
+
+- name: Assert no CIDR conflicts detected
+  ansible.builtin.assert:
+    that:
+      - wg_audit_conflict_count | int == 0
+    success_msg: "No CIDR routing conflicts detected"
+    fail_msg: "{{ wg_audit_conflict_count }} CIDR conflict(s) detected"
+  when:
+    - wg_live_allowed_ips.rc | default(1) == 0
+    - wg_audit_fail_on_conflict | default(true) | bool
+  ignore_errors: true

@@ -1,0 +1,107 @@
+#!/bin/bash
+# WireGuard automatic recovery checker
+# Deployed by Ansible role: wireguard_recovery
+#
+# Monitors WireGuard tunnel health and restarts the interface if:
+#   1. The interface is missing/down
+#   2. Fewer than {{ wg_recovery_min_healthy_peers }} peers respond to ping
+#   3. Consecutive failures exceed {{ wg_recovery_failure_threshold }}
+#
+# Includes exponential backoff to prevent tunnel flapping.
+
+set -euo pipefail
+
+INTERFACE="{{ wg_recovery_interface }}"
+FAILURE_THRESHOLD={{ wg_recovery_failure_threshold }}
+COOLDOWN_SECONDS={{ wg_recovery_cooldown_seconds }}
+PING_TIMEOUT={{ wg_recovery_ping_timeout }}
+MIN_HEALTHY_PEERS={{ wg_recovery_min_healthy_peers }}
+LOG_FILE="{{ wg_recovery_log_file }}"
+STATE_FILE="/var/run/wg-recovery-${INTERFACE}.state"
+
+log() {
+    echo "$(date -Iseconds) $1" >> "${LOG_FILE}"
+}
+
+# Read state (consecutive failures and last restart time)
+FAILURES=0
+LAST_RESTART=0
+if [ -f "${STATE_FILE}" ]; then
+    FAILURES=$(head -1 "${STATE_FILE}" 2>/dev/null || echo 0)
+    LAST_RESTART=$(tail -1 "${STATE_FILE}" 2>/dev/null || echo 0)
+fi
+
+# Check 1: Interface exists
+if ! ip link show "${INTERFACE}" &>/dev/null; then
+    FAILURES=$((FAILURES + 1))
+    log "FAIL: Interface ${INTERFACE} does not exist (failure ${FAILURES}/${FAILURE_THRESHOLD})"
+    echo "${FAILURES}" > "${STATE_FILE}"
+    echo "${LAST_RESTART}" >> "${STATE_FILE}"
+
+    if [ "${FAILURES}" -ge "${FAILURE_THRESHOLD}" ]; then
+        NOW=$(date +%s)
+        ELAPSED=$((NOW - LAST_RESTART))
+        if [ "${ELAPSED}" -ge "${COOLDOWN_SECONDS}" ]; then
+            log "RECOVERY: Restarting wg-quick@${INTERFACE} after ${FAILURES} consecutive failures"
+            systemctl restart "wg-quick@${INTERFACE}" 2>&1 | while read -r line; do log "  systemctl: ${line}"; done
+            echo "0" > "${STATE_FILE}"
+            echo "${NOW}" >> "${STATE_FILE}"
+            log "RECOVERY: Restart completed"
+        else
+            log "COOLDOWN: ${ELAPSED}s since last restart (cooldown: ${COOLDOWN_SECONDS}s), skipping"
+        fi
+    fi
+    exit 0
+fi
+
+# Check 2: Ping peers using /32 AllowedIPs
+HEALTHY=0
+TOTAL=0
+while IFS=$'\t' read -r _ allowed_ips; do
+    for cidr in ${allowed_ips}; do
+        if [[ "${cidr}" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/32$ ]]; then
+            PEER_IP="${BASH_REMATCH[1]}"
+            TOTAL=$((TOTAL + 1))
+            if ping -c 1 -W "${PING_TIMEOUT}" "${PEER_IP}" &>/dev/null; then
+                HEALTHY=$((HEALTHY + 1))
+            fi
+        fi
+    done
+done < <(wg show "${INTERFACE}" allowed-ips 2>/dev/null || true)
+
+if [ "${TOTAL}" -eq 0 ]; then
+    log "INFO: No peers with /32 AllowedIPs found, skipping ping check"
+    echo "0" > "${STATE_FILE}"
+    echo "${LAST_RESTART}" >> "${STATE_FILE}"
+    exit 0
+fi
+
+if [ "${HEALTHY}" -ge "${MIN_HEALTHY_PEERS}" ]; then
+    # Reset failure counter on success
+    if [ "${FAILURES}" -gt 0 ]; then
+        log "OK: ${HEALTHY}/${TOTAL} peers healthy, resetting failure counter (was ${FAILURES})"
+    fi
+    echo "0" > "${STATE_FILE}"
+    echo "${LAST_RESTART}" >> "${STATE_FILE}"
+    exit 0
+fi
+
+# Not enough healthy peers
+FAILURES=$((FAILURES + 1))
+log "FAIL: Only ${HEALTHY}/${TOTAL} peers healthy (need ${MIN_HEALTHY_PEERS}), failure ${FAILURES}/${FAILURE_THRESHOLD}"
+echo "${FAILURES}" > "${STATE_FILE}"
+echo "${LAST_RESTART}" >> "${STATE_FILE}"
+
+if [ "${FAILURES}" -ge "${FAILURE_THRESHOLD}" ]; then
+    NOW=$(date +%s)
+    ELAPSED=$((NOW - LAST_RESTART))
+    if [ "${ELAPSED}" -ge "${COOLDOWN_SECONDS}" ]; then
+        log "RECOVERY: Restarting wg-quick@${INTERFACE} after ${FAILURES} failures (${HEALTHY}/${TOTAL} peers healthy)"
+        systemctl restart "wg-quick@${INTERFACE}" 2>&1 | while read -r line; do log "  systemctl: ${line}"; done
+        echo "0" > "${STATE_FILE}"
+        echo "${NOW}" >> "${STATE_FILE}"
+        log "RECOVERY: Restart completed, waiting for peers to reconnect"
+    else
+        log "COOLDOWN: ${ELAPSED}s since last restart (cooldown: ${COOLDOWN_SECONDS}s), skipping"
+    fi
+fi

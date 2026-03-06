@@ -1,0 +1,10 @@
+[Unit]
+Description=WireGuard metrics collector for Prometheus
+After=network.target wg-quick@{{ wg_exporter_interface }}.service
+
+[Service]
+Type=oneshot
+ExecStart={{ wg_exporter_script_path }}
+# Needs NET_ADMIN to read wg show
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN

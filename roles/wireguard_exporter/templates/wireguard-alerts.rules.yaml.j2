@@ -1,0 +1,73 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: wireguard-alerts
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: wireguard.rules
+      rules:
+        - alert: WireguardInterfaceDown
+          expr: wireguard_interface_up == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "WireGuard interface down on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              WireGuard interface {{ '{{' }} $labels.interface {{ '}}' }} is down on
+              {{ '{{' }} $labels.instance {{ '}}' }}. Tunnel connectivity lost.
+
+        - alert: WireguardPeerHandshakeStale
+          expr: wireguard_peer_last_handshake_seconds > 300
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WireGuard peer handshake stale on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
+              {{ '{{' }} $labels.instance {{ '}}' }} has not completed a handshake
+              in {{ '{{' }} $value {{ '}}' }} seconds (threshold: 300s).
+
+        - alert: WireguardPeerHandshakeCritical
+          expr: wireguard_peer_last_handshake_seconds > 900
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "WireGuard peer handshake critical on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
+              {{ '{{' }} $labels.instance {{ '}}' }} has not completed a handshake
+              in {{ '{{' }} $value {{ '}}' }} seconds (threshold: 900s / 15min).
+              Tunnel may be completely down.
+
+        - alert: WireguardPeerDown
+          expr: wireguard_peer_up == 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "WireGuard peer down on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
+              {{ '{{' }} $labels.instance {{ '}}' }} has no recent handshake.
+              Zero traffic for more than 10 minutes.
+
+        - alert: WireguardPeerNoTraffic
+          expr: >-
+            wireguard_peer_receive_bytes_total == 0
+            and wireguard_peer_transmit_bytes_total == 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "WireGuard peer has zero traffic on {{ '{{' }} $labels.instance {{ '}}' }}"
+            description: >-
+              Peer {{ '{{' }} $labels.public_key {{ '}}' }} on
+              {{ '{{' }} $labels.instance {{ '}}' }} has 0 rx/tx bytes.
+              This peer may have never connected.

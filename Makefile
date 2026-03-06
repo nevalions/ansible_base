@@ -1,8 +1,8 @@
-.PHONY: test all lint syntax check security-tests unit-tests integration-tests
+.PHONY: test all lint syntax check security-tests wg-routing-tests unit-tests integration-tests
 .PHONY: lint-playbook syntax-playbook help
 
 # Main test target - runs everything
-test all: lint syntax security-tests unit-tests integration-tests
+test all: lint syntax security-tests wg-routing-tests unit-tests integration-tests
 	@echo ""
 	@echo "=========================================="
 	@echo "All tests completed successfully!"
@@ -36,6 +36,14 @@ security-tests:
 	@echo "=========================================="
 	@python3 tests/test_security_filters.py
 	@echo "✓ Security filter tests passed"
+
+# Run WireGuard routing filter tests (Python)
+wg-routing-tests:
+	@echo "=========================================="
+	@echo "Running WireGuard routing filter tests..."
+	@echo "=========================================="
+	@python3 tests/test_wg_routing_filters.py
+	@echo "✓ WireGuard routing filter tests passed"
 
 # Run all unit tests
 unit-tests:
@@ -86,6 +94,7 @@ help:
 	@echo "  make lint              Run ansible-lint on entire repository"
 	@echo "  make syntax            Run syntax checks on all playbooks"
 	@echo "  make security-tests    Run Python security filter tests"
+	@echo "  make wg-routing-tests  Run WireGuard routing filter tests"
 	@echo "  make unit-tests        Run all unit tests"
 	@echo "  make integration-tests Run integration tests in check mode"
 	@echo "  make check             Alias for integration-tests"

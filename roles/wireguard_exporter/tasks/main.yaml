@@ -1,0 +1,61 @@
+---
+# Deploy WireGuard metrics collector for Prometheus node-exporter textfile collector
+# Option C from KL-34: Ansible-deployed systemd timer + textfile on each host
+
+- name: Ensure textfile collector directory exists
+  ansible.builtin.file:
+    path: "{{ wg_exporter_textfile_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy WireGuard metrics collector script
+  ansible.builtin.template:
+    src: wg-metrics-collector.sh.j2
+    dest: "{{ wg_exporter_script_path }}"
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart wg-metrics-collector timer
+
+- name: Deploy systemd service unit
+  ansible.builtin.template:
+    src: wg-metrics-collector.service.j2
+    dest: /etc/systemd/system/wg-metrics-collector.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart wg-metrics-collector timer
+
+- name: Deploy systemd timer unit
+  ansible.builtin.template:
+    src: wg-metrics-collector.timer.j2
+    dest: /etc/systemd/system/wg-metrics-collector.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart wg-metrics-collector timer
+
+- name: Enable and start wg-metrics-collector timer
+  ansible.builtin.systemd_service:
+    name: wg-metrics-collector.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Run initial metrics collection
+  ansible.builtin.command: "{{ wg_exporter_script_path }}"
+  changed_when: true
+
+- name: Verify metrics file was created
+  ansible.builtin.stat:
+    path: "{{ wg_exporter_textfile_dir }}/{{ wg_exporter_metrics_file }}"
+  register: wg_metrics_file
+
+- name: Assert metrics file exists
+  ansible.builtin.assert:
+    that:
+      - wg_metrics_file.stat.exists
+    success_msg: "Metrics file created at {{ wg_exporter_textfile_dir }}/{{ wg_exporter_metrics_file }}"
+    fail_msg: "Metrics file was not created"

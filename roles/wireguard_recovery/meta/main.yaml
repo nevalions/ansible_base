@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: linroot
+  description: >-
+    Automatic WireGuard tunnel recovery using a systemd timer that
+    monitors peer connectivity and restarts the interface on failure.
+    Includes exponential backoff and logging for post-mortem analysis.
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+
+  galaxy_tags:
+    - wireguard
+    - networking
+    - recovery
+    - automation
+
+dependencies: []

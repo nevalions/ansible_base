@@ -34,6 +34,28 @@
     msg: "WireGuard interface {{ vault_wg_interface }} IP: {{ wg_interface_ip.stdout }}"
   when: wg_interface_ip.stdout is defined
 
+- name: Check WireGuard interface MTU
+  ansible.builtin.command: ip link show {{ vault_wg_interface }}
+  register: wg_mtu_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Extract MTU value
+  ansible.builtin.set_fact:
+    wg_interface_mtu: "{{ wg_mtu_check.stdout | regex_search('mtu (\\d+)', '\\1') | first | default('unknown') }}"
+  when: wg_mtu_check.rc == 0
+
+- name: Verify MTU is consistent (expected 1420)
+  ansible.builtin.assert:
+    that:
+      - wg_interface_mtu | int == verify_expected_mtu | int
+    success_msg: "MTU {{ wg_interface_mtu }} matches expected {{ verify_expected_mtu }}"
+    fail_msg: "MTU mismatch: {{ wg_interface_mtu }} (expected {{ verify_expected_mtu }})"
+  when:
+    - wg_mtu_check.rc == 0
+    - wg_interface_mtu is defined
+  ignore_errors: true
+
 - name: Check if WireGuard service is active
   ansible.builtin.systemd_service:
     name: "wg-quick@{{ vault_wg_interface }}"

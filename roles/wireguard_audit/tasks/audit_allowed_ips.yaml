@@ -1,0 +1,114 @@
+---
+# Audit AllowedIPs: compare live wg show output against vault-computed values
+# Detects config drift where AllowedIPs on a host don't match what the vault says
+
+- name: Initialize drift counter
+  ansible.builtin.set_fact:
+    wg_audit_drift_count: 0
+
+- name: Get live AllowedIPs from wg show
+  ansible.builtin.command: wg show {{ vault_wg_interface }} allowed-ips
+  register: wg_live_allowed_ips
+  changed_when: false
+  failed_when: false
+
+- name: Skip audit if interface is down
+  ansible.builtin.debug:
+    msg: "WireGuard interface {{ vault_wg_interface }} is not running, skipping AllowedIPs audit"
+  when: wg_live_allowed_ips.rc != 0
+
+- name: Parse live AllowedIPs into dict (pubkey -> list of CIDRs)
+  ansible.builtin.set_fact:
+    wg_live_allowed_map: >-
+      {{
+        wg_live_allowed_map | default({})
+        | combine({
+            (item.split('\t')[0] | default('')):
+            (item.split('\t')[1] | default('') | trim).split(' ')
+            | select('match', '^[0-9]')
+            | list
+          })
+      }}
+  loop: "{{ wg_live_allowed_ips.stdout_lines | default([]) }}"
+  when:
+    - wg_live_allowed_ips.rc == 0
+    - "'\t' in item"
+
+- name: Build expected AllowedIPs from vault peers
+  ansible.builtin.set_fact:
+    wg_expected_peer_cidrs: >-
+      {{
+        wg_expected_peer_cidrs | default({})
+        | combine({
+            item.name: (
+              [item.allowed_ips | default('')]
+              + (wg_computed_peers_extra_cidrs[item.name] | default([]))
+            ) | select('match', '^[0-9]') | unique | sort | list
+          })
+      }}
+  loop: "{{ vault_wg_peers | default([]) }}"
+  when:
+    - wg_live_allowed_ips.rc == 0
+    - wg_computed_peers_extra_cidrs is defined
+
+- name: Map peer names to public keys for comparison
+  ansible.builtin.set_fact:
+    wg_peer_pubkey_to_name: >-
+      {{
+        wg_peer_pubkey_to_name | default({})
+        | combine({
+            vault_wg_peer_public_keys[item.name]:
+            item.name
+          })
+      }}
+  loop: "{{ vault_wg_peers | default([]) }}"
+  when:
+    - wg_live_allowed_ips.rc == 0
+    - vault_wg_peer_public_keys is defined
+    - item.name in vault_wg_peer_public_keys
+
+- name: Compare live vs expected AllowedIPs per peer
+  ansible.builtin.debug:
+    msg: >-
+      {% set peer_name = wg_peer_pubkey_to_name.get(item.key, 'unknown') %}
+      {% set live_sorted = item.value | sort %}
+      {% set expected = (wg_expected_peer_cidrs.get(peer_name, []) | sort) %}
+      {% if live_sorted == expected %}
+      PASS: Peer {{ peer_name }} AllowedIPs match vault ({{ live_sorted | length }} CIDRs)
+      {% else %}
+      DRIFT: Peer {{ peer_name }}
+        Live:     {{ live_sorted | join(', ') }}
+        Expected: {{ expected | join(', ') }}
+        Missing:  {{ expected | difference(live_sorted) | join(', ') or 'none' }}
+        Extra:    {{ live_sorted | difference(expected) | join(', ') or 'none' }}
+      {% endif %}
+  loop: "{{ wg_live_allowed_map | default({}) | dict2items }}"
+  when:
+    - wg_live_allowed_ips.rc == 0
+    - wg_expected_peer_cidrs is defined
+
+- name: Count peers with AllowedIPs drift
+  ansible.builtin.set_fact:
+    wg_audit_drift_count: >-
+      {{
+        (wg_live_allowed_map | default({}) | dict2items
+          | selectattr('key', 'in', wg_peer_pubkey_to_name | default({}))
+          | map(attribute='key')
+          | list
+          | map('extract', wg_live_allowed_map | default({}))
+          | list
+        ) | length
+      }}
+  when:
+    - wg_live_allowed_ips.rc == 0
+
+- name: Assert no AllowedIPs drift detected
+  ansible.builtin.assert:
+    that:
+      - wg_audit_drift_count | int == 0
+    success_msg: "All peer AllowedIPs match vault-computed values"
+    fail_msg: "AllowedIPs drift detected on {{ wg_audit_drift_count }} peer(s)"
+  when:
+    - wg_live_allowed_ips.rc == 0
+    - wg_audit_fail_on_drift | default(true) | bool
+  ignore_errors: true

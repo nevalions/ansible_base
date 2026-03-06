@@ -176,6 +176,25 @@
   delegate_to: "{{ metallb_kubectl_delegate }}"
   when: metallb_controller_run_on_control_plane | bool
 
+- name: Restrict MetalLB speaker to worker nodes only
+  ansible.builtin.command: >-
+    kubectl -n {{ metallb_namespace }} patch ds/speaker --type=merge -p
+    '{"spec":{"template":{"spec":{
+      "affinity":{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{
+        "nodeSelectorTerms":[{"matchExpressions":[
+          {"key":"node-role.kubernetes.io/control-plane","operator":"DoesNotExist"}
+        ]}]
+      }}}
+    }}}}}'
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: metallb_speaker_restrict
+  changed_when: "metallb_speaker_restrict.rc == 0"
+  failed_when: false
+  run_once: true
+  delegate_to: "{{ metallb_kubectl_delegate }}"
+  when: metallb_speaker_workers_only | default(true) | bool
+
 - name: Wait for MetalLB namespace to exist
   ansible.builtin.command: kubectl get ns {{ metallb_namespace }}
   environment:

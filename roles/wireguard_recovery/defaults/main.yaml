@@ -1,0 +1,28 @@
+---
+# WireGuard recovery settings
+wg_recovery_enabled: true
+
+# WireGuard interface to monitor
+wg_recovery_interface: "{{ vault_wg_interface | default('[interface-name]') }}"
+
+# Check interval
+wg_recovery_check_interval: "60s"
+
+# Number of consecutive failures before restarting
+wg_recovery_failure_threshold: 3
+
+# Cooldown period between restarts (prevents flapping)
+wg_recovery_cooldown_seconds: 300
+
+# Ping timeout per peer (seconds)
+wg_recovery_ping_timeout: 5
+
+# Minimum number of peers that must respond for tunnel to be "healthy"
+# Set to 0 to only check if the interface exists
+wg_recovery_min_healthy_peers: 1
+
+# Log file for recovery events
+wg_recovery_log_file: /var/log/wg-recovery.log
+
+# Script location
+wg_recovery_script_path: /usr/local/bin/wg-recovery-check.sh

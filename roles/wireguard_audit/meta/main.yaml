@@ -1,0 +1,26 @@
+---
+galaxy_info:
+  author: linroot
+  description: >-
+    Audit WireGuard AllowedIPs across all peers — detect /24 vs /32
+    routing conflicts, config drift against vault-computed values,
+    and missing vas-site VIP overrides.
+  company: null
+  license: MIT
+  min_ansible_version: 2.16
+
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - jammy
+
+  galaxy_tags:
+    - wireguard
+    - networking
+    - audit
+    - security
+
+dependencies: []
