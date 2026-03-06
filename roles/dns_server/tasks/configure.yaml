@@ -24,12 +24,52 @@
   ansible.builtin.copy:
     content: |
       nameserver 127.0.0.1
-      nameserver 8.8.8.8
+      nameserver {{ (dns_upstream_dns | first) | default('1.1.1.1') }}
     dest: /etc/resolv.conf
     mode: '0644'
   when:
     - dns_operation == "install"
     - ansible_facts['os_family'] == 'Debian'
+
+# ── Orphan protection ────────────────────────────────────────────────────────
+# Kill any orphaned unbound processes that survived a previous debug session
+# or failed restart. These bind to port 53 via SO_REUSEPORT and silently
+# steal ~50% of DNS queries with stale config/cache.
+
+- name: Kill orphaned unbound processes
+  ansible.builtin.shell: |
+    count=$(pgrep -cx unbound 2>/dev/null || echo 0)
+    if [ "$count" -gt 1 ]; then
+      echo "Found $count unbound processes, killing all"
+      killall -9 unbound 2>/dev/null || true
+      sleep 1
+    elif [ "$count" -eq 1 ]; then
+      echo "Single unbound process, no orphans"
+    else
+      echo "No unbound processes running"
+    fi
+  register: orphan_check
+  changed_when: "'killing all' in orphan_check.stdout"
+  when:
+    - dns_operation == "install"
+    - not ansible_check_mode
+
+- name: Ensure unbound systemd override directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/unbound.service.d
+    state: directory
+    mode: '0755'
+  when: dns_operation == "install"
+
+- name: Deploy unbound systemd override (orphan kill on start)
+  ansible.builtin.template:
+    src: unbound-override.conf.j2
+    dest: /etc/systemd/system/unbound.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart unbound
+  when: dns_operation == "install"
 
 - name: Deploy Unbound main configuration
   ansible.builtin.template:

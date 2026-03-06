@@ -1,0 +1,10 @@
+# Managed by Ansible (dns_server role) - DO NOT EDIT
+#
+# Systemd override for the unbound service.
+# Kills orphaned unbound processes before (re)starting the service.
+# Prevents SO_REUSEPORT from load-balancing DNS queries to a stale
+# zombie process with outdated config/cache — the root cause of
+# intermittent ANSWER:0 referral responses that break image pulls.
+[Service]
+ExecStartPre=-/usr/bin/pkill -x unbound
+ExecStartPre=/bin/sleep 1

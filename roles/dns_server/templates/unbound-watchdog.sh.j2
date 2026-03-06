@@ -2,57 +2,103 @@
 # Managed by Ansible (dns_server role) - DO NOT EDIT
 #
 # Unbound forwarding watchdog.
-# Tests whether Unbound can resolve an external domain. If resolution fails:
+# Tests whether Unbound can resolve external domains. If resolution fails:
 #   1. Flush the entire cache via unbound-control
 #   2. Wait and retry
 #   3. If still failing, restart the Unbound service
+#
+# After a restart, a cooldown period prevents immediate re-checking so the
+# cache can warm up. Without this, the watchdog can create a restart thrash
+# loop where Unbound never stabilizes.
 #
 # Designed to run as a systemd timer (unbound-watchdog.timer) every
 # {{ dns_watchdog_interval }}.
 
 set -euo pipefail
 
-TEST_DOMAIN="{{ dns_watchdog_test_domain }}"
-TIMEOUT=3
-TRIES=1
+TEST_DOMAINS=({% for domain in dns_watchdog_test_domains %}"{{ domain }}" {% endfor %})
+TIMEOUT={{ dns_watchdog_timeout }}
+TRIES={{ dns_watchdog_tries }}
+COOLDOWN_FILE="/run/unbound-watchdog-cooldown"
+COOLDOWN_SECONDS={{ dns_watchdog_cooldown_seconds }}
 
 log() {
     logger -t unbound-watchdog -p daemon.warning "$*"
 }
 
+# ── Cooldown check ───────────────────────────────────────────────────────────
+# After a restart, skip checks for COOLDOWN_SECONDS to let cache warm up.
+if [[ -f "${COOLDOWN_FILE}" ]]; then
+    cooldown_ts=$(cat "${COOLDOWN_FILE}" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    if (( now - cooldown_ts < COOLDOWN_SECONDS )); then
+        exit 0
+    fi
+    rm -f "${COOLDOWN_FILE}"
+fi
+
+# ── Orphan detection ─────────────────────────────────────────────────────────
+# Guard against orphaned unbound processes binding to port 53 via SO_REUSEPORT.
+# If multiple unbound processes exist, kill the extras and restart cleanly.
+unbound_pids=$(pgrep -x unbound 2>/dev/null || true)
+unbound_count=$(echo "${unbound_pids}" | grep -c '[0-9]' || true)
+if (( unbound_count > 1 )); then
+    log "ORPHAN: found ${unbound_count} unbound processes, expected 1 - killing all and restarting"
+    killall -9 unbound 2>/dev/null || true
+    sleep 1
+    systemctl start unbound
+    date +%s > "${COOLDOWN_FILE}"
+    exit 0
+fi
+
 # ── Test resolution ──────────────────────────────────────────────────────────
 test_resolution() {
+    local domain="${1:-google.com}"
     local result
-    result=$(dig @127.0.0.1 "${TEST_DOMAIN}" A +short +time=${TIMEOUT} +tries=${TRIES} 2>/dev/null)
+    result=$(dig @127.0.0.1 "${domain}" A +short +time=${TIMEOUT} +tries=${TRIES} 2>/dev/null)
     # Must return at least one IPv4 address
     echo "$result" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
-if test_resolution; then
+# Test all domains - if ANY domain resolves, Unbound is functional.
+# Only trigger recovery when ALL domains fail simultaneously.
+test_any_domain() {
+    for domain in "${TEST_DOMAINS[@]}"; do
+        if test_resolution "$domain"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+if test_any_domain; then
     exit 0
 fi
 
 # ── First failure: flush cache ───────────────────────────────────────────────
-log "resolution of ${TEST_DOMAIN} failed — flushing cache"
+log "resolution of all test domains (${TEST_DOMAINS[*]}) failed - flushing cache"
 unbound-control flush_zone . >/dev/null 2>&1 || true
 
-sleep 2
+sleep 3
 
-if test_resolution; then
+if test_any_domain; then
     log "resolution restored after cache flush"
     exit 0
 fi
 
 # ── Second failure: restart service ──────────────────────────────────────────
-log "resolution still failing after flush — restarting unbound"
+log "resolution still failing after flush - restarting unbound"
 systemctl restart unbound
 
-sleep 3
+# Set cooldown to prevent thrashing
+date +%s > "${COOLDOWN_FILE}"
 
-if test_resolution; then
+sleep 5
+
+if test_any_domain; then
     log "resolution restored after restart"
     exit 0
 fi
 
-log "CRITICAL: resolution of ${TEST_DOMAIN} still failing after restart"
+log "CRITICAL: resolution of all test domains still failing after restart"
 exit 1

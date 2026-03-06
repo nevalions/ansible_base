@@ -12,6 +12,15 @@
       - "8.8.4.4"
     dns_cache_size: 256
     dns_do_ipv6: false
+    dns_watchdog_enabled: true
+    dns_watchdog_interval: "60s"
+    dns_watchdog_test_domains:
+      - "google.com"
+      - "ghcr.io"
+    dns_watchdog_timeout: 5
+    dns_watchdog_tries: 2
+    dns_watchdog_cooldown_seconds: 120
+    dns_anchor_refresh_enabled: true
     test_dns_records:
       - type: "A"
         name: "test-host"
@@ -31,6 +40,13 @@
           - dns_upstream_dns is defined
           - dns_cache_size is defined
           - dns_do_ipv6 is defined
+          - dns_watchdog_enabled is defined
+          - dns_watchdog_interval is defined
+          - dns_watchdog_test_domains is defined
+          - dns_watchdog_timeout is defined
+          - dns_watchdog_tries is defined
+          - dns_watchdog_cooldown_seconds is defined
+          - dns_anchor_refresh_enabled is defined
         success_msg: "Default variables defined correctly"
         fail_msg: "Default variables are missing"
 
@@ -43,8 +59,25 @@
           - dns_upstream_dns | length > 0
           - dns_cache_size is number
           - dns_do_ipv6 is boolean
+          - dns_watchdog_enabled is boolean
+          - dns_watchdog_interval is string
+          - dns_watchdog_test_domains is iterable
+          - dns_watchdog_test_domains | length > 0
+          - dns_watchdog_timeout is number
+          - dns_watchdog_tries is number
+          - dns_watchdog_cooldown_seconds is number
+          - dns_anchor_refresh_enabled is boolean
         success_msg: "Default variables have correct types"
         fail_msg: "Default variables have incorrect types"
+
+    - name: Verify watchdog test domains are non-empty strings
+      ansible.builtin.assert:
+        that:
+          - item | length > 0
+          - item is string
+        success_msg: "Watchdog domain '{{ item }}' is valid"
+        fail_msg: "Watchdog domain '{{ item }}' is invalid"
+      loop: "{{ dns_watchdog_test_domains }}"
 
     - name: Verify DNS records structure
       ansible.builtin.assert:
