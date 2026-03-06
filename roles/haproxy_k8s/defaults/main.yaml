@@ -26,10 +26,15 @@ haproxy_ingress_enabled: "{{ vault_haproxy_ingress_enabled | default(false) }}"
 haproxy_ingress_http_port: "{{ vault_haproxy_ingress_http_port | default(80) }}"
 haproxy_ingress_https_port: "{{ vault_haproxy_ingress_https_port | default(443) }}"
 
-# Backend target (BGP VIP that routes to MetalLB/Traefik)
+# Backend target (primary — bay Traefik MetalLB VIP)
 haproxy_ingress_backend_ip: "{{ vault_haproxy_ingress_backend_ip | default('[bgp-vip-address]') }}"
 haproxy_ingress_backend_http_port: "{{ vault_haproxy_ingress_backend_http_port | default(80) }}"
 haproxy_ingress_backend_https_port: "{{ vault_haproxy_ingress_backend_https_port | default(443) }}"
+
+# Backup backend target (vas Traefik MetalLB VIP — used when primary is down)
+haproxy_ingress_backup_ip: "{{ vault_haproxy_ingress_backup_ip | default('') }}"
+haproxy_ingress_backup_http_port: "{{ vault_haproxy_ingress_backup_http_port | default(80) }}"
+haproxy_ingress_backup_https_port: "{{ vault_haproxy_ingress_backup_https_port | default(443) }}"
 
 # =============================================================================
 # Common Settings

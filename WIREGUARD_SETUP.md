@@ -170,7 +170,8 @@ The rest are silently dropped — no error, no warning.
 | CIDR | Assigned to | Why |
 |------|-------------|-----|
 | `[k8s-api-vip]/32` (k8s API VIP) | Primary control-plane peer only | Primary plane holds the keepalived VIP (priority 150). If the secondary plane also lists it, WG dedup gives it to whichever peer appears first in the config — workers routing to the wrong peer lose API access. |
-| `[metallb-pool-cidr]` (MetalLB pool) | First worker peer only (on HAProxy node) | Traefik is a DaemonSet; any worker handles it. Only one peer can own the CIDR. The first worker in `vault_wg_peers` is authoritative. |
+| `[metallb-pool-cidr]` (MetalLB pool) | First worker peer only | /24 catch-all for WireGuard cryptokey routing. Any bay worker can handle MetalLB VIP traffic via kube-proxy. |
+| Vas VIP /32 overrides (`vault_wg_vas_vip_overrides`) | First vas-site worker peer | /32 entries beat the /24 catch-all via WireGuard's longest-prefix-match. Ensures vas-site MetalLB VIPs route to a vas worker instead of the bay worker. Required for multi-site ingress. |
 | `[pod-network-cidr]` (pod CIDR) | Not in AllowedIPs | Workers apply `iptables MASQUERADE` on PostUp — pod replies are rewritten to worker WG IPs before leaving the tunnel. No peer entry needed. |
 
 **Rule:** In `vault_wg_peers`, the peer that should own a shared CIDR must appear **before** any other peer that might claim the same CIDR.

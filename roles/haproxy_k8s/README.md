@@ -10,6 +10,7 @@ forwarding to the Kubernetes cluster via MetalLB LoadBalancer IPs.
 - Support single or multiple control plane nodes
 - Health checks for API server backend(s)
 - Forward HTTP/HTTPS ingress traffic to a MetalLB BGP VIP (optional)
+- Multi-site ingress failover: bay Traefik (primary) + vas Traefik (backup)
 - Forward SMTP/SMTPS/Submission/IMAPS mail traffic to a MetalLB LB IP (optional)
 - Support PROXY Protocol v2 for real client IP preservation (optional)
 
@@ -34,6 +35,13 @@ vault_haproxy_ingress_http_port: 80
 vault_haproxy_ingress_https_port: 443
 vault_haproxy_ingress_backend_http_port: 80
 vault_haproxy_ingress_backend_https_port: 443
+
+# Backup ingress server (vas Traefik VIP — failover when primary is down)
+# When set, HAProxy adds a 'backup' server to HTTP/HTTPS backends.
+# Traffic flows to the backup only when the primary health check fails.
+vault_haproxy_ingress_backup_ip: "[vas-metallb-vip]"
+vault_haproxy_ingress_backup_http_port: 80
+vault_haproxy_ingress_backup_https_port: 443
 
 # PROXY Protocol v2 — send real client IP to Traefik
 # Requires Traefik to be configured with vault_traefik_proxy_protocol_enabled: true
@@ -118,6 +126,22 @@ ansible-playbook kuber_verify.yaml
 2. Add WireGuard peer configuration
 3. Update `vault_k8s_control_planes` in vault_secrets.yml
 4. Re-run `keepalived_manage.yaml` and `haproxy_k8s.yaml`
+
+**Multi-site Ingress Failover (optional):**
+
+```
+Internet (HTTP/HTTPS)
+    → HAProxy ([haproxy-public-ip]:80/443)
+    → bay-traefik (primary, [bay-metallb-vip]:80/443)
+    → vas-traefik (backup,  [vas-metallb-vip]:80/443) — only when bay is down
+    → Traefik Pod → Backend Service
+```
+
+- Enabled via `vault_haproxy_ingress_backup_ip` (set to the vas Traefik MetalLB VIP)
+- HAProxy health checks (`inter 2000 rise 2 fall 3`) detect primary failure in ~6s
+- Backup server receives traffic only when all primary servers fail health checks
+- Both servers use `send-proxy-v2` when PROXY Protocol is enabled
+- Deploy vas Traefik first: `ansible-playbook kuber_traefik_vas_install.yaml`
 
 **Mail Server Forwarding (optional):**
 

@@ -24,6 +24,13 @@ service:
 {% endif %}
     externalTrafficPolicy: {{ traefik_external_traffic_policy }}
 
+{% if traefik_node_selector | default({}) | length > 0 %}
+nodeSelector:
+{% for key, value in traefik_node_selector.items() %}
+  {{ key }}: "{{ value }}"
+{% endfor %}
+{% endif %}
+
 ingressClass:
   enabled: {{ traefik_ingress_class_enabled | bool | lower }}
   isDefaultClass: {{ traefik_ingress_class_is_default | bool | lower }}

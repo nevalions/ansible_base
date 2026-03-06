@@ -67,3 +67,7 @@ traefik_deployment_kind: "{{ vault_traefik_deployment_kind | default('Deployment
 
 # Replica count (only applies when kind == Deployment)
 traefik_replica_count: "{{ vault_traefik_replica_count | default(2) }}"
+
+# Node selector for pod placement (e.g., restrict to specific region)
+# Example: { "topology.kubernetes.io/region": "bay" }
+traefik_node_selector: "{{ vault_traefik_node_selector | default({}) }}"

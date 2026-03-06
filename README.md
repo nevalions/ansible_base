@@ -43,6 +43,7 @@ Notes:
 ## Common Workflows
 
 - Kubernetes cluster deploy/reset: `kuber_cluster_deploy.yaml`, `kuber_cluster_reset.yaml`
+- Traefik ingress (bay primary + vas backup): `kuber_traefik_install.yaml`, `kuber_traefik_vas_install.yaml`
 - Flannel CNI operations (default): `kuber_flannel_install.yaml`, `kuber_flannel_remove.yaml`
 - Calico CNI operations (Legacy Calico Path - optional): `calico_bgp_manage.yaml`, `calico_cni_remove.yaml`
 - Node labels (region + worker-class): `kuber_node_labels.yaml`

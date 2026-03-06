@@ -10,6 +10,7 @@
 | `kuber_worker_join.yaml` | Join worker nodes | workers_all | kubernetes, k8s, join, worker |
 | `kuber_node_labels.yaml` | Apply region + worker-class labels | kuber_small_all | kubernetes, k8s, labels, node_labels |
 | `kuber_verify.yaml` | Verify cluster health | planes | kubernetes, k8s, verify, test |
+| `kuber_traefik_vas_install.yaml` | Deploy vas Traefik backup ingress | kuber_small_planes | traefik, vas, ingress |
 | `kuber_flannel_remove.yaml` | Remove Flannel CNI | kuber_small_planes | kubernetes, k8s, flannel, cni, remove |
 | `kuber_plane_reset.yaml` | Reset control plane | masters | kubernetes, k8s, reset, cleanup |
 | `kuber_worker_reset.yaml` | Reset worker nodes | workers_all | kubernetes, k8s, reset, cleanup |

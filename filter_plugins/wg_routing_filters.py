@@ -43,12 +43,14 @@ def build_peers_extra_cidrs(
     """Build vault_wg_peers_extra_cidrs dict for all peers.
 
     Routing ownership rules:
-      - MetalLB pool CIDR: assigned to the FIRST worker peer only.
-        WireGuard requires that a destination CIDR appears in at least one peer's
-        AllowedIPs for outbound routing to work ("Required key not available" otherwise).
-        Since Traefik is a DaemonSet (runs on every worker), sending MetalLB VIP traffic
-        to any single worker is correct — kube-proxy delivers it to the local pod.
-        Only one peer may own a given CIDR (WireGuard dedup), so we pick the first worker.
+      - MetalLB pool CIDR: assigned to the FIRST bay-site worker peer as a /24
+        catch-all.  This ensures WireGuard cryptokey routing allows MetalLB VIP
+        traffic (11.11.0.x) to traverse the tunnel.  Since kube-proxy handles
+        forwarding on the worker, any single bay worker is a valid entry point.
+      - Vas VIP overrides: each vas-site VIP /32 is added to the FIRST vas-site
+        worker peer.  WireGuard uses longest-prefix-match, so /32 beats /24.
+        This ensures vas-site VIPs (e.g. 11.11.0.3, vas Traefik) are routed to
+        a vas worker instead of being caught by the bay worker's /24.
       - Pod CIDR: NOT added to any peer.
         Workers apply iptables MASQUERADE (PostUp) which rewrites pod reply src IPs
         ([pod-network-cidr] range) to the worker's own WG IP ([vpn-network-cidr] range).
@@ -57,7 +59,7 @@ def build_peers_extra_cidrs(
         If a DB peer entry exists, its /32 is already claimed — adding elsewhere conflicts.
 
     Args:
-        wg_peers: list of dicts from vault_wg_peers (order matters: first worker gets MetalLB)
+        wg_peers: list of dicts from vault_wg_peers
         groups_dict: Ansible groups dict
         bgp_router_hosts: list of hosts in bgp_routers group (unused, kept for API compat)
         worker_hosts: list of hosts in kuber_small_workers + vas_workers_all
@@ -65,6 +67,9 @@ def build_peers_extra_cidrs(
         pod_cidr: Kubernetes pod CIDR (unused, kept for API compat)
         db_wg_route_cidr: optional DB WG route CIDR string
         db_hosts: list of hosts in db group (to exclude from db route)
+        vas_vip_overrides: optional list of /32 CIDRs for vas-site VIPs (e.g. ["11.11.0.3/32"])
+        bay_worker_hosts: optional list of hosts in bay-only worker groups
+        vas_worker_hosts: optional list of hosts in vas-only worker groups
 
     Returns:
         dict mapping peer_name -> list of extra CIDRs
@@ -90,11 +95,11 @@ def build_peers_extra_cidrs(
         group_members = set(groups_dict.get(host_group, []))
         extra = []
 
-        # Assign MetalLB pool CIDR to the FIRST worker peer encountered.
-        # WireGuard AllowedIPs are a filter on outbound routing: a packet destined
+        # Assign MetalLB pool CIDR (/24) to the FIRST worker peer encountered.
+        # WireGuard AllowedIPs are a cryptokey routing table: a packet destined
         # for 11.11.0.x must match some peer's AllowedIPs or WireGuard drops it.
-        # We assign it to one worker only (WireGuard dedup silently drops dupes).
-        # Since Traefik is DaemonSet, any worker can handle MetalLB VIP traffic.
+        # The /24 acts as a catch-all for all MetalLB VIPs; site-specific /32
+        # overrides (added separately) take precedence via longest-prefix-match.
         if metallb_pool_cidr and not metallb_assigned and (group_members & worker_set):
             extra.append(metallb_pool_cidr)
             metallb_assigned = True

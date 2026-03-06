@@ -151,15 +151,18 @@ appended to that peer's `AllowedIPs`. This is the **authoritative** mechanism.
 ```yaml
 # In wireguard_manage.yaml, built automatically by build_peers_extra_cidrs filter:
 vault_wg_peers_extra_cidrs:
-  bay_worker2: ["11.11.0.0/24"]   # MetalLB pool — first worker peer owns it
+  bay_worker2: ["11.11.0.0/24"]       # MetalLB pool /24 catch-all — first worker peer
+  vas_worker1: ["11.11.0.3/32"]       # Vas VIP /32 override — beats /24 via longest-prefix-match
   # Pod CIDR (10.244.0.0/16) intentionally omitted — MASQUERADE on workers rewrites src
 ```
 
-Ownership rules computed by `filter_plugins/wg_routing_filters.py`:
+Ownership rules computed by `filter_plugins/wg_routing_filters.py` and
+`wireguard_manage.yaml` (vas VIP injection):
 
 | CIDR | Assigned to | Why |
 |------|-------------|-----|
-| MetalLB pool (`vault_metallb_pool_cidr`) | First worker peer in `vault_wg_peers` | Traefik DaemonSet runs on every worker; one peer must own the CIDR for outbound routing |
+| MetalLB pool (`vault_metallb_pool_cidr`) | First worker peer in `vault_wg_peers` | /24 catch-all for WireGuard cryptokey routing; any bay worker handles bay VIPs via kube-proxy |
+| Vas VIP overrides (`vault_wg_vas_vip_overrides`) | First vas-site worker peer | /32 beats /24 via longest-prefix-match; routes vas VIPs to a vas worker instead of the bay /24 catch-all |
 | Pod CIDR (`vault_k8s_pod_subnet`) | **Not assigned** | Workers apply MASQUERADE PostUp — replies arrive from worker /32 IPs, already in AllowedIPs |
 | DB WG route (`vault_db_wg_route_cidr`) | Non-DB peers, only when DB has no dedicated peer entry | Avoids AllowedIPs conflict with existing /32 peer entry |
 

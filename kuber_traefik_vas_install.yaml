@@ -1,0 +1,47 @@
+---
+# Deploy backup Traefik instance on vas-* workers
+#
+# This creates a second Traefik Helm release (traefik-vas) in the same
+# namespace, pinned to vas-region nodes. It gets its own MetalLB VIP
+# (11.11.0.3) and acts as a standby ingress endpoint.
+#
+# HAProxy on haproxy_spb is configured to use the bay Traefik VIP as
+# primary and the vas Traefik VIP as backup. Failover is automatic
+# when HAProxy health checks detect the primary is down.
+#
+# Usage:
+#   ansible-playbook kuber_traefik_vas_install.yaml
+#
+# Prerequisites:
+#   - Bay Traefik already deployed (kuber_traefik_install.yaml)
+#   - vault_secrets.yml with vault_traefik_vas_* variables
+
+- name: Install backup Traefik instance on vas workers
+  hosts: kuber_small_planes
+  become: true
+  gather_facts: true
+  serial: 1
+  tags:
+    - kubernetes
+    - k8s
+    - traefik
+    - traefik-vas
+    - ingress
+    - addon
+  vars_files:
+    - vault_secrets.yml
+  vars:
+    traefik_operation: install
+    traefik_release_name: "{{ vault_traefik_vas_release_name }}"
+    traefik_load_balancer_ip: "{{ vault_traefik_vas_load_balancer_ip }}"
+    traefik_node_selector: "{{ vault_traefik_vas_node_selector }}"
+    traefik_deployment_kind: "{{ vault_traefik_vas_deployment_kind }}"
+    # Disable IngressClass creation — the bay instance already owns it
+    traefik_ingress_class_enabled: false
+    # Reuse same settings as bay for consistency
+    traefik_dashboard_enabled: false
+    traefik_proxy_protocol_enabled: "{{ vault_traefik_proxy_protocol_enabled }}"
+    traefik_proxy_protocol_trusted_ips: "{{ vault_traefik_proxy_protocol_trusted_ips }}"
+    traefik_external_traffic_policy: "{{ vault_traefik_external_traffic_policy }}"
+  roles:
+    - traefik

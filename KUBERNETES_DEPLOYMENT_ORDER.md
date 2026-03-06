@@ -421,8 +421,13 @@ ansible-playbook kuber_metallb_verify.yaml
 ## Phase 5: Ingress Controller (Traefik)
 
 ```bash
+# Step 5.1: Bay Traefik (primary ingress)
 ansible-playbook kuber_traefik_install.yaml
 ansible-playbook kuber_traefik_verify.yaml
+
+# Step 5.2: Vas Traefik (backup ingress — optional, for multi-site failover)
+# Requires vault_traefik_vas_* variables in vault_secrets.yml
+ansible-playbook kuber_traefik_vas_install.yaml
 ```
 
 ---
@@ -475,6 +480,7 @@ ansible-playbook kuber_metallb_verify.yaml
 # ── Phase 5: Ingress ──────────────────────────────────────────────────────────
 ansible-playbook kuber_traefik_install.yaml
 ansible-playbook kuber_traefik_verify.yaml
+ansible-playbook kuber_traefik_vas_install.yaml   # backup ingress (optional)
 
 # ── Phase 6: TLS ──────────────────────────────────────────────────────────────
 ansible-playbook kuber_cert_manager_install.yaml
@@ -514,8 +520,9 @@ ansible-playbook kuber_cert_manager_verify.yaml
 | 4.3  | `kuber_metallb_install.yaml`          | `planes_all`         | Install MetalLB                        |
 | 4.4  | `bgp_ha_verify.yaml`                  | `bgp_routers`        | Verify BGP HA                          |
 | 4.5  | `kuber_metallb_verify.yaml`           | `planes_all`         | Verify MetalLB                         |
-| 5.1  | `kuber_traefik_install.yaml`          | `planes_all`         | Install Traefik ingress                |
+| 5.1  | `kuber_traefik_install.yaml`          | `planes_all`         | Install Traefik ingress (bay, primary) |
 | 5.2  | `kuber_traefik_verify.yaml`           | `planes_all`         | Verify Traefik                         |
+| 5.3  | `kuber_traefik_vas_install.yaml`      | `kuber_small_planes` | Install Traefik ingress (vas, backup)  |
 | 6.1  | `kuber_cert_manager_install.yaml`     | `planes_all`         | Install cert-manager                   |
 | 6.2  | `kuber_cert_manager_verify.yaml`      | `planes_all`         | Verify cert-manager                    |
 

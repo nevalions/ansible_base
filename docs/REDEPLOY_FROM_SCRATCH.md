@@ -240,13 +240,13 @@ ansible-playbook kuber_cert_manager_install.yaml --vault-password-file vault_pas
 
 ---
 
-## Phase 14 — Traefik
+## Phase 14 — Traefik (bay, primary)
 
 ```bash
 ansible-playbook kuber_traefik_install.yaml --vault-password-file vault_password_client.sh
 ```
 
-Confirm Traefik DaemonSet is running on all workers and LoadBalancer VIP is `[metallb-vip]`:
+Confirm Traefik DaemonSet is running on bay workers and LoadBalancer VIP is `[bay-metallb-vip]`:
 ```bash
 ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc -n traefik"
 ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n traefik -o wide"
@@ -259,6 +259,23 @@ ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf \
   | tr ',' '\n' | grep -E 'proxy|forward|trusted'"
 # Must show: proxyProtocol.trustedIPs=[vpn-network-cidr] and forwardedHeaders.trustedIPs=[vpn-network-cidr]
 ```
+
+---
+
+## Phase 14b — Traefik (vas, backup — optional multi-site failover)
+
+```bash
+ansible-playbook kuber_traefik_vas_install.yaml --vault-password-file vault_password_client.sh
+```
+
+Confirm vas Traefik DaemonSet is running on vas workers with its own VIP:
+```bash
+ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n traefik -l app.kubernetes.io/name=traefik -o wide"
+ssh [primary-plane-host] "sudo KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc -n traefik"
+```
+
+Requires `vault_traefik_vas_*` and `vault_haproxy_ingress_backup_*` variables in vault.
+Re-run `haproxy_k8s.yaml` after to add the backup server to HAProxy.
 
 ---
 

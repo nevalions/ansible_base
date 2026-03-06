@@ -59,12 +59,14 @@
             - ASN: {{ vault_bgp_router_asn }}
             - Router ID: {{ vault_bgp_router_router_id }}
             - Neighbors: {{ vault_bgp_router_neighbors | length }} MetalLB speakers
+          {% if bgp_keepalived_state is defined %}
 
           Keepalived VRRP:
             - VIP: {{ vault_bgp_keepalived_vip }}/{{ vault_bgp_keepalived_vip_cidr | default('32') }}
             - Interface: {{ vault_bgp_keepalived_vip_interface | default('wg99') }}
             - State: {{ bgp_keepalived_state }}
             - Priority: {{ bgp_keepalived_priority }}
+          {% endif %}
 
           Next Steps:
             1. Verify BGP sessions: vtysh -c "show bgp summary"

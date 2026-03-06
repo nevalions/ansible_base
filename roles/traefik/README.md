@@ -60,6 +60,25 @@ vault_traefik_proxy_protocol_trusted_ips:
   - "[wireguard-network-cidr]"
 ```
 
+### Node selector
+
+`vault_traefik_node_selector` restricts which nodes run Traefik pods. This is
+used for multi-site deployments where each site has its own Traefik instance.
+
+```yaml
+# Pin Traefik to bay-site workers only
+vault_traefik_node_selector:
+  topology.kubernetes.io/region: "bay"
+```
+
+When empty (default), Traefik pods schedule on all eligible nodes. With
+DaemonSet, `nodeSelector` limits which nodes get a pod. With Deployment,
+the scheduler uses it as a constraint.
+
+**Multi-site pattern:** Deploy two Traefik Helm releases with different
+`nodeSelector` values and MetalLB VIPs. HAProxy uses the bay instance as
+primary and the vas instance as backup. See `kuber_traefik_vas_install.yaml`.
+
 ### Deployment kind: Deployment vs DaemonSet
 
 **DaemonSet** (recommended for this cluster):

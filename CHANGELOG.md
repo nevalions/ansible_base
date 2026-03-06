@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-03-06
+
+### Added
+
+- **Multi-site ingress with HAProxy failover**:
+  - Separate Traefik instances per site: bay (primary, VIP `[bay-vip]`) and vas (backup, VIP `[vas-vip]`)
+  - HAProxy uses `backup` server directive for automatic failover when bay is unreachable
+  - New playbook `kuber_traefik_vas_install.yaml` deploys the vas Traefik Helm release
+
+- **Traefik role: `nodeSelector` support**:
+  - New variable `vault_traefik_node_selector` (dict) restricts pod placement by node labels
+  - Rendered in Helm values template when non-empty
+  - Enables pinning Traefik DaemonSet to a specific site via `topology.kubernetes.io/region`
+
+- **HAProxy role: backup server support**:
+  - New variables: `vault_haproxy_ingress_backup_ip`, `vault_haproxy_ingress_backup_http_port`,
+    `vault_haproxy_ingress_backup_https_port`
+  - Template conditionally renders `backup` server lines in HTTP/HTTPS backends
+  - Primary server renamed from `bgp-vip` to `bay-traefik` for clarity
+
+- **WireGuard: vas-site VIP /32 overrides**:
+  - New variable `vault_wg_vas_vip_overrides` (list of /32 CIDRs)
+  - Playbook injects /32 entries into first vas worker peer's AllowedIPs
+  - WireGuard longest-prefix-match ensures /32 beats /24, routing vas VIPs to vas workers
+  - Fixes multi-site routing: without this, all MetalLB VIP traffic goes to the bay worker
+
+### Fixed
+
+- **bgp_ha_deploy.yaml**: Keepalived summary in post_tasks is now conditional
+  (`{% if bgp_keepalived_state is defined %}`), preventing failures when running
+  with `--tags frr` only
+
+### Changed
+
+- **filter_plugins/wg_routing_filters.py**: Updated docstring to document the
+  multi-site routing design (bay /24 catch-all + vas /32 overrides)
+
+- **wireguard_manage.yaml**: Added tasks to find first vas worker peer and inject
+  vas VIP /32 overrides into computed extra CIDRs
+
+- **vault_secrets.example.yml**: Documented all new variables (nodeSelector,
+  vas Traefik, HAProxy backup, WireGuard vas VIP overrides)
+
 ## [1.13.0] - 2026-03-05
 
 ### Added

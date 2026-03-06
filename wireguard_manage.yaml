@@ -100,11 +100,12 @@
             else (vault_metallb_pool_cidr | string) + '/24'
           }}
 
-    # Build per-peer extra AllowedIPs using the wg_routing_filters plugin.
+     # Build per-peer extra AllowedIPs using the wg_routing_filters plugin.
     # build_peers_extra_cidrs(peers, groups, bgp_hosts, worker_hosts, metallb_cidr, pod_cidr, db_route, db_hosts)
     #
     # Routing ownership rules (replaces legacy is_server + vault_wg_routed_cidrs):
-    #   MetalLB CIDR → intentionally omitted from WG (BGP routes used; WG link-route would override)
+    #   MetalLB CIDR → /24 assigned to first bay worker (WG catch-all)
+    #   Vas VIPs     → /32 overrides on first vas worker (longest-prefix-match beats /24)
     #   Pod CIDR     → intentionally omitted from WG (MASQUERADE on workers rewrites to worker /32)
     #   DB WG route  → only added when DB has no dedicated peer entry (avoids AllowedIPs conflict)
     - name: Build per-peer extra CIDRs (explicit routing ownership)
@@ -122,6 +123,41 @@
                 groups.get('db', [])
               )
           }}
+
+    # Add vas-site VIP /32 overrides to the first vas worker peer.
+    # WireGuard uses longest-prefix-match: /32 entries beat the bay worker's
+    # /24 catch-all, so vas VIPs are routed to vas workers while bay VIPs
+    # continue to use the /24 path to the bay worker.  This enables multi-site
+    # ingress: HAProxy can reach both bay Traefik (11.11.0.1) and vas Traefik
+    # (11.11.0.3) over WireGuard, each via the correct site's worker.
+    - name: Find first vas worker peer name
+      ansible.builtin.set_fact:
+        wg_first_vas_worker_peer: >-
+          {{
+            (vault_wg_peers | default([])
+              | selectattr('host_group', 'defined')
+              | peers_in_groups(groups, groups.get('vas_workers_all', []))
+              | first)
+            if (vault_wg_peers | default([])
+                | peers_in_groups(groups, groups.get('vas_workers_all', []))
+                | length > 0)
+            else ''
+          }}
+
+    - name: Inject vas VIP /32 overrides into computed extra CIDRs
+      ansible.builtin.set_fact:
+        wg_computed_peers_extra_cidrs: >-
+          {{
+            wg_computed_peers_extra_cidrs | default({})
+            | combine({
+                wg_first_vas_worker_peer:
+                  (wg_computed_peers_extra_cidrs[wg_first_vas_worker_peer] | default([]))
+                  + (vault_wg_vas_vip_overrides | default([]))
+              })
+          }}
+      when:
+        - wg_first_vas_worker_peer | default('') | length > 0
+        - vault_wg_vas_vip_overrides | default([]) | length > 0
 
     - name: Debug computed peer extra CIDRs
       ansible.builtin.debug:
