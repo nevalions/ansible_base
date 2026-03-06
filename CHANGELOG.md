@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0//),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.15.0] - 2026-03-06
+
+### Fixed
+
+- **dns_server role**: Root-caused intermittent `ImagePullBackOff` on GitHub Actions
+  runner pods to an orphaned debug Unbound process (`unbound -d -p -dddd`, pid 2333627)
+  on the secondary DNS server. The zombie bound to `0.0.0.0:53` via `SO_REUSEPORT`,
+  causing the kernel to load-balance ~50% of queries to stale config that returned
+  referral responses (`ANSWER: 0`) instead of A records.
+
+- **dns_server role**: Removed `8.8.8.8` from bay-bgp upstream forwarders via
+  per-host vault override (`vault_dns_upstream_dns_by_host`). Google DNS was
+  rate-limiting burst queries from this host's source IP (~40% failure under normal
+  load, 100% under burst). Replaced with `1.1.1.1` and `9.9.9.9`.
+
+### Changed
+
+- **dns_server role** — watchdog rewrite:
+  - Tests multiple domains (`dns_watchdog_test_domains`, default: `google.com`, `ghcr.io`)
+    with ANY-pass logic (healthy if at least one resolves) instead of single-domain check.
+  - Configurable `dns_watchdog_timeout` (5s), `dns_watchdog_tries` (2), and
+    `dns_watchdog_cooldown_seconds` (120s) to prevent restart thrash loops.
+  - Detects and kills orphaned Unbound processes before recovery actions.
+
+- **dns_server role** — systemd `ExecStartPre` override:
+  - New template `unbound-override.conf.j2` adds `ExecStartPre=-/usr/bin/pkill -x unbound`
+    to kill stray processes before service start, preventing `SO_REUSEPORT` split.
+
+- **dns_server role** — dynamic resolv.conf fallback:
+  - `/etc/resolv.conf` fallback nameserver now uses the first entry from `dns_upstream_dns`
+    instead of hardcoded `8.8.8.8`.
+
+- **dns_server role** — `dns_upstream_dns` default is now dynamic:
+  - Looks up `vault_dns_upstream_dns_by_host[inventory_hostname]` first, then falls back
+    to `vault_dns_upstream_dns` (default: `['1.1.1.1', '8.8.8.8']`). Enables per-host
+    upstream forwarder overrides without changing the global default.
+
+### Documentation
+
+- **roles/dns_server/README.md**: Updated all references from `8.8.8.8` fallback to
+  dynamic upstream, from singular `dns_watchdog_test_domain` to plural
+  `dns_watchdog_test_domains` with new variables, added orphaned Unbound process
+  troubleshooting section.
+
 ## [1.14.1] - 2026-03-06
 
 ### Fixed
@@ -132,7 +176,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **roles/dns_server** — Unbound watchdog timer:
   - Systemd timer (default: every 60s) tests external resolution via `dig`.
   - Escalating recovery on failure: flush cache → retry → restart service.
-  - Configurable via `dns_watchdog_enabled`, `dns_watchdog_interval`, `dns_watchdog_test_domain`.
+  - Configurable via `dns_watchdog_enabled`, `dns_watchdog_interval`, `dns_watchdog_test_domains`,
+    `dns_watchdog_timeout`, `dns_watchdog_tries`, `dns_watchdog_cooldown_seconds`.
 
 - **roles/dns_server** — DNSSEC root key refresh timer:
   - Daily systemd timer runs `unbound-anchor` to refresh the DNSSEC root trust anchor.

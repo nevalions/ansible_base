@@ -21,7 +21,7 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - DNS resolution testing with `dig` (internal zone, external registry, CNAME-chase)
 - `unbound-control` enabled for live cache management (flush stale entries without restart)
 - Automatic systemd-resolved disable (prevents port 53 conflict)
-- Custom resolv.conf with fallback to public DNS (8.8.8.8)
+- Custom resolv.conf with fallback to first configured upstream forwarder
 - DNSSEC trust anchor management (`unbound-anchor` install + refresh on every run)
 - DNSSEC resilience: `harden-dnssec-stripped: no` prevents SERVFAIL on stripped-signature zones
 - Systemd watchdog timer: periodic external resolution health check with escalating recovery (flush → retry → restart)
@@ -43,16 +43,22 @@ All default variables are in `defaults/main.yaml`:
 ```yaml
 dns_listen_interface: "0.0.0.0"
 dns_operation: "install"
-dns_upstream_dns:
-  - "[dns-server]"
-  - "8.8.4.4"
+# Dynamic: uses vault_dns_upstream_dns_by_host[inventory_hostname] if set,
+# otherwise falls back to vault_dns_upstream_dns (default: ['1.1.1.1', '8.8.8.8']).
+# Per-host overrides live in vault_secrets.yml under vault_dns_upstream_dns_by_host.
+dns_upstream_dns: "{{ vault_dns_upstream_dns_by_host[inventory_hostname] | default(vault_dns_upstream_dns) }}"
 dns_cache_size: 256
 dns_do_ipv6: false
 
 # Watchdog timer (external resolution health check)
 dns_watchdog_enabled: true
 dns_watchdog_interval: "60s"
-dns_watchdog_test_domain: "google.com"
+dns_watchdog_test_domains:          # list — ANY domain resolving = healthy
+  - "google.com"
+  - "ghcr.io"
+dns_watchdog_timeout: 5             # dig timeout per attempt (seconds)
+dns_watchdog_tries: 2               # dig retry count per domain
+dns_watchdog_cooldown_seconds: 120  # seconds after restart before re-checking
 
 # DNSSEC root key refresh timer
 dns_anchor_refresh_enabled: true
@@ -137,7 +143,7 @@ None.
 2. Create inventory file with `dns_servers` group
 3. Run playbook:
 
-**Note:** The role automatically disables `systemd-resolved` and creates a custom `/etc/resolv.conf` pointing to Unbound (127.0.0.1) with Google DNS (8.8.8.8) as a fallback for upstream queries.
+**Note:** The role automatically disables `systemd-resolved` and creates a custom `/etc/resolv.conf` pointing to Unbound (127.0.0.1) with the first configured upstream forwarder as a fallback.
 
 ```bash
 ansible-playbook -i hosts_dns.ini dns_server_manage.yaml
@@ -211,12 +217,20 @@ stat /var/lib/unbound/root.key
 
 When `dns_watchdog_enabled: true` (the default), the role deploys a systemd timer
 that runs every `dns_watchdog_interval` (default: 60s). The watchdog tests whether
-Unbound can resolve `dns_watchdog_test_domain` (default: `google.com`). On failure
-it applies escalating recovery:
+Unbound can resolve **any** domain in `dns_watchdog_test_domains` (default:
+`google.com`, `ghcr.io`). If at least one domain resolves, the check passes
+(ANY-pass logic). On total failure it applies escalating recovery:
 
 1. Flush the Unbound cache (`unbound-control flush_zone .`)
 2. Retry resolution
 3. Restart the Unbound service if still failing
+4. Enter a cooldown period (`dns_watchdog_cooldown_seconds`, default: 120s) to let
+   the cache warm before the next check
+
+The watchdog also detects **orphaned Unbound processes** (zombie `unbound -d` debug
+instances that survived a service restart) and kills them before recovery, preventing
+the `SO_REUSEPORT` kernel load-balancing split described in the troubleshooting
+section below.
 
 ```bash
 # Check watchdog timer status
@@ -270,7 +284,7 @@ that correctly serve signatures.
 - ✅ Example file uses `[placeholder]` format
 - ✅ systemd-resolved is disabled to prevent port 53 conflicts
 - ✅ Custom resolv.conf ensures DNS queries use Unbound
-- ✅ Fallback to public DNS (8.8.8.8) for upstream queries
+- ✅ Fallback to first configured upstream forwarder for `/etc/resolv.conf`
 - ✅ DNSSEC root trust anchor kept fresh via `unbound-anchor` on every deploy and daily timer
 - ✅ `val-clean-additional: yes` discards unsigned additional-section RRs
 - ✅ Watchdog timer detects and auto-recovers from resolution failures between deploys
@@ -354,6 +368,47 @@ signatures. If you see DNSSEC errors in logs, the anchor file may be stale:
 sudo unbound-anchor -v -a /var/lib/unbound/root.key
 # rc=0: up to date | rc=1: updated | rc>1: error
 ```
+
+### Orphaned Unbound process stealing queries (SO_REUSEPORT split)
+
+**Symptoms:** ~50% of DNS queries return empty answers (`ANSWER: 0`) with NS referrals
+(e.g. `com.` TLD servers) instead of actual A records. ImagePullBackOff in Kubernetes.
+Restarting Unbound does not fix the problem; it recurs within seconds.
+
+**Cause:** A debug Unbound process (typically started with `unbound -d -p -dddd`) is
+still running alongside the real systemd-managed Unbound. Both bind to `0.0.0.0:53`
+with `SO_REUSEPORT`, so the Linux kernel load-balances ~50% of incoming queries to
+the zombie process, which has a stale config and/or empty cache. Because `SO_REUSEPORT`
+distributes by source-port hash, the failure appears intermittent and random.
+
+**Detection:**
+```bash
+# List all processes bound to port 53
+ss -tlnp sport = :53
+ss -ulnp sport = :53
+
+# Check for multiple Unbound PIDs (should be exactly one main + workers)
+pgrep -a unbound
+
+# Look for debug instances (contain -d flag)
+pgrep -af 'unbound -d'
+```
+
+**Fix:**
+```bash
+# Kill all orphaned Unbound processes (the systemd service will remain)
+sudo pkill -x unbound
+sudo systemctl restart unbound
+
+# Verify only one set of PIDs remains
+pgrep -a unbound
+```
+
+**Prevention:** The role deploys a systemd `ExecStartPre` override that kills any
+stray Unbound processes before starting the service. The watchdog also detects and
+kills orphans during its health check cycle. To prevent accidental debug processes
+in the future, avoid running `unbound -d` directly; use `unbound-control` or
+`journalctl -u unbound` for debugging instead.
 
 ## License
 
