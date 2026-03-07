@@ -21,6 +21,12 @@
     dns_watchdog_tries: 2
     dns_watchdog_cooldown_seconds: 120
     dns_anchor_refresh_enabled: true
+    dns_so_reuseport: false
+    dns_qname_minimisation: false
+    dns_serve_expired: true
+    dns_serve_expired_ttl: 86400
+    dns_prefetch: true
+    dns_dnssec_validation: false
     test_dns_records:
       - type: "A"
         name: "test-host"
@@ -47,6 +53,12 @@
           - dns_watchdog_tries is defined
           - dns_watchdog_cooldown_seconds is defined
           - dns_anchor_refresh_enabled is defined
+          - dns_so_reuseport is defined
+          - dns_qname_minimisation is defined
+          - dns_serve_expired is defined
+          - dns_serve_expired_ttl is defined
+          - dns_prefetch is defined
+          - dns_dnssec_validation is defined
         success_msg: "Default variables defined correctly"
         fail_msg: "Default variables are missing"
 
@@ -67,6 +79,12 @@
           - dns_watchdog_tries is number
           - dns_watchdog_cooldown_seconds is number
           - dns_anchor_refresh_enabled is boolean
+          - dns_so_reuseport is boolean
+          - dns_qname_minimisation is boolean
+          - dns_serve_expired is boolean
+          - dns_serve_expired_ttl is number
+          - dns_prefetch is boolean
+          - dns_dnssec_validation is boolean
         success_msg: "Default variables have correct types"
         fail_msg: "Default variables have incorrect types"
 

@@ -13,6 +13,33 @@ dns_upstream_dns: >-
 dns_cache_size: 256
 dns_do_ipv6: false
 
+# ── Forwarding hardening ──────────────────────────────────────────────────────
+# Disable SO_REUSEPORT to prevent orphaned unbound processes from binding to
+# port 53 and silently stealing queries with stale cache/config.
+dns_so_reuseport: false
+
+# Disable qname-minimisation in forwarding mode. It triggers partial iterative
+# lookups that cache broken NS referrals for TLDs (.io, .com) when IPv6-only
+# nameservers are unreachable (do-ip6: no). This was the root cause of
+# intermittent ANSWER:0 responses for ghcr.io/docker.io/google.com.
+dns_qname_minimisation: false
+
+# Serve expired cache entries while fetching fresh data from upstream.
+# Prevents total DNS failure during transient upstream timeouts.
+dns_serve_expired: true
+dns_serve_expired_ttl: 86400
+
+# Prefetch popular entries before they expire, keeping cache warm.
+dns_prefetch: true
+
+# Disable local DNSSEC validation for forwarding-only resolvers.
+# Upstream resolvers (1.1.1.1, 9.9.9.9, 8.8.8.8) already validate DNSSEC.
+# Local validation causes the validator module to do iterative lookups for
+# DS/DNSKEY chain verification, populating the cache with TLD NS referrals
+# (e.g. com. NS, io. NS) that get served as ANSWER:0 responses when
+# forwarding queries time out — the root cause of intermittent DNS failures.
+dns_dnssec_validation: false
+
 # ── Watchdog timer ────────────────────────────────────────────────────────────
 # Periodically tests whether Unbound can resolve external domains.
 # On failure: flush cache → retry → restart service (escalating recovery).

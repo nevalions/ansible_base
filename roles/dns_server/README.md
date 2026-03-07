@@ -22,10 +22,13 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - `unbound-control` enabled for live cache management (flush stale entries without restart)
 - Automatic systemd-resolved disable (prevents port 53 conflict)
 - Custom resolv.conf with fallback to first configured upstream forwarder
-- DNSSEC trust anchor management (`unbound-anchor` install + refresh on every run)
-- DNSSEC resilience: `harden-dnssec-stripped: no` prevents SERVFAIL on stripped-signature zones
+- Forwarding hardening: `so-reuseport: no` prevents orphaned processes from stealing queries
+- Forwarding hardening: `qname-minimisation: no` prevents NS referral cache poisoning in forwarding mode
+- Cache resilience: `serve-expired` + `prefetch` keeps DNS available during upstream timeouts
+- DNSSEC validation delegated to upstream resolvers (no local validator by default to avoid TLD NS referral caching)
+- Optional local DNSSEC validation (`dns_dnssec_validation: true`) with trust anchor management
 - Systemd watchdog timer: periodic external resolution health check with escalating recovery (flush → retry → restart)
-- DNSSEC root key refresh timer: daily `unbound-anchor` run prevents stale trust anchor between deploys
+- DNSSEC root key refresh timer: daily `unbound-anchor` run (active when `dns_dnssec_validation: true`)
 
 ## Requirements
 
@@ -50,6 +53,14 @@ dns_upstream_dns: "{{ vault_dns_upstream_dns_by_host[inventory_hostname] | defau
 dns_cache_size: 256
 dns_do_ipv6: false
 
+# Forwarding hardening
+dns_so_reuseport: false             # prevent orphaned processes binding to :53
+dns_qname_minimisation: false       # prevent NS referral caching in forwarding mode
+dns_serve_expired: true             # serve stale cache during upstream timeouts
+dns_serve_expired_ttl: 86400        # max TTL for expired entries (seconds)
+dns_prefetch: true                  # refresh popular entries before expiry
+dns_dnssec_validation: false        # delegate DNSSEC to upstream resolvers
+
 # Watchdog timer (external resolution health check)
 dns_watchdog_enabled: true
 dns_watchdog_interval: "60s"
@@ -60,7 +71,7 @@ dns_watchdog_timeout: 5             # dig timeout per attempt (seconds)
 dns_watchdog_tries: 2               # dig retry count per domain
 dns_watchdog_cooldown_seconds: 120  # seconds after restart before re-checking
 
-# DNSSEC root key refresh timer
+# DNSSEC root key refresh timer (active when dns_dnssec_validation: true)
 dns_anchor_refresh_enabled: true
 ```
 
@@ -206,11 +217,12 @@ dig @127.0.0.1 auth.docker.io A +short
 sudo unbound-control flush auth.docker.io.cdn.cloudflare.net
 sudo unbound-control flush auth.docker.io
 
-# Check DNSSEC trust anchor status
-unbound-anchor -v -a /var/lib/unbound/root.key
+# Verify no TLD NS referrals in cache (should return empty)
+sudo unbound-control dump_cache | grep -E '(com|io|net|org)\.\s.*IN\s+NS'
 
-# Check trust anchor file age (should be < 30 days)
-stat /var/lib/unbound/root.key
+# Check serve-expired and prefetch are active
+sudo unbound-control get_option serve-expired
+sudo unbound-control get_option prefetch
 ```
 
 ### Watchdog Timer
@@ -242,37 +254,30 @@ journalctl -u unbound-watchdog.service --no-pager -n 20
 # Disable watchdog (set dns_watchdog_enabled: false and re-run the role)
 ```
 
-### DNSSEC Trust Anchor
+### DNSSEC Validation
 
-The role installs `unbound-anchor` and runs it on every `dns_operation: install` play.
-The anchor file `/var/lib/unbound/root.key` is updated automatically.
+By default (`dns_dnssec_validation: false`), DNSSEC validation is **delegated to
+upstream resolvers** (1.1.1.1, 9.9.9.9, 8.8.8.8 all perform DNSSEC validation).
+Unbound runs with `module-config: "iterator"` only.
 
-When `dns_anchor_refresh_enabled: true` (the default), a daily systemd timer runs
-`unbound-anchor` to refresh the root trust anchor. This prevents stale `root.key`
-between Ansible deploys.
+**Why local DNSSEC is disabled by default:** The validator module performs iterative
+DS/DNSKEY chain lookups that populate Unbound's cache with TLD NS referrals (e.g.
+`com. NS`, `io. NS`) with long TTLs (~86400s). When a forwarding query to an upstream
+resolver times out, Unbound serves these cached NS referrals as the answer (NOERROR
+with ANSWER:0), breaking resolution for all domains under that TLD. This was the root
+cause of intermittent DNS failures for ghcr.io, docker.io, and google.com.
+
+**To enable local DNSSEC validation** (e.g. in environments without trusted upstreams),
+set `dns_dnssec_validation: true`. The role will then deploy trust anchors and the
+daily refresh timer:
 
 ```bash
-# Check anchor refresh timer status
+# Check anchor refresh timer status (only when dns_dnssec_validation: true)
 systemctl status unbound-anchor-refresh.timer
 
 # Force manual anchor refresh
 sudo unbound-anchor -a /var/lib/unbound/root.key
 ```
-
-**If external domains return SERVFAIL after a long outage:**
-```bash
-# Force anchor refresh
-sudo unbound-anchor -a /var/lib/unbound/root.key
-sudo systemctl restart unbound
-
-# Verify external resolution recovers
-dig @127.0.0.1 registry-1.docker.io A +short
-```
-
-The Unbound config uses `harden-dnssec-stripped: no` so resolution degrades gracefully
-(returns unsigned answers) rather than returning SERVFAIL when a CDN or transit node
-strips DNSSEC signatures in transit. Full DNSSEC validation is still performed for zones
-that correctly serve signatures.
 
 ## Security
 
@@ -285,8 +290,9 @@ that correctly serve signatures.
 - ✅ systemd-resolved is disabled to prevent port 53 conflicts
 - ✅ Custom resolv.conf ensures DNS queries use Unbound
 - ✅ Fallback to first configured upstream forwarder for `/etc/resolv.conf`
-- ✅ DNSSEC root trust anchor kept fresh via `unbound-anchor` on every deploy and daily timer
-- ✅ `val-clean-additional: yes` discards unsigned additional-section RRs
+- ✅ DNSSEC validated by upstream resolvers (local validation optional via `dns_dnssec_validation`)
+- ✅ `so-reuseport: no` prevents orphaned processes from silently stealing DNS queries
+- ✅ `qname-minimisation: no` prevents TLD NS referral cache poisoning in forwarding mode
 - ✅ Watchdog timer detects and auto-recovers from resolution failures between deploys
 
 ### Firewall Behavior
@@ -306,21 +312,17 @@ See `vault_secrets.example.yml` for template structure.
 ImagePullBackOff on cluster nodes whose dnsmasq forwards to this resolver.
 
 **Common causes:**
-1. Stale DNSSEC root trust anchor (`/var/lib/unbound/root.key` not refreshed in >30 days)
+1. TLD NS referral cached (see "TLD NS cache poisoning" section below)
 2. Upstream forwarder unreachable (WireGuard tunnel down during resolver restart)
 3. Unbound cache poisoned with a negative TTL entry from a transient failure
 
 **Fix:**
 ```bash
-# 1. Force anchor refresh and restart
-sudo unbound-anchor -a /var/lib/unbound/root.key
+# 1. Flush cache and restart
+sudo unbound-control flush_zone .
 sudo systemctl restart unbound
 
-# 2. Flush cache if still broken after restart
-sudo unbound-control flush_zone .
-sudo unbound-control reload
-
-# 3. Verify
+# 2. Verify
 dig @127.0.0.1 registry-1.docker.io A +short
 ```
 
@@ -361,13 +363,40 @@ sudo journalctl -xeu unbound --no-pager -n 40
 
 ### DNS resolution works but DNSSEC validation fails
 
-The role deploys `harden-dnssec-stripped: no` which prevents hard SERVFAIL on stripped
-signatures. If you see DNSSEC errors in logs, the anchor file may be stale:
+**Note:** With the default configuration (`dns_dnssec_validation: false`), DNSSEC
+validation is handled by the upstream resolvers. If you have enabled local validation
+(`dns_dnssec_validation: true`) and see DNSSEC errors, the anchor file may be stale:
 
 ```bash
 sudo unbound-anchor -v -a /var/lib/unbound/root.key
 # rc=0: up to date | rc=1: updated | rc>1: error
 ```
+
+### Domains return ANSWER:0 with NS referrals (TLD NS cache poisoning)
+
+**Symptoms:** `dig @127.0.0.1 ghcr.io` returns `NOERROR` with `ANSWER: 0` and
+`AUTHORITY` section containing TLD nameservers (e.g. `io. NS a0.nic.io.`).
+Some domains work while others under the same TLD consistently fail.
+
+**Cause:** Unbound's DNSSEC validator or qname-minimisation module performed iterative
+lookups that cached TLD NS referrals (`.com`, `.io`) with long TTLs (~86400s). When
+forwarding queries time out, Unbound serves these cached NS referrals instead of the
+actual A records. With `serve-expired: yes`, these stale referrals persist indefinitely.
+
+**Fix (already prevented by default config):**
+```bash
+# Flush the affected TLD zone and all subdomains
+sudo unbound-control flush_zone io.
+sudo unbound-control flush_zone com.
+
+# Or restart Unbound to fully clear internal cache
+sudo systemctl restart unbound
+```
+
+**Prevention:** The role defaults prevent this by disabling local DNSSEC validation
+(`dns_dnssec_validation: false` → `module-config: "iterator"`) and qname-minimisation
+(`dns_qname_minimisation: false`). Both settings eliminate the iterative lookups that
+populate TLD NS referral cache entries.
 
 ### Orphaned Unbound process stealing queries (SO_REUSEPORT split)
 
@@ -404,11 +433,13 @@ sudo systemctl restart unbound
 pgrep -a unbound
 ```
 
-**Prevention:** The role deploys a systemd `ExecStartPre` override that kills any
-stray Unbound processes before starting the service. The watchdog also detects and
-kills orphans during its health check cycle. To prevent accidental debug processes
-in the future, avoid running `unbound -d` directly; use `unbound-control` or
-`journalctl -u unbound` for debugging instead.
+**Prevention:** The role applies three layers of defense:
+1. `so-reuseport: no` in unbound.conf prevents any second process from binding to port 53
+2. Systemd `ExecStartPre` override kills stray processes before starting the service
+3. The watchdog detects and kills orphans during its health check cycle
+
+To prevent accidental debug processes, avoid running `unbound -d` directly; use
+`unbound-control` or `journalctl -u unbound` for debugging instead.
 
 ## License
 

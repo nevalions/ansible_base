@@ -7,16 +7,35 @@ server:
     rrset-cache-size: {{ dns_cache_size }}m
     msg-cache-size: {{ dns_cache_size }}m
 
+    # Disable SO_REUSEPORT to prevent orphaned unbound processes from
+    # binding to port 53 and stealing queries with stale cache/config.
+    so-reuseport: {{ "yes" if dns_so_reuseport else "no" }}
+
+    # Disable qname-minimisation in forwarding mode — it triggers partial
+    # iterative lookups that cache broken NS referrals for TLDs (.io, .com)
+    # when IPv6-only nameservers are unreachable (do-ip6: no).
+    qname-minimisation: {{ "yes" if dns_qname_minimisation else "no" }}
+
+    # Serve expired cache entries while fetching fresh data upstream.
+    serve-expired: {{ "yes" if dns_serve_expired else "no" }}
+    serve-expired-ttl: {{ dns_serve_expired_ttl }}
+
+    # Prefetch popular entries before they expire, keeping cache warm.
+    prefetch: {{ "yes" if dns_prefetch else "no" }}
+
+{% if dns_dnssec_validation %}
     # DNSSEC trust anchor — refreshed by unbound-anchor in dns_server role.
-    # harden-dnssec-stripped: no  → don't SERVFAIL when a zone has no DNSSEC
-    #   signatures (e.g. CDN-served zones that strip DS records in transit).
-    # val-permissive-mode: no     → still validate when anchor is healthy.
-    # If root.key becomes stale, unbound falls back to iterative resolution
-    # rather than returning SERVFAIL for all DNSSEC-signed TLDs.
     auto-trust-anchor-file: "/var/lib/unbound/root.key"
     harden-dnssec-stripped: no
     val-permissive-mode: no
     val-clean-additional: yes
+{% else %}
+    # DNSSEC validation disabled for forwarding-only setup.
+    # Upstream resolvers already validate DNSSEC. Local validation triggers
+    # iterative DS/DNSKEY lookups that cache TLD NS referrals, causing
+    # intermittent ANSWER:0 responses when forwarding times out.
+    module-config: "iterator"
+{% endif %}
 
 # Allow unbound-control for cache management (flush stale entries without restart).
 # Without this, a poisoned or stale CNAME-chase cache entry (e.g. *.cdn.cloudflare.net
