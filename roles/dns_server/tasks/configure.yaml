@@ -71,6 +71,33 @@
   notify: Restart unbound
   when: dns_operation == "install"
 
+# ── Prevent Ubuntu package from re-enabling DNSSEC validator ─────────────────
+# The unbound package ships /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+# which adds auto-trust-anchor-file, implicitly loading the validator module even
+# when module-config is set to "iterator" in the main config. This causes iterative
+# DS/DNSKEY lookups that cache TLD NS referrals (.com, .io) with 86400s TTL.
+# When forwarding times out, Unbound serves these cached NS referrals as ANSWER:0.
+- name: Remove package DNSSEC trust anchor override (forwarding-only mode)
+  ansible.builtin.file:
+    path: /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+    state: absent
+  notify: Restart unbound
+  when:
+    - dns_operation == "install"
+    - not (dns_dnssec_validation | bool)
+
+# ── Prevent resolvconf from overriding forwarders ────────────────────────────
+# The Ubuntu package ships /etc/resolvconf/update.d/unbound (executable) which
+# runs unbound-control forward <dhcp-nameservers> on DHCP lease events. If the
+# DHCP-provided nameservers are unreachable, Unbound falls back to iterative
+# resolution from root servers, caching TLD NS referrals that break forwarding.
+- name: Disable resolvconf unbound hook
+  ansible.builtin.file:
+    path: /etc/resolvconf/update.d/unbound
+    mode: '0644'
+  failed_when: false
+  when: dns_operation == "install"
+
 - name: Deploy Unbound main configuration
   ansible.builtin.template:
     src: unbound.conf.j2
@@ -180,4 +207,16 @@
   when:
     - dns_operation == "install"
     - dns_anchor_refresh_enabled | bool
+    - dns_dnssec_validation | bool
+    - not ansible_check_mode
+
+- name: Stop anchor refresh timer when DNSSEC validation is disabled
+  ansible.builtin.systemd_service:
+    name: unbound-anchor-refresh.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when:
+    - dns_operation == "install"
+    - not (dns_dnssec_validation | bool)
     - not ansible_check_mode

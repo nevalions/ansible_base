@@ -7,7 +7,7 @@ dns_upstream_dns: >-
   {{
     (vault_dns_upstream_dns_by_host | default({})).get(
       inventory_hostname,
-      vault_dns_upstream_dns | default(['1.1.1.1', '8.8.8.8'])
+      vault_dns_upstream_dns | default(['77.88.8.8', '1.1.1.1', '9.9.9.9'])
     )
   }}
 dns_cache_size: 256
@@ -25,15 +25,24 @@ dns_so_reuseport: false
 dns_qname_minimisation: false
 
 # Serve expired cache entries while fetching fresh data from upstream.
-# Prevents total DNS failure during transient upstream timeouts.
-dns_serve_expired: true
+# WARNING: In forwarding mode, serve-expired amplifies transient failures by
+# preserving stale NS referral cache entries (with ~86400s TTL) that were cached
+# during momentary upstream timeouts. These poisoned entries are then served
+# indefinitely instead of forwarding fresh queries. Disabled by default — the
+# stable haproxy_spb DNS server runs without serve-expired and never has this
+# problem, while bay_bgp with serve-expired: yes saw 16+ cache poisoning events
+# per day. Only enable if you have a specific need and understand the risk.
+dns_serve_expired: false
 dns_serve_expired_ttl: 86400
 
 # Prefetch popular entries before they expire, keeping cache warm.
-dns_prefetch: true
+# In forwarding mode, prefetch queries can race with normal queries and
+# occasionally cache NS referral responses during transient upstream issues.
+# Disabled by default to match the stable haproxy_spb configuration.
+dns_prefetch: false
 
 # Disable local DNSSEC validation for forwarding-only resolvers.
-# Upstream resolvers (1.1.1.1, 9.9.9.9, 8.8.8.8) already validate DNSSEC.
+# Upstream resolvers (77.88.8.8, 1.1.1.1, 9.9.9.9) already validate DNSSEC.
 # Local validation causes the validator module to do iterative lookups for
 # DS/DNSKEY chain verification, populating the cache with TLD NS referrals
 # (e.g. com. NS, io. NS) that get served as ANSWER:0 responses when

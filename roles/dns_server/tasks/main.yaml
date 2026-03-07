@@ -40,12 +40,14 @@
 - name: Refresh DNSSEC root trust anchor
   # rc=0: anchor already up to date; rc=1: anchor was updated (treated as changed).
   # Any other rc means unbound-anchor is not installed — skip gracefully.
+  # Only needed when DNSSEC validation is enabled (dns_dnssec_validation: true).
   ansible.builtin.command: unbound-anchor -a /var/lib/unbound/root.key
   register: unbound_anchor_result
   changed_when: unbound_anchor_result.rc == 1
   failed_when: unbound_anchor_result.rc not in [0, 1]
   when:
     - dns_operation == "install"
+    - dns_dnssec_validation | bool
     - not ansible_check_mode
 
 - name: Verify Unbound service is running

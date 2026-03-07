@@ -24,9 +24,11 @@ This role installs and configures Unbound as a DNS server for Kubernetes cluster
 - Custom resolv.conf with fallback to first configured upstream forwarder
 - Forwarding hardening: `so-reuseport: no` prevents orphaned processes from stealing queries
 - Forwarding hardening: `qname-minimisation: no` prevents NS referral cache poisoning in forwarding mode
-- Cache resilience: `serve-expired` + `prefetch` keeps DNS available during upstream timeouts
+- Cache safety: `serve-expired` and `prefetch` disabled by default to prevent stale NS referral amplification
 - DNSSEC validation delegated to upstream resolvers (no local validator by default to avoid TLD NS referral caching)
 - Optional local DNSSEC validation (`dns_dnssec_validation: true`) with trust anchor management
+- Removes Ubuntu package `root-auto-trust-anchor-file.conf` that re-enables DNSSEC validator behind the scenes
+- Disables resolvconf hook that overrides forwarders on DHCP events
 - Systemd watchdog timer: periodic external resolution health check with escalating recovery (flush → retry → restart)
 - DNSSEC root key refresh timer: daily `unbound-anchor` run (active when `dns_dnssec_validation: true`)
 
@@ -47,7 +49,7 @@ All default variables are in `defaults/main.yaml`:
 dns_listen_interface: "0.0.0.0"
 dns_operation: "install"
 # Dynamic: uses vault_dns_upstream_dns_by_host[inventory_hostname] if set,
-# otherwise falls back to vault_dns_upstream_dns (default: ['1.1.1.1', '8.8.8.8']).
+# otherwise falls back to vault_dns_upstream_dns (default: ['77.88.8.8', '1.1.1.1', '9.9.9.9']).
 # Per-host overrides live in vault_secrets.yml under vault_dns_upstream_dns_by_host.
 dns_upstream_dns: "{{ vault_dns_upstream_dns_by_host[inventory_hostname] | default(vault_dns_upstream_dns) }}"
 dns_cache_size: 256
@@ -56,9 +58,9 @@ dns_do_ipv6: false
 # Forwarding hardening
 dns_so_reuseport: false             # prevent orphaned processes binding to :53
 dns_qname_minimisation: false       # prevent NS referral caching in forwarding mode
-dns_serve_expired: true             # serve stale cache during upstream timeouts
+dns_serve_expired: false             # disabled: amplifies NS referral cache poisoning
 dns_serve_expired_ttl: 86400        # max TTL for expired entries (seconds)
-dns_prefetch: true                  # refresh popular entries before expiry
+dns_prefetch: false                  # disabled: prefetch races can cache NS referrals
 dns_dnssec_validation: false        # delegate DNSSEC to upstream resolvers
 
 # Watchdog timer (external resolution health check)
@@ -220,9 +222,9 @@ sudo unbound-control flush auth.docker.io
 # Verify no TLD NS referrals in cache (should return empty)
 sudo unbound-control dump_cache | grep -E '(com|io|net|org)\.\s.*IN\s+NS'
 
-# Check serve-expired and prefetch are active
-sudo unbound-control get_option serve-expired
-sudo unbound-control get_option prefetch
+# Check serve-expired and prefetch are disabled (default)
+sudo unbound-control get_option serve-expired   # should be: no
+sudo unbound-control get_option prefetch         # should be: no
 ```
 
 ### Watchdog Timer
@@ -257,7 +259,7 @@ journalctl -u unbound-watchdog.service --no-pager -n 20
 ### DNSSEC Validation
 
 By default (`dns_dnssec_validation: false`), DNSSEC validation is **delegated to
-upstream resolvers** (1.1.1.1, 9.9.9.9, 8.8.8.8 all perform DNSSEC validation).
+upstream resolvers** (77.88.8.8, 1.1.1.1, 9.9.9.9 all perform DNSSEC validation).
 Unbound runs with `module-config: "iterator"` only.
 
 **Why local DNSSEC is disabled by default:** The validator module performs iterative
@@ -378,10 +380,11 @@ sudo unbound-anchor -v -a /var/lib/unbound/root.key
 `AUTHORITY` section containing TLD nameservers (e.g. `io. NS a0.nic.io.`).
 Some domains work while others under the same TLD consistently fail.
 
-**Cause:** Unbound's DNSSEC validator or qname-minimisation module performed iterative
-lookups that cached TLD NS referrals (`.com`, `.io`) with long TTLs (~86400s). When
-forwarding queries time out, Unbound serves these cached NS referrals instead of the
-actual A records. With `serve-expired: yes`, these stale referrals persist indefinitely.
+**Cause:** An upstream resolver (e.g. 8.8.8.8 from certain NAT source IPs) intermittently
+returns NS referrals instead of A records. Unbound caches these referrals with long
+TTLs (~86400s). With `serve-expired: yes`, stale referrals persist indefinitely. Other
+triggers include DNSSEC validator iterative lookups and qname-minimisation partial
+lookups — both populate the cache with TLD NS records.
 
 **Fix (already prevented by default config):**
 ```bash
@@ -393,10 +396,21 @@ sudo unbound-control flush_zone com.
 sudo systemctl restart unbound
 ```
 
-**Prevention:** The role defaults prevent this by disabling local DNSSEC validation
-(`dns_dnssec_validation: false` → `module-config: "iterator"`) and qname-minimisation
-(`dns_qname_minimisation: false`). Both settings eliminate the iterative lookups that
-populate TLD NS referral cache entries.
+**Prevention:** The role applies five layers of defense against TLD NS referral caching:
+1. `dns_serve_expired: false` — the **primary fix**. `serve-expired: yes` amplifies
+   transient failures by serving stale NS referral cache entries (with ~86400s TTL)
+   indefinitely instead of forwarding fresh queries. The stable haproxy_spb server
+   runs with `serve-expired: no` and never exhibits this problem.
+2. `dns_prefetch: false` — prefetch races can cache NS referral responses during
+   transient upstream issues.
+3. `dns_dnssec_validation: false` → `module-config: "iterator"` (no validator module
+   that would do iterative DS/DNSKEY lookups)
+4. Removes `/etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf` — the Ubuntu
+   package ships this file which re-enables the validator module by adding
+   `auto-trust-anchor-file`, overriding `module-config: "iterator"` in the main config
+5. Disables `/etc/resolvconf/update.d/unbound` hook — prevents DHCP lease events from
+   running `unbound-control forward <dhcp-nameservers>` which can replace the configured
+   forwarders with unreachable DHCP-provided nameservers
 
 ### Orphaned Unbound process stealing queries (SO_REUSEPORT split)
 
@@ -433,7 +447,7 @@ sudo systemctl restart unbound
 pgrep -a unbound
 ```
 
-**Prevention:** The role applies three layers of defense:
+**Prevention:** The role applies three layers of orphan defense:
 1. `so-reuseport: no` in unbound.conf prevents any second process from binding to port 53
 2. Systemd `ExecStartPre` override kills stray processes before starting the service
 3. The watchdog detects and kills orphans during its health check cycle
