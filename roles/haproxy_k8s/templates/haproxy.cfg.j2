@@ -184,3 +184,28 @@ backend mail-imaps-backend
 
 # END ANSIBLE MANAGED SECTION - Mail IMAPS Backend
 {% endif %}
+
+{% if haproxy_forgejo_ssh_enabled | default(false) | bool %}
+# =============================================================================
+# FORGEJO SSH LOAD BALANCING (Git-over-SSH to Kubernetes via MetalLB)
+# =============================================================================
+# Traffic flow: Internet:2222 -> HAProxy -> MetalLB LB IP:22 -> Forgejo Pod:2222
+
+# BEGIN ANSIBLE MANAGED SECTION - Forgejo SSH Frontend
+frontend forgejo-ssh
+    bind *:{{ haproxy_forgejo_ssh_port }}
+    mode tcp
+    option tcplog
+    timeout client {{ haproxy_k8s_timeout_client }}
+    default_backend forgejo-ssh-backend
+# END ANSIBLE MANAGED SECTION - Forgejo SSH Frontend
+
+# BEGIN ANSIBLE MANAGED SECTION - Forgejo SSH Backend
+backend forgejo-ssh-backend
+    mode tcp
+    option tcp-check
+    timeout connect {{ haproxy_k8s_timeout_connect }}
+    timeout server  {{ haproxy_k8s_timeout_server }}
+    server forgejo {{ haproxy_forgejo_ssh_backend_ip }}:{{ haproxy_forgejo_ssh_backend_port }} check inter {{ haproxy_k8s_check_interval }} rise {{ haproxy_k8s_check_rise }} fall {{ haproxy_k8s_check_fall }}
+# END ANSIBLE MANAGED SECTION - Forgejo SSH Backend
+{% endif %}

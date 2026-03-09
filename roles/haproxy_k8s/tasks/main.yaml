@@ -94,6 +94,31 @@
     - ansible_facts['os_family'] == 'Debian'
     - ufw_is_active | bool
 
+- name: Validate Forgejo SSH vault variables are defined
+  ansible.builtin.assert:
+    that:
+      - vault_haproxy_forgejo_ssh_port is defined
+      - vault_haproxy_forgejo_ssh_backend_ip is defined
+      - vault_haproxy_forgejo_ssh_backend_port is defined
+    success_msg: "Forgejo SSH vault variables are defined"
+    fail_msg: >-
+      Missing required vault variables for Forgejo SSH:
+      vault_haproxy_forgejo_ssh_port,
+      vault_haproxy_forgejo_ssh_backend_ip,
+      vault_haproxy_forgejo_ssh_backend_port
+  when: haproxy_forgejo_ssh_enabled | default(false) | bool
+
+- name: Configure UFW to allow Forgejo SSH port from anywhere
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "{{ haproxy_forgejo_ssh_port | int }}"
+    direction: in
+  when:
+    - haproxy_forgejo_ssh_enabled | default(false) | bool
+    - ansible_facts['os_family'] == 'Debian'
+    - ufw_is_active | bool
+
 - name: Check if HAProxy config exists
   ansible.builtin.stat:
     path: /etc/haproxy/haproxy.cfg
@@ -291,3 +316,47 @@
   ansible.builtin.debug:
     msg: "Mail backend {{ haproxy_mail_backend_ip }}:{{ haproxy_mail_backend_smtp_port }} {{ 'reachable' if mail_backend_check is not failed else 'NOT reachable (deploy Stalwart first, then re-run)' }}"
   when: haproxy_mail_enabled | default(false) | bool
+
+# =============================================================================
+# Forgejo SSH Verification
+# =============================================================================
+
+- name: Flush handlers before Forgejo SSH verification
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify HAProxy is listening on Forgejo SSH port
+  ansible.builtin.shell: ss -tlnp | grep ':{{ haproxy_forgejo_ssh_port }}'
+  register: forgejo_ssh_port_check
+  changed_when: false
+  failed_when: false
+  when: haproxy_forgejo_ssh_enabled | default(false) | bool
+
+- name: Display Forgejo SSH port status
+  ansible.builtin.debug:
+    msg: "Forgejo SSH port {{ haproxy_forgejo_ssh_port }}: {{ 'LISTENING' if forgejo_ssh_port_check.rc == 0 else 'NOT LISTENING' }}"
+  when:
+    - haproxy_forgejo_ssh_enabled | default(false) | bool
+    - forgejo_ssh_port_check is defined
+
+- name: Wait for Forgejo SSH port to be ready
+  ansible.builtin.wait_for:
+    port: "{{ haproxy_forgejo_ssh_port | int }}"
+    delay: 2
+    timeout: 30
+  when: haproxy_forgejo_ssh_enabled | default(false) | bool
+
+- name: Verify Forgejo SSH backend is reachable
+  ansible.builtin.wait_for:
+    host: "{{ haproxy_forgejo_ssh_backend_ip }}"
+    port: "{{ haproxy_forgejo_ssh_backend_port | int }}"
+    timeout: 10
+  register: forgejo_ssh_backend_check
+  changed_when: false
+  failed_when: false
+  ignore_errors: true
+  when: haproxy_forgejo_ssh_enabled | default(false) | bool
+
+- name: Display Forgejo SSH backend connectivity
+  ansible.builtin.debug:
+    msg: "Forgejo SSH backend {{ haproxy_forgejo_ssh_backend_ip }}:{{ haproxy_forgejo_ssh_backend_port }} {{ 'reachable' if forgejo_ssh_backend_check is not failed else 'NOT reachable (check MetalLB IP and Forgejo deployment)' }}"
+  when: haproxy_forgejo_ssh_enabled | default(false) | bool

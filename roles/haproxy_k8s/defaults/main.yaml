@@ -75,3 +75,17 @@ haproxy_mail_timeout_server: "{{ vault_haproxy_mail_timeout_server | default(300
 
 # PROXY protocol for mail (disabled by default — Stalwart reads client IP natively)
 haproxy_mail_proxy_protocol: "{{ vault_haproxy_mail_proxy_protocol | default(false) }}"
+
+# =============================================================================
+# Forgejo SSH Load Balancing (Git-over-SSH to Kubernetes via MetalLB)
+# =============================================================================
+# Enable/disable Forgejo SSH forwarding (port 2222)
+haproxy_forgejo_ssh_enabled: "{{ vault_haproxy_forgejo_ssh_enabled | default(false) }}"
+
+# Required when haproxy_forgejo_ssh_enabled is true — no defaults, must be set in vault:
+#   vault_haproxy_forgejo_ssh_port
+#   vault_haproxy_forgejo_ssh_backend_ip
+#   vault_haproxy_forgejo_ssh_backend_port
+haproxy_forgejo_ssh_port: "{{ vault_haproxy_forgejo_ssh_port }}"
+haproxy_forgejo_ssh_backend_ip: "{{ vault_haproxy_forgejo_ssh_backend_ip }}"
+haproxy_forgejo_ssh_backend_port: "{{ vault_haproxy_forgejo_ssh_backend_port }}"
