@@ -1,0 +1,99 @@
+---
+# Static analysis and test CI — runs on every push to master.
+# All jobs are independent and run in parallel on ubuntu-latest.
+#
+# Jobs:
+#   yamllint     — validate YAML formatting across the repository
+#   ansible-lint — enforce Ansible best practices and style rules
+#   syntax-check — ansible-playbook --syntax-check on all root playbooks
+#   python-tests — pytest for filter_plugins (security + WireGuard routing)
+#   unit-tests   — Ansible assert-based unit tests (localhost, no real infra)
+
+name: ci
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  # ── 1. yamllint ───────────────────────────────────────────────────────────────
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install --quiet yamllint
+
+      - name: Run yamllint
+        run: yamllint .
+
+  # ── 2. ansible-lint ───────────────────────────────────────────────────────────
+  ansible-lint:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ansible-lint
+        run: pip install --quiet "ansible-lint[community,yamllint]"
+
+      - name: Run ansible-lint
+        run: ansible-lint
+
+  # ── 3. syntax-check ───────────────────────────────────────────────────────────
+  syntax-check:
+    name: syntax-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pip install --quiet ansible
+
+      - name: Create stub vault_secrets.yml for syntax parsing
+        run: cp vault_secrets.example.yml vault_secrets.yml
+
+      - name: Run syntax check on all root playbooks
+        run: |
+          set -euo pipefail
+          for playbook in *.yaml; do
+            [ -f "$playbook" ] || continue
+            echo "--- syntax-check: $playbook ---"
+            ansible-playbook --syntax-check "$playbook"
+          done
+
+  # ── 4. python-tests ───────────────────────────────────────────────────────────
+  python-tests:
+    name: python-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pytest
+        run: pip install --quiet pytest
+
+      - name: Run filter plugin tests
+        run: pytest tests/test_security_filters.py tests/test_wg_routing_filters.py -v
+
+  # ── 5. unit-tests ─────────────────────────────────────────────────────────────
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: pip install --quiet ansible
+
+      - name: Run unit tests
+        run: |
+          set -euo pipefail
+          for test in tests/unit/*.yaml; do
+            [ -f "$test" ] || continue
+            echo "--- unit test: $test ---"
+            ansible-playbook -e 'ansible_become_pass=test' "$test"
+          done
+
